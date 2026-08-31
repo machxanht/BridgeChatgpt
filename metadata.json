@@ -1,0 +1,6 @@
+{
+  "name": "Bridge — Shared AI Workspace",
+  "description": "A shared project context and collaboration layer for ChatGPT (Reviewer) and Gemini (Coder) with remote Streamable HTTP MCP server, SQLite persistence, and live workspace UI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

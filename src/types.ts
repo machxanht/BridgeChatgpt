@@ -1,0 +1,157 @@
+export type AgentType = 'chatgpt' | 'gemini' | 'human' | 'system';
+export type TargetAgentType = 'chatgpt' | 'gemini' | 'human' | 'system' | 'all';
+
+export type TaskStatus =
+  | 'pending'
+  | 'assigned'
+  | 'working'
+  | 'blocked'
+  | 'review'
+  | 'completed'
+  | 'cancelled';
+
+export type TaskPriority = 'urgent' | 'high' | 'medium' | 'low';
+
+export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+export type FindingStatus =
+  | 'open'
+  | 'assigned'
+  | 'fixed'
+  | 'rejected'
+  | 'verified';
+
+export type MessageType =
+  | 'task'
+  | 'finding'
+  | 'review'
+  | 'status'
+  | 'question'
+  | 'result'
+  | 'handoff';
+
+export type AgentOperationalStatus =
+  | 'idle'
+  | 'reviewing'
+  | 'working'
+  | 'blocked'
+  | 'offline';
+
+export interface ProjectConfig {
+  id: string;
+  project_name: string;
+  project_root: string;
+  repository_url: string;
+  default_branch: string;
+  current_goal: string;
+  test_command: string;
+  auto_review: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  status: TaskStatus;
+  assignee: AgentType;
+  created_by: AgentType;
+  created_at: string;
+  updated_at: string;
+  related_files: string[];
+  related_finding?: string | null;
+  result?: string | null;
+}
+
+export interface Finding {
+  id: string;
+  title: string;
+  severity: FindingSeverity;
+  description: string;
+  file: string;
+  line: string | number;
+  status: FindingStatus;
+  created_by: AgentType;
+  assigned_to?: AgentType | null;
+  resolution?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Message {
+  id: string;
+  from: AgentType;
+  to: TargetAgentType;
+  type: MessageType;
+  content: string;
+  task_id?: string | null;
+  finding_id?: string | null;
+  created_at: string;
+}
+
+export interface AgentStatus {
+  agent: 'chatgpt' | 'gemini' | 'human';
+  status: AgentOperationalStatus;
+  current_task_id?: string | null;
+  last_active_at: string;
+  message?: string | null;
+}
+
+export interface Activity {
+  id: string;
+  agent: AgentType;
+  action: string;
+  entity_type: 'task' | 'finding' | 'message' | 'project' | 'test' | 'git' | 'system';
+  entity_id?: string | null;
+  details?: string | null;
+  created_at: string;
+}
+
+export interface WorkspaceState {
+  project: ProjectConfig;
+  agents: Record<'chatgpt' | 'gemini' | 'human', AgentStatus>;
+  tasks: Task[];
+  findings: Finding[];
+  recent_messages: Message[];
+  recent_activity: Activity[];
+  stats: {
+    total_tasks: number;
+    pending_tasks: number;
+    working_tasks: number;
+    review_tasks: number;
+    completed_tasks: number;
+    open_findings: number;
+    verified_findings: number;
+  };
+}
+
+export interface MCPToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: {
+    type: 'object';
+    properties: Record<string, any>;
+    required?: string[];
+  };
+}
+
+export interface GitStatusResult {
+  branch: string;
+  clean: boolean;
+  modified: string[];
+  untracked: string[];
+  staged: string[];
+  raw: string;
+}
+
+export interface TestExecutionResult {
+  command: string;
+  success: boolean;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  timestamp: string;
+}
