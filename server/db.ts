@@ -449,9 +449,17 @@ export async function updateTask(
   const d = await getDb();
   const now = new Date().toISOString();
 
+  // Strip undefined values so they do not overwrite current values
+  const cleanUpdates: Partial<Task> = {};
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined) {
+      (cleanUpdates as any)[key] = value;
+    }
+  }
+
   const updated: Task = {
     ...current,
-    ...updates,
+    ...cleanUpdates,
     updated_at: now,
   };
 
@@ -468,15 +476,15 @@ export async function updateTask(
       result = ?
      WHERE id = ?`,
     [
-      updated.title,
-      updated.description,
-      updated.priority,
-      updated.status,
-      updated.assignee,
+      updated.title ?? current.title,
+      updated.description ?? current.description,
+      updated.priority ?? current.priority,
+      updated.status ?? current.status,
+      updated.assignee ?? current.assignee,
       updated.updated_at,
-      JSON.stringify(updated.related_files || []),
-      updated.related_finding || null,
-      updated.result || null,
+      JSON.stringify(updated.related_files || current.related_files || []),
+      updated.related_finding !== undefined ? updated.related_finding : (current.related_finding || null),
+      updated.result !== undefined ? updated.result : (current.result || null),
       id,
     ]
   );
@@ -678,9 +686,16 @@ export async function updateFinding(
   const d = await getDb();
   const now = new Date().toISOString();
 
+  const cleanUpdates: Partial<Finding> = {};
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined) {
+      (cleanUpdates as any)[key] = value;
+    }
+  }
+
   const updated: Finding = {
     ...current,
-    ...updates,
+    ...cleanUpdates,
     updated_at: now,
   };
 
@@ -697,14 +712,14 @@ export async function updateFinding(
       updated_at = ?
      WHERE id = ?`,
     [
-      updated.title,
-      updated.severity,
-      updated.description,
-      updated.file,
-      String(updated.line),
-      updated.status,
-      updated.assigned_to || null,
-      updated.resolution || null,
+      updated.title ?? current.title,
+      updated.severity ?? current.severity,
+      updated.description ?? current.description,
+      updated.file ?? current.file,
+      String(updated.line ?? current.line),
+      updated.status ?? current.status,
+      updated.assigned_to !== undefined ? updated.assigned_to : (current.assigned_to || null),
+      updated.resolution !== undefined ? updated.resolution : (current.resolution || null),
       updated.updated_at,
       id,
     ]

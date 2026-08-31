@@ -278,6 +278,38 @@ async function runAllTests() {
     assert.strictEqual(workspace.agents.human.agent, 'human');
   });
 
+  // Test 12: Bearer Token Authentication Verification
+  await test('12. Bearer Authentication: verifies valid token and rejects unauthorized requests', async () => {
+    const { verifyAuthToken } = await import('../server/mcp.js');
+
+    // Case A: When BRIDGE_MCP_TOKEN is set
+    process.env.BRIDGE_MCP_TOKEN = 'secret_test_token_xyz';
+
+    // 1. Authorized via Authorization: Bearer <token>
+    const validReq = {
+      headers: { authorization: 'Bearer secret_test_token_xyz' },
+      query: {},
+    } as any;
+    assert.strictEqual(verifyAuthToken(validReq), true, 'Valid Bearer token must be accepted');
+
+    // 2. Unauthorized via wrong token
+    const wrongReq = {
+      headers: { authorization: 'Bearer wrong_token' },
+      query: {},
+    } as any;
+    assert.strictEqual(verifyAuthToken(wrongReq), false, 'Wrong token must be rejected');
+
+    // 3. Unauthorized when header is missing
+    const missingReq = {
+      headers: {},
+      query: {},
+    } as any;
+    assert.strictEqual(verifyAuthToken(missingReq), false, 'Missing token must be rejected');
+
+    // Cleanup env
+    delete process.env.BRIDGE_MCP_TOKEN;
+  });
+
   console.log('\n========================================');
   console.log(`  All ${passedTests}/${totalTests} Tests Passed Successfully! ✓`);
   console.log('========================================\n');
