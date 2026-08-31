@@ -221,6 +221,23 @@ export const BRIDGE_TOOLS: MCPToolDefinition[] = [
     },
   },
   {
+    name: 'finding_update',
+    description: 'Update the status, resolution, severity, or assigned agent of an identified finding.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Finding ID (e.g. BUG-1)' },
+        status: { type: 'string', enum: ['open', 'assigned', 'fixed', 'rejected', 'verified'], description: 'New status' },
+        resolution: { type: 'string', description: 'Explanation of resolution or validation outcome' },
+        assigned_to: { type: 'string', enum: ['gemini', 'chatgpt', 'human'], description: 'Reassign finding' },
+        severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low', 'info'] },
+        title: { type: 'string' },
+        description: { type: 'string' },
+      },
+      required: ['id'],
+    },
+  },
+  {
     name: 'message_send',
     description: 'Send a structured agent-to-agent communication message (handoff, question, review request, result summary).',
     inputSchema: {
@@ -377,6 +394,20 @@ export async function executeTool(name: string, args: Record<string, any> = {}, 
 
     case 'finding_get':
       return await getFinding(args.id);
+
+    case 'finding_update':
+      return await updateFinding(
+        args.id,
+        {
+          status: args.status,
+          resolution: args.resolution,
+          assigned_to: args.assigned_to,
+          severity: args.severity,
+          title: args.title,
+          description: args.description,
+        },
+        agent
+      );
 
     case 'message_send':
       return await createMessage({

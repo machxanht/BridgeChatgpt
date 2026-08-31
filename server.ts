@@ -29,15 +29,33 @@ async function startServer() {
   // Root MCP endpoints (Streamable HTTP MCP Protocol)
   app.all('/mcp', handleMcpRequest);
 
-  // Health check endpoint
-  app.get('/api/health', (req, res) => {
-    res.json({
-      status: 'ok',
-      service: 'Bridge — Shared AI Workspace',
-      mcp_transport: 'Streamable HTTP',
-      time: new Date().toISOString(),
-    });
-  });
+  // Health check endpoints (/health and /api/health)
+  const healthHandler = async (req: express.Request, res: express.Response) => {
+    try {
+      const { getProject } = await import('./server/db.js');
+      const project = await getProject();
+      res.json({
+        status: 'ok',
+        server: 'healthy',
+        database: 'connected (SQLite WAL & Memory-Disk Persistence)',
+        project: project.project_name,
+        mcp: 'ready (Streamable HTTP)',
+        service: 'Bridge — Shared AI Workspace',
+        time: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        status: 'error',
+        server: 'healthy',
+        database: `error: ${err.message}`,
+        project: 'unknown',
+        mcp: 'degraded',
+      });
+    }
+  };
+
+  app.get('/health', healthHandler);
+  app.get('/api/health', healthHandler);
 
   // REST API router
   app.use('/api', apiRouter);

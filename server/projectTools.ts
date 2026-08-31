@@ -26,13 +26,20 @@ export async function resolveProjectRoot(): Promise<string> {
 }
 
 export async function resolveSafePath(userPath: string): Promise<string> {
-  const projectRoot = await resolveProjectRoot();
-  // Normalize path
-  const sanitized = path.normalize(userPath).replace(/^(\.\.[\/\\])+/, '');
-  const resolved = path.resolve(projectRoot, sanitized);
+  if (!userPath || typeof userPath !== 'string') {
+    throw new Error('Invalid path provided');
+  }
 
-  // Sandboxing check: Ensure resolved path starts with projectRoot
-  if (!resolved.startsWith(projectRoot)) {
+  const projectRoot = await resolveProjectRoot();
+
+  // If path has explicit traversal or absolute path, resolve and verify containment
+  const resolved = path.isAbsolute(userPath)
+    ? path.resolve(userPath)
+    : path.resolve(projectRoot, userPath);
+
+  // Sandboxing check: Ensure resolved path is contained within projectRoot
+  const relative = path.relative(projectRoot, resolved);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
     throw new Error(`Access denied: Path "${userPath}" is outside project root sandbox.`);
   }
 
