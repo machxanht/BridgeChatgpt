@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Save, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Save, Send, X } from 'lucide-react';
 import type { WorkspaceState } from '../types.js';
 
 const CHATGPT_EMAIL_KEY = 'bridge.display.chatgptEmail';
@@ -62,6 +62,8 @@ export const IdentityBanner: React.FC = () => {
   const [sessionProvider, setSessionProvider] = useState<'chatgpt' | 'google-ai-studio'>('chatgpt');
   const [sessionAccount, setSessionAccount] = useState('');
   const [sessionLabel, setSessionLabel] = useState('');
+  const [taskTarget, setTaskTarget] = useState('');
+  const [taskText, setTaskText] = useState('');
   const [feedback, setFeedback] = useState('');
 
   const load = async () => {
@@ -95,6 +97,24 @@ export const IdentityBanner: React.FC = () => {
     const list = registry?.workspaces || [];
     return list.find(item => item.workspace_id === activeWorkspaceId) || list[0] || null;
   }, [registry, activeWorkspaceId]);
+
+  const taskTargets = useMemo(() => {
+    if (!current) return [];
+    return [
+      ...current.chatgpt_instances.map(instance => ({ ...instance, assignee: 'chatgpt' as const })),
+      ...current.studio_instances.map(instance => ({ ...instance, assignee: 'gemini' as const })),
+    ];
+  }, [current]);
+
+  useEffect(() => {
+    if (!taskTargets.length) {
+      setTaskTarget('');
+      return;
+    }
+    if (!taskTargets.some(item => item.agent_instance_id === taskTarget)) {
+      setTaskTarget(taskTargets[0].agent_instance_id);
+    }
+  }, [taskTargets, taskTarget]);
 
   const fallbackProject = workspace?.project;
   const repository = repoName(current?.repository_url || fallbackProject?.repository_url);
@@ -179,6 +199,37 @@ export const IdentityBanner: React.FC = () => {
     }
   };
 
+  const createBoundTask = async () => {
+    const text = taskText.trim();
+    const target = taskTargets.find(item => item.agent_instance_id === taskTarget);
+    if (!current || !target || !text) return;
+    setFeedback('');
+    try {
+      const firstLine = text.split('\n').map(line => line.trim()).find(Boolean) || text;
+      const title = firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine;
+      const res = await fetch('/api/studio-relay/bound-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          description: text,
+          priority: 'high',
+          assignee: target.assignee,
+          workspace_id: current.workspace_id,
+          project_id: current.project_id,
+          agent_instance_id: target.agent_instance_id,
+          related_files: [],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Không tạo được task');
+      setTaskText('');
+      setFeedback(`Đã tạo ${data.task.id} cho ${target.session_label} trong ${current.project_name}.`);
+    } catch (error: any) {
+      setFeedback(`Lỗi: ${error?.message || 'không tạo được task'}`);
+    }
+  };
+
   return (
     <div className="relative z-30 border-b border-white/5 bg-slate-950/85 backdrop-blur-xl">
       <div className="max-w-7xl mx-auto px-4 lg:px-6 py-2">
@@ -242,6 +293,25 @@ export const IdentityBanner: React.FC = () => {
                   <button onClick={addSession} disabled={!current} className="px-3 py-2 rounded-lg bg-cyan-500 text-slate-950 text-xs font-bold whitespace-nowrap"><Save className="w-3 h-3 inline mr-1" />Gắn</button>
                 </div>
               </div>
+            </div>
+
+            <div className="border-t border-white/5 pt-3">
+              <div className="text-[10px] font-semibold text-slate-400 mb-2">TẠO TASK ĐÚNG PROJECT + ĐÚNG SESSION</div>
+              {taskTargets.length ? (
+                <div className="flex gap-2 flex-col lg:flex-row">
+                  <select value={taskTarget} onChange={event => setTaskTarget(event.target.value)} className="rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-xs text-white lg:max-w-[300px]">
+                    {taskTargets.map(item => (
+                      <option key={item.agent_instance_id} value={item.agent_instance_id}>
+                        {item.provider === 'chatgpt' ? 'ChatGPT' : 'Studio'} · {item.account_label || 'account'} · {item.session_label}
+                      </option>
+                    ))}
+                  </select>
+                  <input value={taskText} onChange={event => setTaskText(event.target.value)} placeholder="Việc cần làm trong project này..." className="flex-1 rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-xs text-white" />
+                  <button onClick={createBoundTask} disabled={!taskText.trim()} className="px-3 py-2 rounded-lg bg-cyan-500 text-slate-950 text-xs font-bold whitespace-nowrap"><Send className="w-3 h-3 inline mr-1" />Tạo task</button>
+                </div>
+              ) : (
+                <div className="text-[11px] text-amber-300">Gắn ít nhất một ChatGPT/Studio session vào project trước rồi mới tạo task bound.</div>
+              )}
             </div>
 
             {feedback && <div className={`text-[11px] ${feedback.startsWith('Lỗi:') ? 'text-rose-300' : 'text-emerald-300'}`}>{feedback}</div>}
