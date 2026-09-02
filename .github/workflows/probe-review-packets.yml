@@ -11,18 +11,40 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-      - name: Probe AI Studio preview with cookie jar
+      - name: Install browser probe
+        run: |
+          npm install --no-save --no-package-lock playwright@1.55.0
+          npx playwright install chromium
+      - name: Probe Bridge from verified AI Studio browser origin
         env:
           BRIDGE_BASE_URL: https://ais-dev-sghukhn46uckog6l7pfzyw-334331188248.asia-east1.run.app
         run: |
-          set -euo pipefail
-          curl -sS -c /tmp/cookies.txt --connect-timeout 15 --max-time 30 -o /tmp/first.out "$BRIDGE_BASE_URL/api/review-packets" || true
-          meta=$(curl -sS -b /tmp/cookies.txt -c /tmp/cookies.txt -L --connect-timeout 15 --max-time 30 -o /tmp/final.out -w '%{http_code}|%{url_effective}|%{content_type}' "$BRIDGE_BASE_URL/api/review-packets")
-          echo "Bridge cookie-jar probe: $meta"
-          echo '--- cookie jar ---'
-          sed -n '1,80p' /tmp/cookies.txt
-          echo '--- final prefix ---'
-          sed -n '1,80p' /tmp/final.out
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            const target = process.env.BRIDGE_BASE_URL + '/api/review-packets';
+            await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            for (let i = 0; i < 12; i++) {
+              await page.waitForTimeout(1000);
+              if (!page.url().includes('_cookie_check')) break;
+            }
+            const result = await page.evaluate(async () => {
+              const r = await fetch('/api/review-packets', { credentials: 'include' });
+              const text = await r.text();
+              return { status: r.status, contentType: r.headers.get('content-type'), text };
+            });
+            console.log('final page:', page.url());
+            console.log('fetch status:', result.status, 'content-type:', result.contentType);
+            console.log('body prefix:', result.text.slice(0, 1200));
+            let json;
+            try { json = JSON.parse(result.text); } catch {}
+            if (!json || typeof json !== 'object') process.exitCode = 31;
+            else console.log('JSON_OK keys=' + Object.keys(json).join(','));
+            await browser.close();
+          })().catch(err => { console.error(err); process.exit(32); });
+          NODE
