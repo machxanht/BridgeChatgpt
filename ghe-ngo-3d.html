@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ghe Ngo 3D — Sóc Trăng</title><style>html,body{margin:0;height:100%;overflow:hidden;background:#07151d;color:white;font-family:system-ui}canvas{display:block}.hud{position:fixed;z-index:2;left:18px;top:16px;background:#07151dcc;border:1px solid #ffffff25;padding:12px 14px;border-radius:14px;backdrop-filter:blur(10px)}.hud b{color:#ffd34e}.hud small{display:block;color:#b7cad4;margin-top:4px}.badge{position:fixed;right:15px;bottom:14px;background:#0009;padding:8px 11px;border-radius:10px;font-size:12px}</style></head><body><div class="hud"><b>GHE NGO KHMER — 3D STUDY</b><small>Kéo để xoay · lăn để zoom · mô phỏng hoa văn Khmer Sóc Trăng</small></div><div class="badge">BridgeChatgpt 3D prototype</div><script type="module">
+import * as THREE from 'https://unpkg.com/three@0.164.1/build/three.module.js';
+import {OrbitControls} from 'https://unpkg.com/three@0.164.1/examples/jsm/controls/OrbitControls.js';
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x07151d);scene.fog=new THREE.Fog(0x07151d,32,70);
+const camera=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,.1,150);camera.position.set(17,10,24);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;document.body.appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.target.set(0,0,0);
+scene.add(new THREE.HemisphereLight(0xbfe8ff,0x15200d,2.2));const sun=new THREE.DirectionalLight(0xffe3ad,3);sun.position.set(8,15,10);sun.castShadow=true;scene.add(sun);
+// water
+const water=new THREE.Mesh(new THREE.PlaneGeometry(100,100,1,1),new THREE.MeshStandardMaterial({color:0x174b55,roughness:.35,metalness:.1}));water.rotation.x=-Math.PI/2;water.position.y=-1.3;scene.add(water);
+// long, slender upward-curving hull made from tapered sections
+const hull=new THREE.Group();scene.add(hull);
+const red=new THREE.MeshStandardMaterial({color:0xc71920,roughness:.42});const gold=new THREE.MeshStandardMaterial({color:0xf4bd24,metalness:.25,roughness:.32});const green=new THREE.MeshStandardMaterial({color:0x159447,roughness:.4});const black=new THREE.MeshStandardMaterial({color:0x161313,roughness:.55});
+const L=25, segs=52;
+for(let i=0;i<segs;i++){const t=(i+.5)/segs,x=(t-.5)*L;const edge=Math.abs(t-.5)*2;const width=.78*(1-Math.pow(edge,3)*.68);const rise=Math.pow(edge,5)*2.25;const g=new THREE.BoxGeometry(L/segs+.025,.72,width);const m=new THREE.Mesh(g,red);m.position.set(x,rise-.5,0);m.rotation.z=(t<.5?-1:1)*Math.pow(edge,4)*.28;hull.add(m)}
+// black inner gunwale and golden rails
+for(const z of [-.48,.48]){const rail=new THREE.Mesh(new THREE.BoxGeometry(20.8,.12,.08),gold);rail.position.set(0,.02,z);hull.add(rail)}
+const inner=new THREE.Mesh(new THREE.BoxGeometry(20,.14,.72),black);inner.position.y=.05;hull.add(inner);
+// benches
+for(let x=-9.2;x<=9.2;x+=.72){const b=new THREE.Mesh(new THREE.BoxGeometry(.10,.10,1.02),new THREE.MeshStandardMaterial({color:0x8b451f}));b.position.set(x,.20,0);hull.add(b)}
+// Khmer-inspired side pattern: alternating naga-scale diamonds and gold/green curls
+for(const side of [-1,1]) for(let x=-10.6;x<=10.6;x+=.72){const d=new THREE.Mesh(new THREE.OctahedronGeometry(.23,0),x%1.44<.1?green:gold);d.scale.set(1.45,.72,.22);d.position.set(x,-.42,side*.405);hull.add(d)}
+// decorative stripe
+for(const side of [-1,1]){const stripe=new THREE.Mesh(new THREE.BoxGeometry(21,.10,.025),green);stripe.position.set(0,-.12,side*.425);hull.add(stripe)}
+// stylized Naga/dragon prow at bow
+const head=new THREE.Group();head.position.set(12.55,1.55,0);hull.add(head);const snout=new THREE.Mesh(new THREE.ConeGeometry(.48,1.9,6),green);snout.rotation.z=-Math.PI/2;head.add(snout);const crest=new THREE.Mesh(new THREE.ConeGeometry(.34,1.15,5),gold);crest.position.set(-.2,.55,0);crest.rotation.z=-.25;head.add(crest);
+for(const z of [-.31,.31]){const eye=new THREE.Mesh(new THREE.SphereGeometry(.13,16,12),new THREE.MeshStandardMaterial({color:0xffffff}));eye.position.set(.28,.13,z);head.add(eye);const pupil=new THREE.Mesh(new THREE.SphereGeometry(.065,12,8),black);pupil.position.set(.35,.14,z*1.06);head.add(pupil)}
+// tail fin
+const tail=new THREE.Mesh(new THREE.ConeGeometry(.45,2.1,5),gold);tail.position.set(-12.4,1.5,0);tail.rotation.z=Math.PI/2;hull.add(tail);
+// paddles on both sides
+const wood=new THREE.MeshStandardMaterial({color:0xd99a3a,roughness:.5});for(let x=-8.8;x<9;x+=1.25)for(const side of [-1,1]){const p=new THREE.Group();const shaft=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,2.25,8),wood);shaft.rotation.z=.58;const blade=new THREE.Mesh(new THREE.BoxGeometry(.25,.72,.055),gold);blade.position.set(.58,-.91,0);blade.rotation.z=.58;p.add(shaft,blade);p.position.set(x,.28,side*.74);p.rotation.x=side*.30;hull.add(p)}
+// presentation pedestal shadow under boat
+const glow=new THREE.PointLight(0x29b6f6,20,12);glow.position.set(0,-.7,0);scene.add(glow);
+function animate(t){requestAnimationFrame(animate);water.material.color.setHSL(.52,.55,.18+Math.sin(t*.0007)*.015);controls.update();renderer.render(scene,camera)}animate();addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script></body></html>
