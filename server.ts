@@ -9,6 +9,7 @@ import { handleMcpRequest } from './server/mcp.js';
 import { startGeminiWorker, getGeminiWorkerConfig } from './server/geminiWorker.js';
 import { requireAuth } from './server/auth.js';
 import { studioRelayRouter } from './server/studioRelay.js';
+import { reviewPacketsRouter } from './server/reviewPackets.js';
 import { startGitHubCommandBus } from './server/githubCommandBus.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -49,6 +50,7 @@ async function startServer() {
         project: project.project_name,
         mcp: 'ready (Streamable HTTP)',
         studio_relay: 'ready',
+        review_packets: 'ready',
         github_command_bus: process.env.GITHUB_COMMAND_BUS_ENABLED === 'false' ? 'disabled' : 'ready',
         service: 'Bridge — Shared AI Workspace',
         time: new Date().toISOString(),
@@ -61,6 +63,7 @@ async function startServer() {
         project: 'unknown',
         mcp: 'degraded',
         studio_relay: 'degraded',
+        review_packets: 'degraded',
         github_command_bus: 'degraded',
       });
     }
@@ -73,6 +76,8 @@ async function startServer() {
   // it only exchanges task/state data with an authenticated Studio client.
   app.use('/api/studio-relay', requireAuth, studioRelayRouter);
 
+  // Review-ready Studio results, including full conflict-safe artifacts.
+  app.use('/api', requireAuth, reviewPacketsRouter);
   app.use('/api', apiRouter);
 
   if (process.env.NODE_ENV !== 'production') {
@@ -95,6 +100,7 @@ async function startServer() {
     console.log(`[Bridge Server] Running on http://0.0.0.0:${PORT}`);
     console.log(`[Bridge MCP] Streamable HTTP endpoint: http://0.0.0.0:${PORT}/mcp`);
     console.log(`[Bridge Studio Relay] REST endpoint: http://0.0.0.0:${PORT}/api/studio-relay`);
+    console.log('[Bridge Review Packets] REST endpoint: /api/review-packets');
     console.log('[Bridge GitHub Bus] Inbox: bridge-bus/inbox');
   });
 }
