@@ -35,7 +35,7 @@ const snapshot: ResourceRegistrySnapshot = {
       resource_url: 'https://chatgpt.com/c/chat-1111',
       workspace_id: 'workspace-demo',
       project_id: 'project-demo',
-      label: 'ChatGPT primary',
+      label: 'ChatGPT old',
       agent_instance_id: 'chatgpt-chat-1111',
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: now,
@@ -48,7 +48,7 @@ const snapshot: ResourceRegistrySnapshot = {
       resource_url: 'https://chatgpt.com/c/chat-2222',
       workspace_id: 'workspace-demo',
       project_id: 'project-demo',
-      label: 'ChatGPT secondary',
+      label: 'ChatGPT newest',
       agent_instance_id: 'chatgpt-chat-2222',
       created_at: '2026-01-02T00:00:00.000Z',
       updated_at: now,
@@ -102,7 +102,7 @@ assert.match(chatWake!.prompt, /chatgpt_conversation_id=chat-2222/);
 const reviewWake = queue.find(item => item.task_id === 'TASK-3');
 assert.ok(reviewWake);
 assert.strictEqual(reviewWake!.reason, 'review-ready');
-assert.strictEqual(reviewWake!.resource_id, 'chat-1111');
+assert.strictEqual(reviewWake!.resource_id, 'chat-2222');
 
 assert.strictEqual(new Set(queue.map(item => item.event_id)).size, queue.length);
 console.log('wakeQueue.test.ts: all assertions passed');
