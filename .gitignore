@@ -8,4 +8,6 @@ coverage/
 !.env.example
 
 data/*.sqlite
+data/batches.json
+data/batches.json.*.tmp
 bridge-bus/outbox/
