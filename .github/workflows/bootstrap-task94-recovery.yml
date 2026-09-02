@@ -44,18 +44,9 @@ jobs:
           const testsMetaBad = '"\\n    },\\n    {\\n      "path": "tests/bridge.test.ts",\\n      "operation": "update",\\n      "base_sha": "c1616d751e6a3db4e88dec8071f5d1118743d391",\\n      "content": "';
           const testsMetaGood = '"\n    },\n    {\n      "path": "tests/bridge.test.ts",\n      "operation": "update",\n      "base_sha": "c1616d751e6a3db4e88dec8071f5d1118743d391",\n      "content": "';
           raw = replaceOnceStrict(raw, testsMetaBad, testsMetaGood, 'tests metadata');
-
           raw = replaceOnceStrict(raw, '"\\n    }\\n  ]\\n}\\n', '"\n    }\n  ]\n}\n', 'payload ending');
 
-          let packet;
-          try {
-            packet = JSON.parse(raw);
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error('JSON_PARSE_ERROR:', msg);
-            process.exit(22);
-          }
-
+          const packet = JSON.parse(raw);
           if (packet.task_id !== 'TASK-94') throw new Error('Unexpected task id');
           const arts = packet.artifacts;
           const expected = new Map([
@@ -86,6 +77,118 @@ jobs:
           }
           NODE
 
+      - name: Apply reviewed concurrency hardening
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+
+          function replaceOnce(source, oldText, newText, label) {
+            const first = source.indexOf(oldText);
+            if (first < 0 || source.indexOf(oldText, first + oldText.length) >= 0) {
+              throw new Error(`Expected exactly one ${label} marker`);
+            }
+            return source.slice(0, first) + newText + source.slice(first + oldText.length);
+          }
+
+          const busPath = 'server/githubCommandBus.ts';
+          let bus = fs.readFileSync(busPath, 'utf8');
+          bus = replaceOnce(
+            bus,
+            "function writeResult(id: string, payload: unknown) { fs.writeFileSync(resultPath(id), JSON.stringify(payload, null, 2) + '\\n', 'utf8'); }",
+            "function writeResult(id: string, payload: unknown) { ensureDirs(); fs.writeFileSync(resultPath(id), JSON.stringify(payload, null, 2) + '\\n', 'utf8'); }",
+            'writeResult directory guard'
+          );
+
+          const oldProcess = `export async function processCommand(command: BusCommand, fallbackId: string): Promise<boolean> {
+  const id = command.id || fallbackId;
+  if (await isCommandProcessed(id)) return false;
+  try {
+    const result = await execute(command);
+    await recordCommandReceipt({
+      command_id: id,
+      command_type: command.type,
+      status: 'success',
+      result: JSON.stringify(result),
+    });
+    writeResult(id, result);
+    return true;
+  } catch (err: any) {
+    writeResult(id, { ok: false, command_id: id, error: err?.message || String(err) });
+    return false;
+  }
+}`;
+
+          const newProcess = `let commandProcessingTail: Promise<void> = Promise.resolve();
+
+async function withCommandProcessingLock<T>(fn: () => Promise<T>): Promise<T> {
+  let release!: () => void;
+  const previous = commandProcessingTail;
+  commandProcessingTail = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
+export async function processCommand(command: BusCommand, fallbackId: string): Promise<boolean> {
+  return withCommandProcessingLock(async () => {
+    const id = command.id || fallbackId;
+    if (await isCommandProcessed(id)) return false;
+    try {
+      const result = await execute(command);
+      await recordCommandReceipt({
+        command_id: id,
+        command_type: command.type,
+        status: 'success',
+        result: JSON.stringify(result),
+      });
+      writeResult(id, result);
+      return true;
+    } catch (err: any) {
+      writeResult(id, { ok: false, command_id: id, error: err?.message || String(err) });
+      return false;
+    }
+  });
+}`;
+          bus = replaceOnce(bus, oldProcess, newProcess, 'processCommand serialization');
+          fs.writeFileSync(busPath, bus, 'utf8');
+
+          const testPath = 'tests/bridge.test.ts';
+          let tests = fs.readFileSync(testPath, 'utf8');
+          const marker = "\n  console.log('\\n======================================================');";
+          const at = tests.lastIndexOf(marker);
+          if (at < 0) throw new Error('Final test summary marker not found');
+          const concurrentTest = `
+
+  // 21. Concurrent duplicate command execution must be serialized
+  await test('21. Concurrent GitHub Command Idempotency: executes a duplicate command exactly once', async () => {
+    const suffix = \`${Date.now()}-${Math.random().toString(36).slice(2, 8)}\`;
+    const cmdId = \`test-concurrent-cmd-${suffix}\`;
+    const uniqueTitle = \`Concurrent Idempotency ${suffix}\`;
+    const command = {
+      id: cmdId,
+      type: 'task_create' as const,
+      title: uniqueTitle,
+      description: 'Concurrent duplicate command should create exactly one task',
+    };
+
+    const [first, second] = await Promise.all([
+      processCommand(command, 'fallback-concurrent-a'),
+      processCommand(command, 'fallback-concurrent-b'),
+    ]);
+
+    assert.strictEqual([first, second].filter(Boolean).length, 1, 'Exactly one concurrent duplicate execution should succeed');
+    assert.strictEqual(await isCommandProcessed(cmdId), true, 'Concurrent command should have one success receipt');
+    const matches = (await getTasks({ limit: 200 })).filter((task) => task.title === uniqueTitle);
+    assert.strictEqual(matches.length, 1, 'Concurrent duplicate command must create exactly one task');
+  });`;
+          tests = tests.slice(0, at) + concurrentTest + tests.slice(at);
+          fs.writeFileSync(testPath, tests, 'utf8');
+          NODE
+
       - name: Verify, test and publish isolated recovery commit
         run: |
           set -euo pipefail
@@ -100,5 +203,5 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add server/db.ts server/githubCommandBus.ts tests/bridge.test.ts
           git rm -r bridge-recovery/task94 .github/workflows/recover-task94.yml
-          git commit -m 'fix: durable IDs and command idempotency bootstrap'
+          git commit -m 'fix: durable IDs and concurrent command idempotency'
           git push origin HEAD:recovery/task94-hardening
