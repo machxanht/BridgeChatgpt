@@ -11,6 +11,8 @@ import { requireAuth } from './server/auth.js';
 import { studioRelayRouter } from './server/studioRelay.js';
 import { reviewPacketsRouter } from './server/reviewPackets.js';
 import { startGitHubCommandBus } from './server/githubCommandBus.js';
+import { batchRouter } from './server/batchRoutes.js';
+import { startBatchOrchestrator } from './server/batchOrchestrator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,6 +23,7 @@ async function startServer() {
 
   await initDatabase();
   startGitHubCommandBus();
+  startBatchOrchestrator();
 
   const workerConfig = getGeminiWorkerConfig();
   if (workerConfig.enabled && process.env.GEMINI_API_KEY) {
@@ -51,6 +54,7 @@ async function startServer() {
         mcp: 'ready (Streamable HTTP)',
         studio_relay: 'ready',
         review_packets: 'ready',
+        batch_orchestrator: 'ready',
         github_command_bus: process.env.GITHUB_COMMAND_BUS_ENABLED === 'false' ? 'disabled' : 'ready',
         service: 'Bridge — Shared AI Workspace',
         time: new Date().toISOString(),
@@ -64,6 +68,7 @@ async function startServer() {
         mcp: 'degraded',
         studio_relay: 'degraded',
         review_packets: 'degraded',
+        batch_orchestrator: 'degraded',
         github_command_bus: 'degraded',
       });
     }
@@ -75,6 +80,9 @@ async function startServer() {
   // External Google AI Studio Build-mode relay. It never calls Gemini itself;
   // it only exchanges task/state data with an authenticated Studio client.
   app.use('/api/studio-relay', requireAuth, studioRelayRouter);
+
+  // Batch/epic orchestration: DAG scheduling, leases, retry/review limits and dashboard.
+  app.use('/api/batches', requireAuth, batchRouter);
 
   // Review-ready Studio results, including full conflict-safe artifacts.
   app.use('/api', requireAuth, reviewPacketsRouter);
@@ -101,6 +109,7 @@ async function startServer() {
     console.log(`[Bridge MCP] Streamable HTTP endpoint: http://0.0.0.0:${PORT}/mcp`);
     console.log(`[Bridge Studio Relay] REST endpoint: http://0.0.0.0:${PORT}/api/studio-relay`);
     console.log('[Bridge Review Packets] REST endpoint: /api/review-packets');
+    console.log('[Bridge Batch] REST endpoint: /api/batches');
     console.log('[Bridge GitHub Bus] Inbox: bridge-bus/inbox');
   });
 }
