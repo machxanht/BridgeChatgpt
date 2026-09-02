@@ -1,0 +1,19 @@
+{
+  "id": "bridge-project-brain-v1-sync",
+  "type": "task_create",
+  "created_by": "chatgpt",
+  "title": "Sync Project Brain v1 shared cross-session context",
+  "description": "Sync the reviewed Project Brain v1 implementation from GitHub main into the AI Studio workspace. Sync ONLY these files: server/projectBrain.ts, server/projectBrainRoutes.ts, server/workspaceTaskRouter.ts, server.ts, tests/projectBrain.test.ts, package.json, .bridge/brain/PROJECT_STATE.json, and .bridge/brain/README.md. Preserve any Studio-specific deployment/startup adaptation unless the GitHub version is already compatible. Project Brain separates shared durable project knowledge from per-session scratch, exposes authenticated bootstrap/memory/handoff endpoints, loads the repo-backed snapshot plus runtime memory, and injects project_context into every Studio claim response even when no task is available. Run npm run lint, npm test, npm run build, restart Preview, verify GET /health reports project_brain: ready, and verify a Studio claim response contains project_context with workspace/project/goal/shared memory/task summary. Do not redesign the UI and do not Publish. Submit the result through Studio Relay.",
+  "priority": "urgent",
+  "assignee": "gemini",
+  "related_files": [
+    "server/projectBrain.ts",
+    "server/projectBrainRoutes.ts",
+    "server/workspaceTaskRouter.ts",
+    "server.ts",
+    "tests/projectBrain.test.ts",
+    "package.json",
+    ".bridge/brain/PROJECT_STATE.json",
+    ".bridge/brain/README.md"
+  ]
+}
