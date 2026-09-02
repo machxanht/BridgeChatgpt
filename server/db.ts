@@ -140,6 +140,19 @@ export async function initDatabase(): Promise<Database> {
       details TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS command_receipts (
+      command_id TEXT PRIMARY KEY,
+      command_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      result TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS counters (
+      name TEXT PRIMARY KEY,
+      value INTEGER NOT NULL
+    );
   `);
 
   // Seed default project if empty
@@ -203,6 +216,95 @@ async function getDb(): Promise<Database> {
     await initDatabase();
   }
   return db!;
+}
+
+class AsyncMutex {
+  private queue: Array<() => void> = [];
+  private locked = false;
+
+  async acquire(): Promise<() => void> {
+    return new Promise((resolve) => {
+      const release = () => {
+        if (this.queue.length > 0) {
+          const next = this.queue.shift()!;
+          next();
+        } else {
+          this.locked = false;
+        }
+      };
+
+      if (!this.locked) {
+        this.locked = true;
+        resolve(release);
+      } else {
+        this.queue.push(() => resolve(release));
+      }
+    });
+  }
+
+  async runExclusive<T>(fn: () => Promise<T> | T): Promise<T> {
+    const release = await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+}
+
+export const dbMutex = new AsyncMutex();
+
+async function getNextId(counterName: string, prefix: string, tableName: string): Promise<string> {
+  const d = await getDb();
+
+  const stmt = d.prepare('SELECT value FROM counters WHERE name = ?');
+  stmt.bind([counterName]);
+  let currentValue: number | null = null;
+  if (stmt.step()) {
+    currentValue = stmt.getAsObject().value as number;
+  }
+  stmt.free();
+
+  if (currentValue === null) {
+    let maxId = 0;
+    try {
+      const allRowsStmt = d.prepare(`SELECT id FROM ${tableName}`);
+      while (allRowsStmt.step()) {
+        const rowId = allRowsStmt.getAsObject().id as string;
+        const match = rowId?.match(/^([A-Z]+)-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[2], 10);
+          if (!isNaN(num) && num > maxId) {
+            maxId = num;
+          }
+        }
+      }
+      allRowsStmt.free();
+    } catch {
+      maxId = 0;
+    }
+    currentValue = maxId;
+    d.run('INSERT OR REPLACE INTO counters (name, value) VALUES (?, ?)', [counterName, currentValue]);
+  }
+
+  let nextValue = currentValue + 1;
+  let candidateId = `${prefix}-${nextValue}`;
+
+  while (true) {
+    const checkStmt = d.prepare(`SELECT 1 FROM ${tableName} WHERE id = ?`);
+    checkStmt.bind([candidateId]);
+    const exists = checkStmt.step();
+    checkStmt.free();
+    if (!exists) {
+      break;
+    }
+    nextValue++;
+    candidateId = `${prefix}-${nextValue}`;
+  }
+
+  d.run('UPDATE counters SET value = ? WHERE name = ?', [nextValue, counterName]);
+  persistToDisk();
+  return candidateId;
 }
 
 // ---------------- PROJECTS ----------------
@@ -381,63 +483,59 @@ export async function createTask(input: {
   related_finding?: string | null;
   status?: string;
 }): Promise<Task> {
-  const d = await getDb();
-  const now = new Date().toISOString();
+  return await dbMutex.runExclusive(async () => {
+    const d = await getDb();
+    const now = new Date().toISOString();
 
-  // Generate sequence id TASK-1, TASK-2...
-  const countStmt = d.prepare('SELECT COUNT(*) as count FROM tasks');
-  countStmt.step();
-  const count = (countStmt.getAsObject().count as number) + 1;
-  countStmt.free();
+    const id = await getNextId('tasks', 'TASK', 'tasks');
+    const priority = input.priority || 'medium';
+    const assignee = input.assignee || 'gemini';
+    const created_by = input.created_by || 'chatgpt';
+    const status = input.status || (assignee === 'gemini' ? 'assigned' : 'pending');
+    const relatedFiles = JSON.stringify(input.related_files || []);
+    const relatedFinding = input.related_finding || null;
 
-  const id = `TASK-${count}`;
-  const priority = input.priority || 'medium';
-  const assignee = input.assignee || 'gemini';
-  const created_by = input.created_by || 'chatgpt';
-  const status = input.status || (assignee === 'gemini' ? 'assigned' : 'pending');
-  const relatedFiles = JSON.stringify(input.related_files || []);
-  const relatedFinding = input.related_finding || null;
+    d.run(
+      `INSERT INTO tasks (id, title, description, priority, status, assignee, created_by, created_at, updated_at, related_files, related_finding, result)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        input.title,
+        input.description,
+        priority,
+        status,
+        assignee,
+        created_by,
+        now,
+        now,
+        relatedFiles,
+        relatedFinding,
+        null,
+      ]
+    );
 
-  d.run(
-    `INSERT INTO tasks (id, title, description, priority, status, assignee, created_by, created_at, updated_at, related_files, related_finding, result)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      input.title,
-      input.description,
-      priority,
-      status,
-      assignee,
-      created_by,
-      now,
-      now,
-      relatedFiles,
-      relatedFinding,
-      null,
-    ]
-  );
+    persistToDisk();
 
-  persistToDisk();
+    await logActivity({
+      agent: created_by,
+      action: `Created task ${id}`,
+      entity_type: 'task',
+      entity_id: id,
+      details: `"${input.title}" assigned to ${assignee} (Priority: ${priority})`,
+    });
 
-  await logActivity({
-    agent: created_by,
-    action: `Created task ${id}`,
-    entity_type: 'task',
-    entity_id: id,
-    details: `"${input.title}" assigned to ${assignee} (Priority: ${priority})`,
+    // Also create structured notification message
+    await createMessage({
+      from: created_by,
+      to: assignee,
+      type: 'task',
+      content: `New task ${id} assigned: "${input.title}". Description: ${input.description}`,
+      task_id: id,
+      finding_id: relatedFinding,
+    });
+
+    return (await getTask(id))!;
   });
-
-  // Also create structured notification message
-  await createMessage({
-    from: created_by,
-    to: assignee,
-    type: 'task',
-    content: `New task ${id} assigned: "${input.title}". Description: ${input.description}`,
-    task_id: id,
-    finding_id: relatedFinding,
-  });
-
-  return (await getTask(id))!;
 }
 
 export async function updateTask(
@@ -532,42 +630,6 @@ export async function deleteTask(id: string): Promise<boolean> {
   persistToDisk();
   return true;
 }
-
-class AsyncMutex {
-  private queue: Array<() => void> = [];
-  private locked = false;
-
-  async acquire(): Promise<() => void> {
-    return new Promise((resolve) => {
-      const release = () => {
-        if (this.queue.length > 0) {
-          const next = this.queue.shift()!;
-          next();
-        } else {
-          this.locked = false;
-        }
-      };
-
-      if (!this.locked) {
-        this.locked = true;
-        resolve(release);
-      } else {
-        this.queue.push(() => resolve(release));
-      }
-    });
-  }
-
-  async runExclusive<T>(fn: () => Promise<T> | T): Promise<T> {
-    const release = await this.acquire();
-    try {
-      return await fn();
-    } finally {
-      release();
-    }
-  }
-}
-
-export const dbMutex = new AsyncMutex();
 
 const PRIORITY_WEIGHTS: Record<TaskPriority, number> = {
   urgent: 1,
@@ -874,13 +936,7 @@ export async function createFinding(input: {
   const d = await getDb();
   const now = new Date().toISOString();
 
-  // Generate sequence id BUG-1 or FIND-1
-  const countStmt = d.prepare('SELECT COUNT(*) as count FROM findings');
-  countStmt.step();
-  const count = (countStmt.getAsObject().count as number) + 1;
-  countStmt.free();
-
-  const id = `BUG-${count}`;
+  const id = await getNextId('findings', 'BUG', 'findings');
   const severity = input.severity || 'medium';
   const created_by = input.created_by || 'chatgpt';
   const assigned_to = input.assigned_to !== undefined ? input.assigned_to : 'gemini';
@@ -1057,12 +1113,7 @@ export async function createMessage(input: {
   const d = await getDb();
   const now = new Date().toISOString();
 
-  const countStmt = d.prepare('SELECT COUNT(*) as count FROM messages');
-  countStmt.step();
-  const count = (countStmt.getAsObject().count as number) + 1;
-  countStmt.free();
-
-  const id = `MSG-${count}`;
+  const id = await getNextId('messages', 'MSG', 'messages');
   const toAgent = input.to || 'all';
 
   d.run(
@@ -1353,5 +1404,66 @@ export async function getWorkspaceState(): Promise<WorkspaceState> {
     recent_messages,
     recent_activity,
     stats,
+  };
+}
+
+// ---------------- COMMAND RECEIPTS ----------------
+
+export interface CommandReceipt {
+  command_id: string;
+  command_type: string;
+  status: string;
+  result: string | null;
+  created_at: string;
+}
+
+export async function isCommandProcessed(commandId: string): Promise<boolean> {
+  const receipt = await getCommandReceipt(commandId);
+  return receipt !== null && receipt.status === 'success';
+}
+
+export async function getCommandReceipt(commandId: string): Promise<CommandReceipt | null> {
+  const d = await getDb();
+  const stmt = d.prepare('SELECT * FROM command_receipts WHERE command_id = ?');
+  stmt.bind([commandId]);
+  let receipt: CommandReceipt | null = null;
+  if (stmt.step()) {
+    const row = stmt.getAsObject();
+    receipt = {
+      command_id: row.command_id as string,
+      command_type: row.command_type as string,
+      status: row.status as string,
+      result: (row.result as string) || null,
+      created_at: row.created_at as string,
+    };
+  }
+  stmt.free();
+  return receipt;
+}
+
+export async function recordCommandReceipt(input: {
+  command_id: string;
+  command_type: string;
+  status?: string;
+  result?: string | null;
+}): Promise<CommandReceipt> {
+  const d = await getDb();
+  const now = new Date().toISOString();
+  const status = input.status || 'success';
+  const result = typeof input.result === 'string' ? input.result : (input.result ? JSON.stringify(input.result) : null);
+
+  d.run(
+    `INSERT OR REPLACE INTO command_receipts (command_id, command_type, status, result, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [input.command_id, input.command_type, status, result, now]
+  );
+  persistToDisk();
+
+  return {
+    command_id: input.command_id,
+    command_type: input.command_type,
+    status,
+    result,
+    created_at: now,
   };
 }

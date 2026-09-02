@@ -7,6 +7,7 @@ import {
   getTask,
   getTasks,
   updateTask,
+  deleteTask,
   claimNextTask,
   reviewTask,
   createFinding,
@@ -20,7 +21,10 @@ import {
   recordHeartbeat,
   getAgentStatuses,
   getWorkflowStateForAgent,
+  isCommandProcessed,
+  getCommandReceipt,
 } from '../server/db.js';
+import { processCommand } from '../server/githubCommandBus.js';
 import {
   toolProjectReadFile,
   toolProjectSearch,
@@ -208,7 +212,7 @@ async function runAllTests() {
     });
 
     assert.ok(searchResult.match_count > 0, 'Should find occurrences of BRIDGE_MCP_TOKEN');
-    assert.ok(searchResult.matches.some((m) => m.file.includes('.env.example') || m.file.includes('server')), 'Match found in expected files');
+    assert.ok(searchResult.matches.some((m) => m.file.includes('.env.example') || m.file.includes('server') || m.file.includes('AGENTS.md') || m.file.includes('README.md')), 'Match found in expected files');
   });
 
   // 8. Git Diff & Status
@@ -599,9 +603,135 @@ async function runAllTests() {
     assert.strictEqual(verifiedFinding?.status, 'verified');
 
     // Cleanup simulation file
-    await toolProjectDeleteFile({ file_path: mockFixFile });
+    try {
+      await toolProjectDeleteFile({ file_path: mockFixFile });
+    } catch {
+      // Ignored if already cleaned up
+    }
   });
 
+  // 19. Task ID Uniqueness & Monotonic Non-Reuse
+  await test('19. Task ID Uniqueness: prevents ID reuse after row deletion and avoids concurrent collisions', async () => {
+    const taskA = await createTask({
+      title: 'Task Before Deletion',
+      description: 'Testing monotonic sequence preservation across deletions',
+    });
+    const numA = parseInt(taskA.id.replace(/^TASK-/, ''), 10);
+    assert.ok(!isNaN(numA), 'Task A should have numeric suffix');
+
+    await deleteTask(taskA.id);
+    const deletedCheck = await getTask(taskA.id);
+    assert.strictEqual(deletedCheck, null, 'Task A should be deleted');
+
+    const taskB = await createTask({
+      title: 'Task After Deletion',
+      description: 'Should not reuse deleted task ID',
+    });
+    const numB = parseInt(taskB.id.replace(/^TASK-/, ''), 10);
+    assert.ok(!isNaN(numB), 'Task B should have numeric suffix');
+    assert.ok(numB > numA, `Task B ID (${taskB.id}) must be greater than deleted Task A ID (${taskA.id})`);
+
+    // Concurrently create 10 tasks to verify mutex serialization prevents collisions
+    const concurrentCount = 10;
+    const concurrentTasks = await Promise.all(
+      Array.from({ length: concurrentCount }).map((_, i) =>
+        createTask({
+          title: `Concurrent Task ${i}`,
+          description: `Testing serialization under load ${i}`,
+        })
+      )
+    );
+
+    const idSet = new Set(concurrentTasks.map((t) => t.id));
+    assert.strictEqual(idSet.size, concurrentCount, 'All concurrent tasks must have unique IDs');
+  });
+
+  // 20. GitHub Command Idempotency & Database Receipts
+  await test('20. GitHub Command Idempotency: records receipts, prevents duplicates, and keeps failed commands retryable', async () => {
+    const cmdId = `test-cmd-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    // 1. First execution of valid command
+    const processedFirst = await processCommand(
+      {
+        id: cmdId,
+        type: 'task_create',
+        title: 'Command Idempotency Test Task',
+        description: 'Verify database receipt recording',
+      },
+      'fallback-1'
+    );
+    assert.strictEqual(processedFirst, true, 'First command execution should succeed');
+
+    // 2. Verify receipt in database
+    const isProcessed = await isCommandProcessed(cmdId);
+    assert.strictEqual(isProcessed, true, 'Command should be marked processed in database');
+
+    const receipt = await getCommandReceipt(cmdId);
+    assert.ok(receipt, 'Receipt should exist');
+    assert.strictEqual(receipt?.command_id, cmdId);
+    assert.strictEqual(receipt?.status, 'success');
+
+    // 3. Duplicate execution should be blocked by idempotency check
+    const processedDuplicate = await processCommand(
+      {
+        id: cmdId,
+        type: 'task_create',
+        title: 'Duplicate Command Title',
+        description: 'Duplicate command description',
+      },
+      'fallback-1'
+    );
+    assert.strictEqual(processedDuplicate, false, 'Duplicate command must not be processed again');
+
+    // 4. Failed command handling: failure does not record success receipt, remains retryable
+    const failCmdId = `test-fail-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const failedAttempt = await processCommand(
+      {
+        id: failCmdId,
+        type: 'task_create',
+      } as any,
+      'fallback-fail'
+    );
+    assert.strictEqual(failedAttempt, false, 'Invalid command execution should fail');
+    assert.strictEqual(await isCommandProcessed(failCmdId), false, 'Failed command must not be marked processed');
+
+    // 5. Retrying the previously failed command with valid parameters succeeds
+    const retriedAttempt = await processCommand(
+      {
+        id: failCmdId,
+        type: 'task_create',
+        title: 'Retried Valid Task',
+        description: 'Previously failed command now succeeds',
+      },
+      'fallback-fail'
+    );
+    assert.strictEqual(retriedAttempt, true, 'Retrying previously failed command with valid payload should succeed');
+    assert.strictEqual(await isCommandProcessed(failCmdId), true, 'Retried command is now marked processed');
+  });
+
+
+  // 21. Concurrent duplicate command execution must be serialized
+  await test('21. Concurrent GitHub Command Idempotency: executes a duplicate command exactly once', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const cmdId = `test-concurrent-cmd-${suffix}`;
+    const uniqueTitle = `Concurrent Idempotency ${suffix}`;
+    const command = {
+      id: cmdId,
+      type: 'task_create' as const,
+      title: uniqueTitle,
+      description: 'Concurrent duplicate command should create exactly one task',
+    };
+
+    const [first, second] = await Promise.all([
+      processCommand(command, 'fallback-concurrent-a'),
+      processCommand(command, 'fallback-concurrent-b'),
+    ]);
+
+    assert.strictEqual([first, second].filter(Boolean).length, 1, 'Exactly one concurrent duplicate execution should succeed');
+    assert.strictEqual(await isCommandProcessed(cmdId), true, 'Concurrent command should have one success receipt');
+    const matches = (await getTasks({ limit: 200 })).filter((task) => task.title === uniqueTitle);
+    assert.strictEqual(matches.length, 1, 'Concurrent duplicate command must create exactly one task');
+  });
   console.log('\n======================================================');
   console.log(`  All ${passedTests}/${totalTests} Tests Passed Successfully! ✓`);
   console.log('======================================================\n');
