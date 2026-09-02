@@ -30,7 +30,7 @@ async function resetAlarm() {
   if (!config.enabled) return;
   const periodInMinutes = Math.max(0.5, Number(config.intervalMinutes) || 1);
   await chrome.alarms.create(ALARM_NAME, {
-    delayInMinutes: 0.1,
+    delayInMinutes: 0.5,
     periodInMinutes,
   });
 }
