@@ -1,9 +1,0 @@
-{
-  "id": "review-task-13-final",
-  "type": "task_review",
-  "created_by": "chatgpt",
-  "task_id": "TASK-13",
-  "decision": "approve",
-  "summary": "Approved after Studio completed the project-bound task composer UI sync and reported successful lint, build, preview, and health verification.",
-  "tests_verified": true
-}
