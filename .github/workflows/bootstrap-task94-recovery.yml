@@ -27,21 +27,35 @@ jobs:
           const cp = require('child_process');
           const crypto = require('crypto');
           const path = require('path');
-          const raw = fs.readFileSync('/tmp/task94-recovery.json', 'utf8');
+          let raw = fs.readFileSync('/tmp/task94-recovery.json', 'utf8');
+
+          function replaceOnceStrict(source, bad, good, label) {
+            const first = source.indexOf(bad);
+            if (first < 0 || source.indexOf(bad, first + bad.length) >= 0) {
+              throw new Error(`Expected exactly one ${label} transport marker`);
+            }
+            return source.slice(0, first) + good + source.slice(first + bad.length);
+          }
+
+          const commandMetaBad = '"\\n    },\\n    {\\n      "path": "server/githubCommandBus.ts",\\n      "operation": "update",\\n      "base_sha": "bd71536710c4b6f61a25173b1bb121852fc6a860",\\n      "content": "';
+          const commandMetaGood = '"\n    },\n    {\n      "path": "server/githubCommandBus.ts",\n      "operation": "update",\n      "base_sha": "bd71536710c4b6f61a25173b1bb121852fc6a860",\n      "content": "';
+          raw = replaceOnceStrict(raw, commandMetaBad, commandMetaGood, 'command metadata');
+
+          const testsMetaBad = '"\\n    },\\n    {\\n      "path": "tests/bridge.test.ts",\\n      "operation": "update",\\n      "base_sha": "c1616d751e6a3db4e88dec8071f5d1118743d391",\\n      "content": "';
+          const testsMetaGood = '"\n    },\n    {\n      "path": "tests/bridge.test.ts",\n      "operation": "update",\n      "base_sha": "c1616d751e6a3db4e88dec8071f5d1118743d391",\n      "content": "';
+          raw = replaceOnceStrict(raw, testsMetaBad, testsMetaGood, 'tests metadata');
+
+          raw = replaceOnceStrict(raw, '"\\n    }\\n  ]\\n}\\n', '"\n    }\n  ]\n}\n', 'payload ending');
+
           let packet;
           try {
             packet = JSON.parse(raw);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             console.error('JSON_PARSE_ERROR:', msg);
-            const match = msg.match(/position (\d+)/);
-            if (match) {
-              const pos = Number(match[1]);
-              const ctx = raw.slice(Math.max(0, pos - 180), pos + 180);
-              console.error('JSON_PARSE_CONTEXT_HEX:', Buffer.from(ctx, 'utf8').toString('hex'));
-            }
             process.exit(22);
           }
+
           if (packet.task_id !== 'TASK-94') throw new Error('Unexpected task id');
           const arts = packet.artifacts;
           const expected = new Map([
@@ -50,6 +64,13 @@ jobs:
             ['tests/bridge.test.ts', { base: 'c1616d751e6a3db4e88dec8071f5d1118743d391', next: 'b303aadba4bb31b14666065e4dde8516192dc966' }],
           ]);
           if (!Array.isArray(arts) || arts.length !== expected.size) throw new Error('Unexpected TASK-94 artifact count');
+
+          const dbArt = arts.find(a => a.path === 'server/db.ts');
+          const busArt = arts.find(a => a.path === 'server/githubCommandBus.ts');
+          if (!dbArt || !busArt) throw new Error('Missing expected recovery artifacts');
+          dbArt.content = replaceOnceStrict(dbArt.content, 'entity_id: id,\n     details:', 'entity_id: id,\n    details:', 'db whitespace repair');
+          busArt.content = replaceOnceStrict(busArt.content, 'Only remote  files that', 'Only remote files that', 'command bus whitespace repair');
+
           for (const a of arts) {
             const exp = expected.get(a.path);
             if (!exp || a.operation !== 'update' || typeof a.content !== 'string' || a.base_sha !== exp.base) {
