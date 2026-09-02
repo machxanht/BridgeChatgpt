@@ -9,6 +9,7 @@ import { handleMcpRequest } from './server/mcp.js';
 import { startGeminiWorker, getGeminiWorkerConfig } from './server/geminiWorker.js';
 import { requireAuth } from './server/auth.js';
 import { studioRelayRouter } from './server/studioRelay.js';
+import { studioSessionPairingGuard } from './server/studioSessionPairingGuard.js';
 import { reviewPacketsRouter } from './server/reviewPackets.js';
 import { startGitHubCommandBus } from './server/githubCommandBus.js';
 import { batchRouter } from './server/batchRoutes.js';
@@ -79,7 +80,9 @@ async function startServer() {
 
   // External Google AI Studio Build-mode relay. It never calls Gemini itself;
   // it only exchanges task/state data with an authenticated Studio client.
-  app.use('/api/studio-relay', requireAuth, studioRelayRouter);
+  // The pairing guard resolves a single registered Studio session automatically
+  // and blocks ambiguous multi-session claims unless agent_instance_id is explicit.
+  app.use('/api/studio-relay', requireAuth, studioSessionPairingGuard, studioRelayRouter);
 
   // Batch/epic orchestration: DAG scheduling, leases, retry/review limits and dashboard.
   app.use('/api/batches', requireAuth, batchRouter);
