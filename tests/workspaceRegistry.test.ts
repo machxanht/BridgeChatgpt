@@ -8,6 +8,7 @@ import {
   registerAgentInstance,
   upsertWorkspace,
 } from '../server/workspaceRegistry.js';
+import { resolveStudioSessionSelection } from '../server/studioSessionPairingGuard.js';
 import { attachTaskBinding, extractTaskBinding } from '../server/taskBinding.js';
 import type { ProjectConfig } from '../src/types.js';
 
@@ -31,6 +32,9 @@ try {
   const initial = await getWorkspaceRegistry(project);
   assert.strictEqual(initial.workspaces.length, 1);
   assert.strictEqual(initial.workspaces[0].project_id, 'proj-default');
+
+  const legacySelection = resolveStudioSessionSelection(initial, {});
+  assert.strictEqual(legacySelection.mode, 'legacy');
 
   const second = await upsertWorkspace(project, {
     workspace_id: 'workspace-khmer',
@@ -62,17 +66,56 @@ try {
   });
   assert.strictEqual(studio.project_id, 'proj-default');
 
+  const singleSnapshot = await getWorkspaceRegistry(project);
+  const singleSelection = resolveStudioSessionSelection(singleSnapshot, {});
+  assert.strictEqual(singleSelection.mode, 'resolved');
+  assert.strictEqual(singleSelection.instance?.agent_instance_id, 'studio-b-03');
+
   const rebound = await bindAgentInstance(project, {
     agent_instance_id: 'studio-b-03',
     workspace_id: 'workspace-khmer',
   });
   assert.strictEqual(rebound.project_id, 'project-khmer');
 
-  const snapshot = await getWorkspaceRegistry(project);
+  let snapshot = await getWorkspaceRegistry(project);
   const khmer = snapshot.workspaces.find(item => item.workspace_id === 'workspace-khmer');
   assert.ok(khmer);
   assert.strictEqual(khmer!.chatgpt_instances.length, 1);
   assert.strictEqual(khmer!.studio_instances.length, 1);
+
+  const khmerSingle = resolveStudioSessionSelection(snapshot, { workspace_id: 'workspace-khmer' });
+  assert.strictEqual(khmerSingle.mode, 'resolved');
+  assert.strictEqual(khmerSingle.instance?.agent_instance_id, 'studio-b-03');
+
+  await registerAgentInstance(project, {
+    agent_instance_id: 'studio-b-04',
+    provider: 'google-ai-studio',
+    workspace_id: 'workspace-khmer',
+    project_id: 'project-khmer',
+    account_label: 'account-b@example.com',
+    session_label: 'G-04',
+    status: 'idle',
+  });
+
+  snapshot = await getWorkspaceRegistry(project);
+  const ambiguous = resolveStudioSessionSelection(snapshot, { workspace_id: 'workspace-khmer' });
+  assert.strictEqual(ambiguous.mode, 'ambiguous');
+  assert.strictEqual(ambiguous.candidates.length, 2);
+
+  const explicit = resolveStudioSessionSelection(snapshot, {
+    workspace_id: 'workspace-khmer',
+    agent_instance_id: 'studio-b-04',
+  });
+  assert.strictEqual(explicit.mode, 'resolved');
+  assert.strictEqual(explicit.instance?.session_label, 'G-04');
+
+  assert.throws(
+    () => resolveStudioSessionSelection(snapshot, {
+      workspace_id: initial.workspaces[0].workspace_id,
+      agent_instance_id: 'studio-b-04',
+    }),
+    /belongs to workspace-khmer/,
+  );
 
   const encoded = attachTaskBinding('Do the work.', {
     version: 1,
