@@ -14,13 +14,15 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect AI Studio preview cookie challenge
+      - name: Probe AI Studio preview with cookie jar
         env:
           BRIDGE_BASE_URL: https://ais-dev-sghukhn46uckog6l7pfzyw-334331188248.asia-east1.run.app
         run: |
           set -euo pipefail
-          curl -sS -D /tmp/headers.txt --connect-timeout 15 --max-time 30 -o /tmp/body.html "$BRIDGE_BASE_URL/api/review-packets" || true
-          echo '--- headers ---'
-          sed -n '1,80p' /tmp/headers.txt
-          echo '--- body prefix ---'
-          sed -n '1,120p' /tmp/body.html
+          curl -sS -c /tmp/cookies.txt --connect-timeout 15 --max-time 30 -o /tmp/first.out "$BRIDGE_BASE_URL/api/review-packets" || true
+          meta=$(curl -sS -b /tmp/cookies.txt -c /tmp/cookies.txt -L --connect-timeout 15 --max-time 30 -o /tmp/final.out -w '%{http_code}|%{url_effective}|%{content_type}' "$BRIDGE_BASE_URL/api/review-packets")
+          echo "Bridge cookie-jar probe: $meta"
+          echo '--- cookie jar ---'
+          sed -n '1,80p' /tmp/cookies.txt
+          echo '--- final prefix ---'
+          sed -n '1,80p' /tmp/final.out
