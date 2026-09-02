@@ -24,7 +24,7 @@ jobs:
           git fetch origin recovery/task94-hardening
           test "$(git rev-parse origin/recovery/task94-hardening)" = "77103b34625d8d6f82982cdeca18c46dfc84dd9c"
           git checkout origin/recovery/task94-hardening -- server/db.ts server/githubCommandBus.ts tests/bridge.test.ts
-          changed="$(git diff --name-only | sort)"
+          changed="$(git diff --cached --name-only | sort)"
           expected="$(printf '%s\n' server/db.ts server/githubCommandBus.ts tests/bridge.test.ts | sort)"
           test "$changed" = "$expected" || { echo "Unexpected promoted files:"; echo "$changed"; exit 21; }
 
@@ -35,7 +35,6 @@ jobs:
 
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add server/db.ts server/githubCommandBus.ts tests/bridge.test.ts
           git rm --ignore-unmatch bridge-bus/inbox/bootstrap-task94-to-branch.json
           git commit -m 'fix: durable IDs and concurrent command idempotency'
           git push origin HEAD:main
