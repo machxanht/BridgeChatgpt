@@ -32,7 +32,13 @@ jobs:
           try {
             packet = JSON.parse(raw);
           } catch (err) {
-            console.error('JSON_PARSE_ERROR:', err instanceof Error ? err.message : String(err));
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error('JSON_PARSE_ERROR:', msg);
+            const match = msg.match(/position (\d+)/);
+            if (match) {
+              const pos = Number(match[1]);
+              console.error('JSON_PARSE_CONTEXT:', JSON.stringify(raw.slice(Math.max(0, pos - 180), pos + 180)));
+            }
             process.exit(22);
           }
           if (packet.task_id !== 'TASK-94') throw new Error('Unexpected task id');
