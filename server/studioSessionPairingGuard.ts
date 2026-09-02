@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { getProject } from './db.js';
+import { getResourceRegistry } from './resourceRegistry.js';
 import {
   getWorkspaceRegistry,
   type AgentInstanceRecord,
@@ -102,6 +103,11 @@ function isIdentitySensitivePath(path: string) {
 
 /**
  * Resolve a Studio tab/session before studioRelay touches the registry.
+ * Primary identity: AI Studio app URL id (studio_app_id/resource_id) when supplied.
+ * This lets the user configure only repo URL + Studio URL in Bridge; internal
+ * workspace/agent ids remain an implementation detail.
+ *
+ * Backward compatible fallback:
  * - 0 Studio sessions in a workspace: preserve the legacy fallback.
  * - 1 Studio session: inject that exact registered identity automatically.
  * - >1 Studio sessions: reject ambiguous identity-sensitive requests unless
@@ -116,15 +122,68 @@ export async function studioSessionPairingGuard(req: Request, res: Response, nex
   try {
     const project = await getProject();
     const snapshot = await getWorkspaceRegistry(project);
+
+    let requestedWorkspaceId = requestValue(req, 'workspace_id');
+    let requestedInstanceId = requestValue(req, 'agent_instance_id');
+    const studioAppId = requestValue(req, 'studio_app_id') || requestValue(req, 'resource_id');
+
+    if (studioAppId) {
+      const resources = await getResourceRegistry(project);
+      const matches = resources.workspaces.flatMap(workspace => workspace.studio_targets).filter(target => target.resource_id === studioAppId);
+      if (matches.length === 0) {
+        res.status(404).json({
+          ok: false,
+          error: `AI Studio app id ${studioAppId} is not registered in Bridge. Add its AI Studio URL to Project Router first.`,
+          code: 'STUDIO_APP_NOT_REGISTERED',
+          studio_app_id: studioAppId,
+        });
+        return;
+      }
+      if (matches.length > 1) {
+        res.status(409).json({
+          ok: false,
+          error: `AI Studio app id ${studioAppId} is mapped more than once. Keep one project mapping per app URL.`,
+          code: 'STUDIO_APP_MAPPING_AMBIGUOUS',
+          studio_app_id: studioAppId,
+        });
+        return;
+      }
+
+      const target = matches[0];
+      if (requestedWorkspaceId && requestedWorkspaceId !== target.workspace_id) {
+        res.status(409).json({
+          ok: false,
+          error: `AI Studio app ${studioAppId} belongs to ${target.workspace_id}/${target.project_id}, not ${requestedWorkspaceId}.`,
+          code: 'STUDIO_APP_WRONG_PROJECT',
+        });
+        return;
+      }
+      if (requestedInstanceId && requestedInstanceId !== target.agent_instance_id) {
+        res.status(409).json({
+          ok: false,
+          error: `AI Studio app ${studioAppId} maps to a different internal Bridge identity.`,
+          code: 'STUDIO_APP_IDENTITY_CONFLICT',
+        });
+        return;
+      }
+
+      requestedWorkspaceId = target.workspace_id;
+      requestedInstanceId = target.agent_instance_id;
+      inject(req, 'workspace_id', target.workspace_id);
+      inject(req, 'project_id', target.project_id);
+      inject(req, 'agent_instance_id', target.agent_instance_id);
+      inject(req, 'session_label', target.label);
+    }
+
     const selection = resolveStudioSessionSelection(snapshot, {
-      workspace_id: requestValue(req, 'workspace_id'),
-      agent_instance_id: requestValue(req, 'agent_instance_id'),
+      workspace_id: requestedWorkspaceId,
+      agent_instance_id: requestedInstanceId,
     });
 
     if (selection.mode === 'ambiguous') {
       res.status(409).json({
         ok: false,
-        error: `Workspace ${selection.workspace_id} has multiple Google AI Studio sessions. Send an explicit agent_instance_id.`,
+        error: `Workspace ${selection.workspace_id} has multiple Google AI Studio sessions. Send studio_app_id (preferred) or an explicit agent_instance_id.`,
         code: 'STUDIO_SESSION_AMBIGUOUS',
         workspace_id: selection.workspace_id,
         candidates: selection.candidates.map(instance => ({
