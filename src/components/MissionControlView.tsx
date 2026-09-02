@@ -1,17 +1,139 @@
 import React, { useState } from 'react';
-import { Brain, Bot, CheckCircle2, Clock, Code2, Cpu, FolderGit2, GitBranch, Pause, Play, Send, Sparkles, Square, Terminal, User, XCircle, Zap, AlertTriangle } from 'lucide-react';
+import { Brain, Bot, Clock, Cpu, FolderGit2, GitBranch, Pause, Play, Send, Square, Terminal, User, XCircle, Zap } from 'lucide-react';
 import { AgentDisplayInfo, MissionControlData, TargetAgentType, WorkspaceState } from '../types.js';
-interface Props { state:WorkspaceState; missionControl:MissionControlData; onSendCommand:(c:string,t:TargetAgentType)=>Promise<void>; onPauseAll:()=>Promise<void>; onResumeAll:()=>Promise<void>; onStopAgent:(a:string)=>Promise<void>; onCancelTask:(id?:string)=>Promise<void>; onTriggerAutoReviewCycle:()=>Promise<void>; isAutoReviewing:boolean; onOpenAdvancedTab:(tab:string)=>void }
-export const MissionControlView:React.FC<Props>=({missionControl,onSendCommand,onPauseAll,onResumeAll,onStopAgent,onCancelTask,onTriggerAutoReviewCycle,isAutoReviewing,onOpenAdvancedTab})=>{
- const {repository,agents,current_job,recent_activities,emergency_state}=missionControl; const [commandText,setCommandText]=useState(''); const [targetAgent,setTargetAgent]=useState<TargetAgentType>('all'); const [busy,setBusy]=useState<string|null>(null);
- const badge=(s:AgentDisplayInfo['connection_status'])=>{const m:any={working:['ĐANG LÀM VIỆC','text-amber-300'],reviewing:['ĐANG ĐÁNH GIÁ','text-sky-300'],connected:['ĐÃ KẾT NỐI','text-emerald-300'],waiting:['ĐANG CHỜ','text-indigo-300'],stale:['CHẬM / HẾT HẠN','text-amber-400'],blocked:['BỊ CHẶN','text-rose-300'],disconnected:['MẤT KẾT NỐI','text-slate-400']};const x=m[s]||m.disconnected;return <span className={`px-2.5 py-1 rounded-full text-xs font-mono border border-white/10 ${x[1]}`}>● {x[0]}</span>};
- const icon=(a:string)=>a==='chatgpt'?<Brain className="w-5 h-5 text-indigo-300"/>:a==='gemini'?<Cpu className="w-5 h-5 text-cyan-300"/>:a==='human'?<User className="w-5 h-5 text-purple-300"/>:<Bot className="w-5 h-5"/>;
- const send=async(e:React.FormEvent)=>{e.preventDefault();if(!commandText.trim())return;setBusy('send');try{await onSendCommand(commandText.trim(),targetAgent);setCommandText('')}finally{setBusy(null)}};
- return <div className="space-y-6">
-  <section className="glass-card rounded-2xl p-5 border border-white/10"><div className="flex justify-between gap-4 flex-wrap"><div><div className="text-xs font-mono text-slate-400 flex gap-2 items-center"><FolderGit2 className="w-4 h-4 text-cyan-400"/> KHO LƯU TRỮ ĐANG HOẠT ĐỘNG</div><div className="flex gap-3 items-center mt-2"><h2 className="font-bold text-white text-xl">{repository.name}</h2><span className="text-cyan-300 text-xs font-mono"><GitBranch className="w-3 inline"/> {repository.branch}</span></div><div className="text-xs text-slate-400 mt-2">{repository.status_clean?'✓ Working tree clean':`⚠ ${repository.modified_count} tệp thay đổi`} · Commit: <b className="text-cyan-300">{repository.last_commit_hash}</b> {repository.last_commit_message}</div></div><button onClick={onTriggerAutoReviewCycle} disabled={isAutoReviewing} className="px-3 py-2 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-200 text-xs"><Zap className="w-3 inline"/> {isAutoReviewing?'Đang xử lý...':'Kích hoạt Auto-Review'}</button></div></section>
-  <section className="glass-card rounded-2xl p-5 border border-white/10"><div className="text-xs font-mono text-cyan-300">CÔNG VIỆC HIỆN TẠI {current_job?.id||''}</div><h3 className="font-bold text-white mt-1">{current_job?.title||'Chưa có công việc nào đang xử lý. Toàn bộ hệ thống đang sẵn sàng.'}</h3>{current_job&&<><p className="text-xs text-slate-400 mt-1">{current_job.description}</p><div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mt-4">{current_job.stages.map(s=><div key={s.id} className={`p-3 rounded-xl border text-xs ${s.status==='current'?'border-cyan-400 bg-cyan-500/15':s.status==='completed'?'border-emerald-500/30 bg-emerald-950/40':'border-white/5 bg-black/30 text-slate-500'}`}><b>{s.label}</b><div className="text-[10px] mt-1">{s.description}</div></div>)}</div><button onClick={()=>onCancelTask(current_job.id)} className="mt-3 text-xs text-rose-300"><XCircle className="w-3 inline"/> Hủy việc</button></>}</section>
-  <section><div className="flex justify-between mb-3"><h3 className="text-sm font-mono text-white">TRẠNG THÁI ĐỘI NGŨ AI AGENT ({agents.length})</h3><span className="text-xs text-slate-400">Trạng thái theo runtime thực tế</span></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{agents.map(a=><div key={a.id} className="glass-card rounded-2xl p-5 border border-white/10"><div className="flex justify-between"><div className="flex gap-3">{icon(a.avatar_type)}<div><b className="text-white">{a.name}</b><div className="text-xs text-slate-400">{a.role}</div><div className="text-[11px] text-cyan-300 mt-1">Tài khoản: {a.account_label||'Chưa xác định'}</div><div className="text-[10px] text-slate-500">Nguồn: {a.account_source||'Không có dữ liệu'}</div></div></div>{badge(a.connection_status)}</div><div className="bg-black/40 rounded-xl p-3 mt-4 text-xs"><div className="text-slate-500">HOẠT ĐỘNG HIỆN TẠI:</div><b className="text-slate-200">{a.current_activity_detail}</b><div className="border-t border-white/5 mt-2 pt-2 text-cyan-300">{a.current_step_text}</div><div className="mt-2 flex justify-between text-slate-500"><span><Clock className="w-3 inline"/> Hoạt động gần nhất</span><span>{a.last_seen_text}</span></div></div><div className="mt-3 text-[11px] font-mono text-slate-400">Bridge: <b className="text-cyan-300">{a.quota.requests_count} yêu cầu · {a.quota.input_tokens+a.quota.output_tokens} tokens</b><div className="text-[10px] mt-1">{a.quota.provider_quota_text}</div></div>{['connected','working','reviewing'].includes(a.connection_status)&&<button onClick={()=>onStopAgent(a.id)} className="mt-3 text-xs text-rose-300"><Square className="w-3 inline"/> Dừng {a.name}</button>}</div>)}</div></section>
-  <section className="glass-card rounded-2xl p-5 border border-white/10"><h3 className="text-sm font-mono text-white mb-3"><Clock className="w-4 inline text-cyan-400"/> HOẠT ĐỘNG GẦN ĐÂY</h3><div className="space-y-2">{recent_activities.slice(0,8).map(x=><div key={x.id} className="p-2 rounded-xl bg-black/30 text-xs font-mono"><span className="text-slate-500">{x.time}</span> <b className="text-cyan-300">{x.agent.toUpperCase()}</b> <span className="text-slate-200">{x.text}</span></div>)}</div><button onClick={()=>onOpenAdvancedTab('activity')} className="text-xs text-cyan-400 mt-3">Xem toàn bộ nhật ký →</button></section>
-  <section className="glass-card rounded-2xl p-5 border border-white/10"><div className="flex justify-between flex-wrap gap-3"><h3 className="font-mono text-white"><Terminal className="w-5 inline text-cyan-400"/> TRUNG TÂM LỆNH TOÀN CẦU</h3><button onClick={async()=>{setBusy('pause');try{emergency_state.paused?await onResumeAll():await onPauseAll()}finally{setBusy(null)}} className="px-3 py-2 rounded-lg bg-rose-500/20 text-rose-200 text-xs">{emergency_state.paused?<><Play className="w-3 inline"/> Tiếp tục</>:<><Pause className="w-3 inline"/> Tạm dừng tất cả</>}</button></div><form onSubmit={send} className="flex flex-col sm:flex-row gap-2 mt-4"><select value={targetAgent} onChange={e=>setTargetAgent(e.target.value as TargetAgentType)} className="px-3 py-3 bg-black/50 rounded-xl text-xs"><option value="all">📢 Tất cả Agent</option><option value="chatgpt">🧠 ChatGPT</option><option value="gemini">⚡ Gemini</option></select><input value={commandText} onChange={e=>setCommandText(e.target.value)} placeholder="Ra lệnh cho đội ngũ AI..." className="flex-1 px-4 py-3 bg-black/50 rounded-xl text-sm"/><button disabled={busy==='send'} className="px-6 py-3 bg-cyan-500 text-slate-950 rounded-xl font-bold"><Send className="w-4 inline"/> Gửi lệnh</button></form></section>
- </div>
+
+interface Props {
+  state: WorkspaceState;
+  missionControl: MissionControlData;
+  onSendCommand: (command: string, target: TargetAgentType) => Promise<void>;
+  onPauseAll: () => Promise<void>;
+  onResumeAll: () => Promise<void>;
+  onStopAgent: (agent: string) => Promise<void>;
+  onCancelTask: (id?: string) => Promise<void>;
+  onTriggerAutoReviewCycle: () => Promise<void>;
+  isAutoReviewing: boolean;
+  onOpenAdvancedTab: (tab: string) => void;
+}
+
+export const MissionControlView: React.FC<Props> = ({
+  missionControl,
+  onSendCommand,
+  onPauseAll,
+  onResumeAll,
+  onStopAgent,
+  onCancelTask,
+  onTriggerAutoReviewCycle,
+  isAutoReviewing,
+  onOpenAdvancedTab,
+}) => {
+  const { repository, agents, current_job, recent_activities, emergency_state } = missionControl;
+  const [commandText, setCommandText] = useState('');
+  const [targetAgent, setTargetAgent] = useState<TargetAgentType>('all');
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const badge = (status: AgentDisplayInfo['connection_status']) => {
+    const labels: Record<string, [string, string]> = {
+      working: ['ĐANG LÀM VIỆC', 'text-amber-300'],
+      reviewing: ['ĐANG ĐÁNH GIÁ', 'text-sky-300'],
+      connected: ['ĐÃ KẾT NỐI', 'text-emerald-300'],
+      waiting: ['ĐANG CHỜ', 'text-indigo-300'],
+      stale: ['CHẬM / HẾT HẠN', 'text-amber-400'],
+      blocked: ['BỊ CHẶN', 'text-rose-300'],
+      disconnected: ['MẤT KẾT NỐI', 'text-slate-400'],
+    };
+    const item = labels[status] || labels.disconnected;
+    return <span className={`px-2.5 py-1 rounded-full text-xs font-mono border border-white/10 ${item[1]}`}>● {item[0]}</span>;
+  };
+
+  const icon = (avatar: string) => {
+    if (avatar === 'chatgpt') return <Brain className="w-5 h-5 text-indigo-300" />;
+    if (avatar === 'gemini') return <Cpu className="w-5 h-5 text-cyan-300" />;
+    if (avatar === 'human') return <User className="w-5 h-5 text-purple-300" />;
+    return <Bot className="w-5 h-5" />;
+  };
+
+  const send = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!commandText.trim()) return;
+    setBusy('send');
+    try {
+      await onSendCommand(commandText.trim(), targetAgent);
+      setCommandText('');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <section className="glass-card rounded-2xl p-5 border border-white/10">
+        <div className="flex justify-between gap-4 flex-wrap">
+          <div>
+            <div className="text-xs font-mono text-slate-400 flex gap-2 items-center"><FolderGit2 className="w-4 h-4 text-cyan-400" /> KHO LƯU TRỮ ĐANG HOẠT ĐỘNG</div>
+            <div className="flex gap-3 items-center mt-2"><h2 className="font-bold text-white text-xl">{repository.name}</h2><span className="text-cyan-300 text-xs font-mono"><GitBranch className="w-3 inline" /> {repository.branch}</span></div>
+            <div className="text-xs text-slate-400 mt-2">{repository.status_clean ? '✓ Working tree clean' : `⚠ ${repository.modified_count} tệp thay đổi`} · Commit: <b className="text-cyan-300">{repository.last_commit_hash}</b> {repository.last_commit_message}</div>
+          </div>
+          <button onClick={onTriggerAutoReviewCycle} disabled={isAutoReviewing} className="px-3 py-2 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-200 text-xs"><Zap className="w-3 inline" /> {isAutoReviewing ? 'Đang xử lý...' : 'Kích hoạt Auto-Review'}</button>
+        </div>
+      </section>
+
+      <section className="glass-card rounded-2xl p-5 border border-white/10">
+        <div className="text-xs font-mono text-cyan-300">CÔNG VIỆC HIỆN TẠI {current_job?.id || ''}</div>
+        <h3 className="font-bold text-white mt-1">{current_job?.title || 'Chưa có công việc nào đang xử lý. Toàn bộ hệ thống đang sẵn sàng.'}</h3>
+        {current_job && (
+          <>
+            <p className="text-xs text-slate-400 mt-1">{current_job.description}</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mt-4">
+              {current_job.stages.map(stage => (
+                <div key={stage.id} className={`p-3 rounded-xl border text-xs ${stage.status === 'current' ? 'border-cyan-400 bg-cyan-500/15' : stage.status === 'completed' ? 'border-emerald-500/30 bg-emerald-950/40' : 'border-white/5 bg-black/30 text-slate-500'}`}>
+                  <b>{stage.label}</b><div className="text-[10px] mt-1">{stage.description}</div>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => onCancelTask(current_job.id)} className="mt-3 text-xs text-rose-300"><XCircle className="w-3 inline" /> Hủy việc</button>
+          </>
+        )}
+      </section>
+
+      <section>
+        <div className="flex justify-between mb-3"><h3 className="text-sm font-mono text-white">TRẠNG THÁI ĐỘI NGŨ AI AGENT ({agents.length})</h3><span className="text-xs text-slate-400">Trạng thái theo runtime thực tế</span></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {agents.map(agent => {
+            const stoppable = ['connected', 'working', 'reviewing'].includes(agent.connection_status);
+            return (
+              <div key={agent.id} className="glass-card rounded-2xl p-5 border border-white/10">
+                <div className="flex justify-between gap-3">
+                  <div className="flex gap-3">{icon(agent.avatar_type)}<div><b className="text-white">{agent.name}</b><div className="text-xs text-slate-400">{agent.role}</div><div className="text-[11px] text-cyan-300 mt-1">Tài khoản: {agent.account_label || 'Chưa xác định'}</div><div className="text-[10px] text-slate-500">Nguồn: {agent.account_source || 'Không có dữ liệu'}</div></div></div>
+                  {badge(agent.connection_status)}
+                </div>
+                <div className="bg-black/40 rounded-xl p-3 mt-4 text-xs"><div className="text-slate-500">HOẠT ĐỘNG HIỆN TẠI:</div><b className="text-slate-200">{agent.current_activity_detail}</b><div className="border-t border-white/5 mt-2 pt-2 text-cyan-300">{agent.current_step_text}</div><div className="mt-2 flex justify-between text-slate-500"><span><Clock className="w-3 inline" /> Hoạt động gần nhất</span><span>{agent.last_seen_text}</span></div></div>
+                <div className="mt-3 text-[11px] font-mono text-slate-400">Bridge: <b className="text-cyan-300">{agent.quota.requests_count} yêu cầu · {agent.quota.input_tokens + agent.quota.output_tokens} tokens</b><div className="text-[10px] mt-1">{agent.quota.provider_quota_text}</div></div>
+                {stoppable && <button onClick={() => onStopAgent(agent.id)} className="mt-3 text-xs text-rose-300"><Square className="w-3 inline" /> Dừng {agent.name}</button>}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="glass-card rounded-2xl p-5 border border-white/10">
+        <h3 className="text-sm font-mono text-white mb-3"><Clock className="w-4 inline text-cyan-400" /> HOẠT ĐỘNG GẦN ĐÂY</h3>
+        <div className="space-y-2">{recent_activities.slice(0, 8).map(item => <div key={item.id} className="p-2 rounded-xl bg-black/30 text-xs font-mono"><span className="text-slate-500">{item.time}</span> <b className="text-cyan-300">{item.agent.toUpperCase()}</b> <span className="text-slate-200">{item.text}</span></div>)}</div>
+        <button onClick={() => onOpenAdvancedTab('activity')} className="text-xs text-cyan-400 mt-3">Xem toàn bộ nhật ký →</button>
+      </section>
+
+      <section className="glass-card rounded-2xl p-5 border border-white/10">
+        <div className="flex justify-between flex-wrap gap-3">
+          <h3 className="font-mono text-white"><Terminal className="w-5 inline text-cyan-400" /> TRUNG TÂM LỆNH TOÀN CẦU</h3>
+          <button onClick={async () => { setBusy('pause'); try { if (emergency_state.paused) await onResumeAll(); else await onPauseAll(); } finally { setBusy(null); } }} disabled={busy === 'pause'} className="px-3 py-2 rounded-lg bg-rose-500/20 text-rose-200 text-xs">
+            {emergency_state.paused ? <><Play className="w-3 inline" /> Tiếp tục</> : <><Pause className="w-3 inline" /> Tạm dừng tất cả</>}
+          </button>
+        </div>
+        <form onSubmit={send} className="flex flex-col sm:flex-row gap-2 mt-4">
+          <select value={targetAgent} onChange={event => setTargetAgent(event.target.value as TargetAgentType)} className="px-3 py-3 bg-black/50 rounded-xl text-xs"><option value="all">📢 Tất cả Agent</option><option value="chatgpt">🧠 ChatGPT</option><option value="gemini">⚡ Gemini</option></select>
+          <input value={commandText} onChange={event => setCommandText(event.target.value)} placeholder="Ra lệnh cho đội ngũ AI..." className="flex-1 px-4 py-3 bg-black/50 rounded-xl text-sm" />
+          <button disabled={busy === 'send'} className="px-6 py-3 bg-cyan-500 text-slate-950 rounded-xl font-bold"><Send className="w-4 inline" /> Gửi lệnh</button>
+        </form>
+      </section>
+    </div>
+  );
 };
