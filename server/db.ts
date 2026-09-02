@@ -11,6 +11,9 @@ import {
   ProjectConfig,
   TargetAgentType,
   Task,
+  TaskPriority,
+  TaskReviewPayload,
+  WorkflowStateResponse,
   WorkspaceState,
 } from '../src/types.js';
 
@@ -149,9 +152,10 @@ export async function initDatabase(): Promise<Database> {
 
   if (count === 0) {
     const now = new Date().toISOString();
-    const projectName = process.env.PROJECT_NAME || 'Bridge';
+    const projectName = process.env.PROJECT_NAME || 'BridgeChatgpt';
     const projectRoot = process.env.PROJECT_ROOT || '.';
     const defaultBranch = process.env.DEFAULT_BRANCH || 'main';
+    const repositoryUrl = process.env.REPOSITORY_URL || 'https://github.com/machxanht/BridgeChatgpt';
 
     db.run(
       `INSERT INTO projects (id, project_name, project_root, repository_url, default_branch, current_goal, test_command, auto_review, created_at, updated_at)
@@ -160,7 +164,7 @@ export async function initDatabase(): Promise<Database> {
         'proj-default',
         projectName,
         projectRoot,
-        'https://github.com/machxanht/Bridge',
+        repositoryUrl,
         defaultBranch,
         'Establish seamless collaboration between ChatGPT (Reviewer) and Gemini (Coder)',
         'npm run lint',
@@ -174,7 +178,7 @@ export async function initDatabase(): Promise<Database> {
     db.run(
       `INSERT OR REPLACE INTO agent_status (agent, status, current_task_id, last_active_at, message) VALUES
        ('chatgpt', 'idle', NULL, ?, 'Ready to review code, search repository, and create structured tasks.'),
-       ('gemini', 'idle', NULL, ?, 'Ready to receive tasks, edit files, and execute project tests.'),
+       ('gemini', 'idle', NULL, ?, 'Ready to claim tasks, edit files, and execute project tests.'),
        ('human', 'idle', NULL, ?, 'Observing workspace.')`,
       [now, now, now]
     );
@@ -529,6 +533,208 @@ export async function deleteTask(id: string): Promise<boolean> {
   return true;
 }
 
+const PRIORITY_WEIGHTS: Record<TaskPriority, number> = {
+  urgent: 1,
+  high: 2,
+  medium: 3,
+  low: 4,
+};
+
+// Atomic Task Claiming for Execution Agents (e.g. Gemini)
+export async function claimNextTask(agent: AgentType = 'gemini'): Promise<{
+  claimed: boolean;
+  message?: string;
+  task: Task | null;
+}> {
+  const d = await getDb();
+  const allTasks = await getTasks({ assignee: agent });
+  const eligible = allTasks.filter((t) => t.status === 'assigned' || t.status === 'pending');
+
+  if (eligible.length === 0) {
+    return {
+      claimed: false,
+      message: `No pending or assigned tasks available for agent "${agent}".`,
+      task: null,
+    };
+  }
+
+  // Sort by priority (urgent -> high -> medium -> low), then oldest created_at
+  eligible.sort((a, b) => {
+    const weightA = PRIORITY_WEIGHTS[a.priority] || 3;
+    const weightB = PRIORITY_WEIGHTS[b.priority] || 3;
+    if (weightA !== weightB) {
+      return weightA - weightB;
+    }
+    return a.created_at.localeCompare(b.created_at);
+  });
+
+  const selected = eligible[0];
+
+  // Atomically claim the task
+  const now = new Date().toISOString();
+  d.run(
+    `UPDATE tasks SET status = 'working', updated_at = ? WHERE id = ? AND (status = 'assigned' OR status = 'pending')`,
+    [now, selected.id]
+  );
+  persistToDisk();
+
+  const refreshed = await getTask(selected.id);
+  if (!refreshed || refreshed.status !== 'working') {
+    return {
+      claimed: false,
+      message: `Task ${selected.id} was claimed by another worker concurrently.`,
+      task: null,
+    };
+  }
+
+  // Update agent status to working
+  await setAgentStatus({
+    agent: agent as any,
+    status: 'working',
+    current_task_id: selected.id,
+    message: `Actively executing "${selected.title}"`,
+  });
+
+  await logActivity({
+    agent,
+    action: `Claimed task ${selected.id}`,
+    entity_type: 'task',
+    entity_id: selected.id,
+    details: `Priority: ${selected.priority} | "${selected.title}"`,
+  });
+
+  await createMessage({
+    from: agent,
+    to: 'chatgpt',
+    type: 'task_claimed',
+    content: `${agent.toUpperCase()} claimed ${selected.id}: "${selected.title}". Implementation started.`,
+    task_id: selected.id,
+    finding_id: selected.related_finding,
+  });
+
+  return {
+    claimed: true,
+    message: `Successfully claimed task ${selected.id}`,
+    task: refreshed,
+  };
+}
+
+// Explicit Review Submission (ChatGPT or Human Reviewer)
+export async function reviewTask(payload: TaskReviewPayload): Promise<Task> {
+  const task = await getTask(payload.id);
+  if (!task) {
+    throw new Error(`Task ${payload.id} not found`);
+  }
+
+  if (task.status !== 'review') {
+    // Allow reviewing if in working or blocked, but log notice
+    console.warn(`[Review] Task ${payload.id} is in status "${task.status}" rather than "review".`);
+  }
+
+  const reviewer = payload.reviewer || 'chatgpt';
+  const now = new Date().toISOString();
+
+  if (payload.decision === 'approve') {
+    // 1. Approve transition: review -> completed
+    const existingResult = task.result || '';
+    const reviewNote = `\n\n[Review APPROVED by ${reviewer} at ${now}]: ${payload.summary} (Automated tests verified: ${payload.tests_verified ? 'Yes' : 'No'})`;
+    const updated = await updateTask(
+      task.id,
+      {
+        status: 'completed',
+        result: existingResult + reviewNote,
+      },
+      reviewer
+    );
+
+    // If related finding exists, mark as verified
+    if (task.related_finding) {
+      await updateFinding(
+        task.related_finding,
+        {
+          status: 'verified',
+          resolution: `Verified resolved by ${reviewer}: ${payload.summary}`,
+        },
+        reviewer
+      );
+    }
+
+    await setAgentStatus({
+      agent: reviewer,
+      status: 'idle',
+      current_task_id: null,
+      message: `Approved ${task.id}. Ready for next task.`,
+    });
+
+    await setAgentStatus({
+      agent: task.assignee as any,
+      status: 'idle',
+      current_task_id: null,
+      message: `Task ${task.id} completed. Standing by.`,
+    });
+
+    await createMessage({
+      from: reviewer,
+      to: task.assignee,
+      type: 'review_approved',
+      content: `Review APPROVED for ${task.id} ("${task.title}"): ${payload.summary}`,
+      task_id: task.id,
+      finding_id: task.related_finding,
+    });
+
+    return updated;
+  } else {
+    // 2. Request Changes transition: review -> assigned (or pending)
+    const existingResult = task.result || '';
+    const reviewNote = `\n\n[Review CHANGES REQUESTED by ${reviewer} at ${now}]: ${payload.summary}`;
+    const updated = await updateTask(
+      task.id,
+      {
+        status: 'assigned',
+        result: existingResult + reviewNote,
+      },
+      reviewer
+    );
+
+    if (task.related_finding) {
+      await updateFinding(
+        task.related_finding,
+        {
+          status: 'assigned',
+          resolution: `Follow-up needed: ${payload.summary}`,
+        },
+        reviewer
+      );
+    }
+
+    await setAgentStatus({
+      agent: reviewer,
+      status: 'idle',
+      current_task_id: null,
+      message: `Requested changes on ${task.id}. Dispatched back to ${task.assignee}.`,
+    });
+
+    await setAgentStatus({
+      agent: task.assignee as any,
+      status: 'idle',
+      current_task_id: null,
+      message: `Changes requested on ${task.id}. Standing by to claim.`,
+    });
+
+    await createMessage({
+      from: reviewer,
+      to: task.assignee,
+      type: 'review_changes_requested',
+      content: `Review CHANGES REQUESTED for ${task.id} ("${task.title}"): ${payload.summary}. Please address feedback and resubmit.`,
+      task_id: task.id,
+      finding_id: task.related_finding,
+    });
+
+    return updated;
+  }
+}
+
+
 // ---------------- FINDINGS ----------------
 
 export async function getFindings(filter?: { status?: string; severity?: string; assigned_to?: string; limit?: number }): Promise<Finding[]> {
@@ -842,10 +1048,13 @@ export async function createMessage(input: {
 
 // ---------------- AGENT STATUS ----------------
 
+const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
 export async function getAgentStatuses(): Promise<Record<'chatgpt' | 'gemini' | 'human', AgentStatus>> {
   const d = await getDb();
   const stmt = d.prepare('SELECT * FROM agent_status');
-  const result: any = {
+  const nowMs = Date.now();
+  const result: Record<'chatgpt' | 'gemini' | 'human', AgentStatus> = {
     chatgpt: { agent: 'chatgpt', status: 'idle', last_active_at: new Date().toISOString() },
     gemini: { agent: 'gemini', status: 'idle', last_active_at: new Date().toISOString() },
     human: { agent: 'human', status: 'idle', last_active_at: new Date().toISOString() },
@@ -854,11 +1063,18 @@ export async function getAgentStatuses(): Promise<Record<'chatgpt' | 'gemini' | 
   while (stmt.step()) {
     const row = stmt.getAsObject();
     const agent = row.agent as 'chatgpt' | 'gemini' | 'human';
+    const lastActiveAt = row.last_active_at as string;
+    const lastActiveMs = Date.parse(lastActiveAt) || 0;
+    const isWorkingOrReviewing = row.status === 'working' || row.status === 'reviewing';
+    const isStale = isWorkingOrReviewing && (nowMs - lastActiveMs > STALE_THRESHOLD_MS);
+
     result[agent] = {
       agent,
       status: row.status as AgentOperationalStatus,
       current_task_id: (row.current_task_id as string) || null,
-      last_active_at: row.last_active_at as string,
+      last_active_at: lastActiveAt,
+      last_heartbeat_at: lastActiveAt,
+      is_stale: isStale,
       message: (row.message as string) || null,
     };
   }
@@ -902,7 +1118,94 @@ export async function setAgentStatus(input: {
     status: input.status,
     current_task_id: input.current_task_id || null,
     last_active_at: now,
+    last_heartbeat_at: now,
+    is_stale: false,
     message: input.message || null,
+  };
+}
+
+export async function recordHeartbeat(input: {
+  agent: 'chatgpt' | 'gemini' | 'human';
+  task_id?: string | null;
+  status?: AgentOperationalStatus;
+  message?: string | null;
+}): Promise<AgentStatus> {
+  const currentStatuses = await getAgentStatuses();
+  const current = currentStatuses[input.agent];
+  const newStatus = input.status || current?.status || 'idle';
+  const newTaskId = input.task_id !== undefined ? input.task_id : (current?.current_task_id || null);
+  const newMessage = input.message !== undefined ? input.message : (current?.message || null);
+
+  return await setAgentStatus({
+    agent: input.agent,
+    status: newStatus,
+    current_task_id: newTaskId,
+    message: newMessage,
+  });
+}
+
+// Concise workflow state tailored for quick AI decision making
+export async function getWorkflowStateForAgent(agentName: string = 'gemini'): Promise<WorkflowStateResponse> {
+  const normalizedAgent = (agentName || 'gemini').toLowerCase() as 'chatgpt' | 'gemini' | 'human';
+  const project = await getProject();
+  const agents = await getAgentStatuses();
+  const myAgent = agents[normalizedAgent] || {
+    agent: normalizedAgent,
+    status: 'idle',
+    last_active_at: new Date().toISOString(),
+  };
+
+  const tasks = await getTasks({ limit: 50 });
+  const openFindings = (await getFindings({ limit: 50 })).filter((f) => f.status === 'open' || f.status === 'assigned');
+  const recentMessages = await getMessages({ limit: 15 });
+
+  const pendingForMe = tasks.filter((t) => t.assignee === normalizedAgent && (t.status === 'assigned' || t.status === 'pending'));
+  const tasksInReview = tasks.filter((t) => t.status === 'review');
+  const activeTask = myAgent.current_task_id ? tasks.find((t) => t.id === myAgent.current_task_id) || null : null;
+
+  let actionRequired = false;
+  let nextAction: 'claim_task' | 'continue_task' | 'review_task' | 'standby' = 'standby';
+
+  if (normalizedAgent === 'gemini') {
+    if (activeTask && (activeTask.status === 'working' || activeTask.status === 'assigned')) {
+      actionRequired = true;
+      nextAction = 'continue_task';
+    } else if (pendingForMe.length > 0) {
+      actionRequired = true;
+      nextAction = 'claim_task';
+    } else {
+      actionRequired = false;
+      nextAction = 'standby';
+    }
+  } else if (normalizedAgent === 'chatgpt') {
+    if (tasksInReview.length > 0) {
+      actionRequired = true;
+      nextAction = 'review_task';
+    } else {
+      actionRequired = false;
+      nextAction = 'standby';
+    }
+  }
+
+  return {
+    project: {
+      project_name: project.project_name,
+      project_root: project.project_root,
+      repository_url: project.repository_url,
+      default_branch: project.default_branch,
+      current_goal: project.current_goal,
+      test_command: project.test_command,
+    },
+    my_agent: myAgent,
+    action_required: actionRequired,
+    next_action: nextAction,
+    active_task: activeTask,
+    pending_tasks_for_me: pendingForMe,
+    tasks_needing_review: tasksInReview,
+    open_findings: openFindings,
+    recent_messages: recentMessages,
+    agents,
+    server_time: new Date().toISOString(),
   };
 }
 

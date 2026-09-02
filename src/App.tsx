@@ -155,6 +155,36 @@ export default function App() {
     }
   };
 
+  const handleClaimNextTask = async (agent: any = 'gemini') => {
+    try {
+      const res = await fetch('/api/tasks/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent }),
+      });
+      const data = await res.json();
+      fetchWorkspace();
+      return data;
+    } catch (err) {
+      console.error('Error claiming next task:', err);
+    }
+  };
+
+  const handleReviewTask = async (payload: any) => {
+    try {
+      const res = await fetch(`/api/tasks/${payload.id}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      fetchWorkspace();
+      return data;
+    } catch (err) {
+      console.error('Error reviewing task:', err);
+    }
+  };
+
   const handleDeleteTask = async (taskId: string) => {
     try {
       await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
@@ -337,6 +367,8 @@ export default function App() {
             }}
             onUpdateTaskStatus={handleUpdateTaskStatus}
             onDeleteTask={handleDeleteTask}
+            onClaimNextTask={handleClaimNextTask}
+            onReviewTask={handleReviewTask}
           />
         )}
 

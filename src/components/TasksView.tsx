@@ -1,19 +1,24 @@
 import React, { useState } from 'react';
 import {
+  AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   Clock,
   Code2,
   Filter,
   Flame,
+  HandMetal,
   ListTodo,
+  MessageSquare,
   Plus,
+  RefreshCw,
   Search,
   ShieldAlert,
   Trash2,
   User,
   Zap,
 } from 'lucide-react';
-import { AgentType, Finding, Task, TaskPriority, TaskStatus } from '../types.js';
+import { AgentType, Finding, Task, TaskPriority, TaskReviewPayload, TaskStatus } from '../types.js';
 
 interface TasksViewProps {
   tasks: Task[];
@@ -21,6 +26,8 @@ interface TasksViewProps {
   onOpenTaskModal: (task?: Task) => void;
   onUpdateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
   onDeleteTask: (taskId: string) => Promise<void>;
+  onClaimNextTask?: (agent?: AgentType) => Promise<any>;
+  onReviewTask?: (payload: TaskReviewPayload) => Promise<any>;
 }
 
 export const TasksView: React.FC<TasksViewProps> = ({
@@ -29,11 +36,18 @@ export const TasksView: React.FC<TasksViewProps> = ({
   onOpenTaskModal,
   onUpdateTaskStatus,
   onDeleteTask,
+  onClaimNextTask,
+  onReviewTask,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [assigneeFilter, setAssigneeFilter] = useState<string>('all');
   const [selectedTask, setSelectedTask] = useState<Task | null>(tasks[0] || null);
+
+  // Review interaction state
+  const [reviewSummary, setReviewSummary] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [isClaiming, setIsClaiming] = useState(false);
 
   const filteredTasks = tasks.filter((task) => {
     if (statusFilter !== 'all' && task.status !== statusFilter) return false;
@@ -77,6 +91,37 @@ export const TasksView: React.FC<TasksViewProps> = ({
     }
   };
 
+  const handleClaim = async () => {
+    if (!onClaimNextTask) return;
+    setIsClaiming(true);
+    try {
+      const res = await onClaimNextTask('gemini');
+      if (res?.task) {
+        setSelectedTask(res.task);
+      }
+    } finally {
+      setIsClaiming(false);
+    }
+  };
+
+  const handleReviewDecision = async (decision: 'approve' | 'request_changes') => {
+    if (!selectedTask || !onReviewTask) return;
+    setIsSubmittingReview(true);
+    try {
+      const summary = reviewSummary.trim() || (decision === 'approve' ? 'Approved implementation after verification' : 'Changes requested');
+      await onReviewTask({
+        id: selectedTask.id,
+        decision,
+        summary,
+        tests_verified: true,
+        reviewer: 'chatgpt',
+      });
+      setReviewSummary('');
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Bar */}
@@ -88,14 +133,28 @@ export const TasksView: React.FC<TasksViewProps> = ({
           </p>
         </div>
 
-        <button
-          id="new-task-btn"
-          onClick={() => onOpenTaskModal()}
-          className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-semibold transition-all shadow-md shadow-cyan-500/20"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Create Task</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {onClaimNextTask && (
+            <button
+              id="claim-task-btn"
+              onClick={handleClaim}
+              disabled={isClaiming}
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-all disabled:opacity-50 font-mono"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>{isClaiming ? 'Claiming...' : 'Claim Next (Gemini)'}</span>
+            </button>
+          )}
+
+          <button
+            id="new-task-btn"
+            onClick={() => onOpenTaskModal()}
+            className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-semibold transition-all shadow-md shadow-cyan-500/20"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Task</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter Bar */}
@@ -215,6 +274,49 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 </div>
               </div>
 
+              {/* Explicit Review Decision Box when in 'review' status */}
+              {selectedTask.status === 'review' && onReviewTask && (
+                <div className="p-4 rounded-xl bg-sky-950/40 border border-sky-500/30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-sky-200 flex items-center gap-1.5 font-mono">
+                      <Clock className="w-3.5 h-3.5 text-sky-400" />
+                      ChatGPT Review Decision Panel
+                    </span>
+                    <span className="text-[10px] font-mono text-sky-400 bg-sky-900/60 px-2 py-0.5 rounded">
+                      Awaiting Review
+                    </span>
+                  </div>
+
+                  <input
+                    type="text"
+                    value={reviewSummary}
+                    onChange={(e) => setReviewSummary(e.target.value)}
+                    placeholder="Review feedback / verification note (optional)..."
+                    className="w-full px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-400 font-mono"
+                  />
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => handleReviewDecision('approve')}
+                      disabled={isSubmittingReview}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Approve & Complete</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleReviewDecision('request_changes')}
+                      disabled={isSubmittingReview}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-semibold text-xs transition-all disabled:opacity-50"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Request Changes</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Status transition action buttons */}
               <div>
                 <span className="block text-[11px] font-mono text-slate-400 mb-1.5 uppercase tracking-wider">
@@ -287,7 +389,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 <div>
                   <span className="block text-[11px] font-mono text-emerald-400 mb-1 uppercase tracking-wider flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    Gemini Execution Report:
+                    Execution & Verification Report:
                   </span>
                   <div className="bg-black/40 border border-emerald-500/30 rounded-lg p-3.5 text-xs text-emerald-300/90 font-mono leading-relaxed whitespace-pre-wrap">
                     {selectedTask.result}
@@ -305,3 +407,4 @@ export const TasksView: React.FC<TasksViewProps> = ({
     </div>
   );
 };
+

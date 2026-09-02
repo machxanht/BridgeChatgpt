@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
 import { getProject, logActivity } from './db.js';
-import { GitStatusResult, TestExecutionResult } from '../src/types.js';
+import { AgentType, GitStatusResult, TestExecutionResult } from '../src/types.js';
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
@@ -17,6 +17,31 @@ const SENSITIVE_PATTERNS = [
   /\.pem$/i,
   /\.key$/i,
   /\.pfx$/i,
+];
+
+// Protected files that must not be overwritten or deleted via MCP tools
+const PROTECTED_WRITE_PATTERNS = [
+  /^\.env/i,
+  /\.env\..+/i,
+  /id_rsa/i,
+  /id_ed25519/i,
+  /\.pem$/i,
+  /\.key$/i,
+  /\.pfx$/i,
+  /^\.git\//i,
+  /^\.git$/i,
+  /^data\/bridge\.sqlite/i,
+];
+
+// Critical core files protected from deletion
+const PROTECTED_DELETE_FILES = [
+  'package.json',
+  'tsconfig.json',
+  'server.ts',
+  'vite.config.ts',
+  'index.html',
+  'server/db.ts',
+  'server/mcp.ts',
 ];
 
 export async function resolveProjectRoot(): Promise<string> {
@@ -46,10 +71,37 @@ export async function resolveSafePath(userPath: string): Promise<string> {
   // Check sensitive file names
   const basename = path.basename(resolved);
   if (SENSITIVE_PATTERNS.some((pattern) => pattern.test(basename))) {
-    throw new Error(`Access denied: Cannot read protected sensitive file "${basename}".`);
+    throw new Error(`Access denied: Cannot access protected sensitive file "${basename}".`);
   }
 
   return resolved;
+}
+
+export async function resolveSafeWritePath(userPath: string): Promise<{ resolved: string; relative: string }> {
+  if (!userPath || typeof userPath !== 'string') {
+    throw new Error('Invalid file path provided');
+  }
+
+  const projectRoot = await resolveProjectRoot();
+  const resolved = path.isAbsolute(userPath)
+    ? path.resolve(userPath)
+    : path.resolve(projectRoot, userPath);
+
+  const relative = path.relative(projectRoot, resolved);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`Access denied: Write target "${userPath}" is outside project root sandbox.`);
+  }
+
+  const normalizedRelative = relative.replace(/\\/g, '/');
+  const basename = path.basename(resolved);
+
+  if (
+    PROTECTED_WRITE_PATTERNS.some((p) => p.test(normalizedRelative) || p.test(basename))
+  ) {
+    throw new Error(`Access denied: Writing to protected file/path "${normalizedRelative}" is strictly prohibited.`);
+  }
+
+  return { resolved, relative: normalizedRelative };
 }
 
 // ---------------- 1. project_info ----------------
@@ -416,18 +468,70 @@ export async function toolProjectGitLog(params?: { limit?: number; file_path?: s
   }
 }
 
+// Allowlist for safe test and validation commands
+const ALLOWED_TEST_COMMANDS = [
+  /^npm\s+(run\s+)?(test|lint|build|preview|check|typecheck)(:\w+)?(\s+--\s+.*)?$/i,
+  /^npm\s+test(\s+.*)?$/i,
+  /^npx\s+(vitest|eslint|tsc)(\s+.*)?$/i,
+  /^tsc(\s+.*)?$/i,
+  /^node\s+--test(\s+.*)?$/i,
+];
+
+const FORBIDDEN_SHELL_PATTERNS = [
+  /[;&|`$><]/,
+  /\brm\b/i,
+  /\bcurl\b/i,
+  /\bwget\b/i,
+  /\bsudo\b/i,
+  /\bchmod\b/i,
+  /\bchown\b/i,
+  /\beval\b/i,
+  /\bbash\b/i,
+  /\bsh\b/i,
+];
+
 // ---------------- 8. project_test ----------------
-export async function toolProjectTest(params?: { command?: string; timeout_ms?: number }): Promise<TestExecutionResult> {
+export async function toolProjectTest(params?: {
+  command?: string;
+  timeout_ms?: number;
+  agent?: AgentType;
+}): Promise<TestExecutionResult> {
   const project = await getProject();
   const projectRoot = await resolveProjectRoot();
-  const cmd = params?.command || project.test_command || 'npm run lint';
+  const cmd = (params?.command || project.test_command || 'npm run lint').trim();
   const timeoutMs = Math.min(params?.timeout_ms || 30000, 60000);
+  const callerAgent = params?.agent || 'gemini';
   const startTime = Date.now();
+
+  // Security Verification: validate command against allowlist
+  const isAllowed = ALLOWED_TEST_COMMANDS.some((pattern) => pattern.test(cmd));
+  const hasForbiddenTokens = FORBIDDEN_SHELL_PATTERNS.some((pattern) => pattern.test(cmd));
+
+  if (!isAllowed || hasForbiddenTokens) {
+    const errorMsg = `Command rejected: "${cmd}" is not in the authorized test command allowlist. Permitted commands: npm test, npm run test, npm run lint, npm run build, tsc, npx vitest.`;
+    await logActivity({
+      agent: callerAgent,
+      action: 'Test command rejected',
+      entity_type: 'test',
+      details: errorMsg,
+    });
+
+    return {
+      command: cmd,
+      success: false,
+      exitCode: 126,
+      stdout: '',
+      stderr: errorMsg,
+      durationMs: 0,
+      timestamp: new Date().toISOString(),
+    };
+  }
 
   try {
     const { stdout, stderr } = await execAsync(cmd, {
       cwd: projectRoot,
       timeout: timeoutMs,
+      maxBuffer: 1024 * 1024, // 1MB buffer
       env: { ...process.env, NODE_ENV: 'test', CI: 'true' },
     });
 
@@ -443,7 +547,7 @@ export async function toolProjectTest(params?: { command?: string; timeout_ms?: 
     };
 
     await logActivity({
-      agent: 'gemini',
+      agent: callerAgent,
       action: 'Ran project tests',
       entity_type: 'test',
       details: `Command: "${cmd}" -> PASSED in ${durationMs}ms`,
@@ -463,7 +567,7 @@ export async function toolProjectTest(params?: { command?: string; timeout_ms?: 
     };
 
     await logActivity({
-      agent: 'gemini',
+      agent: callerAgent,
       action: 'Ran project tests',
       entity_type: 'test',
       details: `Command: "${cmd}" -> FAILED (exit code ${result.exitCode})`,
@@ -471,4 +575,190 @@ export async function toolProjectTest(params?: { command?: string; timeout_ms?: 
 
     return result;
   }
+}
+
+// ---------------- 9. project_write_file ----------------
+export async function toolProjectWriteFile(
+  params: { file_path: string; content: string; create_if_missing?: boolean },
+  callerAgent: AgentType = 'gemini'
+) {
+  if (!params?.file_path) {
+    throw new Error('file_path is required');
+  }
+  if (params?.content === undefined || params?.content === null) {
+    throw new Error('content is required');
+  }
+
+  const { resolved, relative } = await resolveSafeWritePath(params.file_path);
+  const existedBefore = fs.existsSync(resolved);
+
+  if (!existedBefore && params.create_if_missing === false) {
+    throw new Error(`File "${relative}" does not exist and create_if_missing is false.`);
+  }
+
+  // Ensure parent directories exist
+  const parentDir = path.dirname(resolved);
+  if (!fs.existsSync(parentDir)) {
+    fs.mkdirSync(parentDir, { recursive: true });
+  }
+
+  fs.writeFileSync(resolved, params.content, 'utf8');
+
+  const byteCount = Buffer.byteLength(params.content, 'utf8');
+  const lineCount = params.content.split(/\r?\n/).length;
+
+  await logActivity({
+    agent: callerAgent,
+    action: existedBefore ? `Edited ${relative}` : `Created ${relative}`,
+    entity_type: 'project',
+    entity_id: relative,
+    details: `${byteCount} bytes written (${lineCount} lines)`,
+  });
+
+  return {
+    file_path: relative,
+    bytes_written: byteCount,
+    total_lines: lineCount,
+    is_created: !existedBefore,
+    success: true,
+    message: `Successfully wrote ${byteCount} bytes to ${relative}`,
+  };
+}
+
+// ---------------- 10. project_patch_file ----------------
+export async function toolProjectPatchFile(
+  params: { file_path: string; target_content: string; replacement_content: string },
+  callerAgent: AgentType = 'gemini'
+) {
+  if (!params?.file_path) {
+    throw new Error('file_path is required');
+  }
+  if (!params?.target_content) {
+    throw new Error('target_content is required');
+  }
+  if (params?.replacement_content === undefined || params?.replacement_content === null) {
+    throw new Error('replacement_content is required');
+  }
+
+  const { resolved, relative } = await resolveSafeWritePath(params.file_path);
+
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`File "${relative}" does not exist`);
+  }
+
+  const currentContent = fs.readFileSync(resolved, 'utf8');
+  const occurrences = currentContent.split(params.target_content).length - 1;
+
+  if (occurrences === 0) {
+    throw new Error(
+      `Target content not found in "${relative}". Please inspect the current file content to ensure exact whitespace and line match.`
+    );
+  }
+
+  if (occurrences > 1) {
+    throw new Error(
+      `Target content occurs ${occurrences} times in "${relative}". Target content must match uniquely within the file.`
+    );
+  }
+
+  const updatedContent = currentContent.replace(params.target_content, params.replacement_content);
+  fs.writeFileSync(resolved, updatedContent, 'utf8');
+
+  const byteCount = Buffer.byteLength(updatedContent, 'utf8');
+  const lineCount = updatedContent.split(/\r?\n/).length;
+
+  await logActivity({
+    agent: callerAgent,
+    action: `Patched ${relative}`,
+    entity_type: 'project',
+    entity_id: relative,
+    details: `Replaced unique target content segment (${lineCount} total lines)`,
+  });
+
+  return {
+    file_path: relative,
+    success: true,
+    total_lines: lineCount,
+    bytes_written: byteCount,
+    message: `Successfully patched ${relative}`,
+  };
+}
+
+// ---------------- 11. project_create_file ----------------
+export async function toolProjectCreateFile(
+  params: { file_path: string; content?: string; overwrite?: boolean },
+  callerAgent: AgentType = 'gemini'
+) {
+  if (!params?.file_path) {
+    throw new Error('file_path is required');
+  }
+
+  const { resolved, relative } = await resolveSafeWritePath(params.file_path);
+  const exists = fs.existsSync(resolved);
+
+  if (exists && !params.overwrite) {
+    throw new Error(`File "${relative}" already exists. Set overwrite: true to replace it.`);
+  }
+
+  const parentDir = path.dirname(resolved);
+  if (!fs.existsSync(parentDir)) {
+    fs.mkdirSync(parentDir, { recursive: true });
+  }
+
+  const content = params.content || '';
+  fs.writeFileSync(resolved, content, 'utf8');
+
+  await logActivity({
+    agent: callerAgent,
+    action: exists ? `Overwrote ${relative}` : `Created ${relative}`,
+    entity_type: 'project',
+    entity_id: relative,
+    details: `${Buffer.byteLength(content, 'utf8')} bytes written`,
+  });
+
+  return {
+    file_path: relative,
+    success: true,
+    message: exists ? `Successfully overwrote ${relative}` : `Successfully created ${relative}`,
+  };
+}
+
+// ---------------- 12. project_delete_file ----------------
+export async function toolProjectDeleteFile(
+  params: { file_path: string },
+  callerAgent: AgentType = 'gemini'
+) {
+  if (!params?.file_path) {
+    throw new Error('file_path is required');
+  }
+
+  const { resolved, relative } = await resolveSafeWritePath(params.file_path);
+
+  if (PROTECTED_DELETE_FILES.includes(relative)) {
+    throw new Error(`Cannot delete protected core project file "${relative}".`);
+  }
+
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`File "${relative}" does not exist`);
+  }
+
+  const stat = fs.statSync(resolved);
+  if (stat.isDirectory()) {
+    throw new Error(`"${relative}" is a directory. Deleting directories is not supported.`);
+  }
+
+  fs.unlinkSync(resolved);
+
+  await logActivity({
+    agent: callerAgent,
+    action: `Deleted ${relative}`,
+    entity_type: 'project',
+    entity_id: relative,
+  });
+
+  return {
+    file_path: relative,
+    success: true,
+    message: `Successfully deleted ${relative}`,
+  };
 }

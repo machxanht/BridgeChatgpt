@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import {
+  claimNextTask,
   createFinding,
   createMessage,
   createTask,
@@ -11,26 +12,53 @@ import {
   getProject,
   getTask,
   getTasks,
+  getWorkflowStateForAgent,
   getWorkspaceState,
+  recordHeartbeat,
+  reviewTask,
   setAgentStatus,
   updateFinding,
   updateTask,
 } from './db.js';
 import {
+  toolProjectCreateFile,
+  toolProjectDeleteFile,
   toolProjectGitDiff,
   toolProjectGitLog,
   toolProjectGitStatus,
   toolProjectInfo,
   toolProjectListFiles,
+  toolProjectPatchFile,
   toolProjectReadFile,
   toolProjectSearch,
   toolProjectTest,
+  toolProjectWriteFile,
 } from './projectTools.js';
 import { MCPToolDefinition } from '../src/types.js';
 
-// All 15 Bridge MCP Tools
+// All Bridge MCP Tools
 export const BRIDGE_TOOLS: MCPToolDefinition[] = [
-  // --- Project Tools ---
+  // --- Workflow & State Tools ---
+  {
+    name: 'workflow_state',
+    description: 'Get lightweight workflow state and immediate recommended next action for the querying agent (claim_task, continue_task, review_task, or standby).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: { type: 'string', enum: ['gemini', 'chatgpt', 'human'], description: 'Agent querying workflow (default: caller or gemini)' },
+      },
+    },
+  },
+  {
+    name: 'workspace_state',
+    description: 'Get the complete unified workspace state snapshot: project details, active tasks, open findings, agent statuses, and recent activity.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+
+  // --- Project Inspection Tools ---
   {
     name: 'project_info',
     description: 'Get project metadata, configured root, GitHub repo, default branch, test command, and workspace statistics.',
@@ -111,7 +139,7 @@ export const BRIDGE_TOOLS: MCPToolDefinition[] = [
   },
   {
     name: 'project_test',
-    description: 'Execute the project test command (or custom test command) inside the sandboxed workspace and report stdout/stderr/exit code.',
+    description: 'Execute allowlisted project test/lint/build commands inside the sandboxed workspace and report stdout/stderr/exit code.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -121,7 +149,59 @@ export const BRIDGE_TOOLS: MCPToolDefinition[] = [
     },
   },
 
-  // --- Collaboration Tools ---
+  // --- Safe Project Modification Tools (Gemini/Executor) ---
+  {
+    name: 'project_write_file',
+    description: 'Safely write or overwrite text content to a project file within the sandbox.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Relative path to file in project' },
+        content: { type: 'string', description: 'Full text content to write' },
+        create_if_missing: { type: 'boolean', description: 'Whether to create file if it does not exist (default: true)' },
+      },
+      required: ['file_path', 'content'],
+    },
+  },
+  {
+    name: 'project_patch_file',
+    description: 'Safely replace an exact unique target block of text within a project file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Relative path to file' },
+        target_content: { type: 'string', description: 'Exact string to be replaced (must match uniquely)' },
+        replacement_content: { type: 'string', description: 'Replacement string' },
+      },
+      required: ['file_path', 'target_content', 'replacement_content'],
+    },
+  },
+  {
+    name: 'project_create_file',
+    description: 'Create a new file in the project repository.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Relative path to new file' },
+        content: { type: 'string', description: 'Initial file content (default empty)' },
+        overwrite: { type: 'boolean', description: 'Whether to overwrite if already exists (default false)' },
+      },
+      required: ['file_path'],
+    },
+  },
+  {
+    name: 'project_delete_file',
+    description: 'Safely delete a non-critical file within the project sandbox.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Relative path to file to delete' },
+      },
+      required: ['file_path'],
+    },
+  },
+
+  // --- Collaboration & Task Lifecycle Tools ---
   {
     name: 'task_create',
     description: 'Create a new collaboration task in the shared workspace, assigned to Gemini (or ChatGPT/Human).',
@@ -137,6 +217,16 @@ export const BRIDGE_TOOLS: MCPToolDefinition[] = [
         created_by: { type: 'string', enum: ['chatgpt', 'gemini', 'human'], description: 'Agent creating the task (default: chatgpt)' },
       },
       required: ['title', 'description'],
+    },
+  },
+  {
+    name: 'task_claim_next',
+    description: 'Atomically claim the highest priority eligible pending/assigned task for Gemini (or specified agent) and transition status to working.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: { type: 'string', enum: ['gemini', 'chatgpt', 'human'], description: 'Agent claiming the task (default: gemini)' },
+      },
     },
   },
   {
@@ -179,6 +269,37 @@ export const BRIDGE_TOOLS: MCPToolDefinition[] = [
       required: ['id'],
     },
   },
+  {
+    name: 'task_review',
+    description: 'Submit explicit review decision for a task in "review" status (approve -> completed, or request_changes -> dispatched back to Gemini).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Task ID (e.g. TASK-1)' },
+        decision: { type: 'string', enum: ['approve', 'request_changes'], description: 'Review outcome' },
+        summary: { type: 'string', description: 'Review summary, feedback, or verification remarks' },
+        tests_verified: { type: 'boolean', description: 'Whether tests and code diff were verified (default: true)' },
+        reviewer: { type: 'string', enum: ['chatgpt', 'human'], description: 'Reviewer agent (default: chatgpt)' },
+      },
+      required: ['id', 'decision', 'summary'],
+    },
+  },
+  {
+    name: 'task_heartbeat',
+    description: 'Record heartbeat and operational status for an active agent.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: { type: 'string', enum: ['chatgpt', 'gemini', 'human'], description: 'Agent sending heartbeat' },
+        task_id: { type: 'string', description: 'Active task ID' },
+        status: { type: 'string', enum: ['idle', 'working', 'reviewing', 'blocked'], description: 'Operational status' },
+        message: { type: 'string', description: 'Brief progress note' },
+      },
+      required: ['agent'],
+    },
+  },
+
+  // --- Findings Tools ---
   {
     name: 'finding_create',
     description: 'Create a code review finding / bug report identified by ChatGPT (or Gemini/Human) with file location and severity.',
@@ -237,6 +358,8 @@ export const BRIDGE_TOOLS: MCPToolDefinition[] = [
       required: ['id'],
     },
   },
+
+  // --- Messages & Activity Tools ---
   {
     name: 'message_send',
     description: 'Send a structured agent-to-agent communication message (handoff, question, review request, result summary).',
@@ -245,7 +368,24 @@ export const BRIDGE_TOOLS: MCPToolDefinition[] = [
       properties: {
         from: { type: 'string', enum: ['chatgpt', 'gemini', 'human'], description: 'Sender agent' },
         to: { type: 'string', enum: ['chatgpt', 'gemini', 'human', 'all'], description: 'Recipient agent (default: all)' },
-        type: { type: 'string', enum: ['task', 'finding', 'review', 'status', 'question', 'result', 'handoff'] },
+        type: {
+          type: 'string',
+          enum: [
+            'task',
+            'finding',
+            'review',
+            'status',
+            'question',
+            'result',
+            'handoff',
+            'task_created',
+            'task_claimed',
+            'review_requested',
+            'review_approved',
+            'review_changes_requested',
+            'task_blocked',
+          ],
+        },
         content: { type: 'string', description: 'Message body' },
         task_id: { type: 'string', description: 'Optional associated task ID' },
         finding_id: { type: 'string', description: 'Optional associated finding ID' },
@@ -279,14 +419,6 @@ export const BRIDGE_TOOLS: MCPToolDefinition[] = [
     },
   },
   {
-    name: 'workspace_state',
-    description: 'Get the complete unified workspace state snapshot: project details, active tasks, open findings, agent statuses, and recent activity.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
     name: 'activity_list',
     description: 'Retrieve the audit log of recent collaboration actions and tool executions.',
     inputSchema: {
@@ -303,6 +435,13 @@ export async function executeTool(name: string, args: Record<string, any> = {}, 
   const agent = (callerAgent || 'chatgpt') as any;
 
   switch (name) {
+    // Workflow Tools
+    case 'workflow_state':
+      return await getWorkflowStateForAgent(args.agent || agent);
+
+    case 'workspace_state':
+      return await getWorkspaceState();
+
     // Project Tools
     case 'project_info':
       return await toolProjectInfo();
@@ -335,7 +474,49 @@ export async function executeTool(name: string, args: Record<string, any> = {}, 
       return await toolProjectGitLog(args);
 
     case 'project_test':
-      return await toolProjectTest(args);
+      return await toolProjectTest({
+        command: args.command,
+        timeout_ms: args.timeout_ms,
+        agent,
+      });
+
+    case 'project_write_file':
+      return await toolProjectWriteFile(
+        {
+          file_path: args.file_path,
+          content: args.content,
+          create_if_missing: args.create_if_missing,
+        },
+        agent
+      );
+
+    case 'project_patch_file':
+      return await toolProjectPatchFile(
+        {
+          file_path: args.file_path,
+          target_content: args.target_content,
+          replacement_content: args.replacement_content,
+        },
+        agent
+      );
+
+    case 'project_create_file':
+      return await toolProjectCreateFile(
+        {
+          file_path: args.file_path,
+          content: args.content,
+          overwrite: args.overwrite,
+        },
+        agent
+      );
+
+    case 'project_delete_file':
+      return await toolProjectDeleteFile(
+        {
+          file_path: args.file_path,
+        },
+        agent
+      );
 
     // Collaboration Tools
     case 'task_create':
@@ -348,6 +529,9 @@ export async function executeTool(name: string, args: Record<string, any> = {}, 
         related_files: args.related_files,
         related_finding: args.related_finding,
       });
+
+    case 'task_claim_next':
+      return await claimNextTask(args.agent || agent);
 
     case 'task_list':
       return await getTasks({
@@ -372,6 +556,23 @@ export async function executeTool(name: string, args: Record<string, any> = {}, 
         },
         agent
       );
+
+    case 'task_review':
+      return await reviewTask({
+        id: args.id,
+        decision: args.decision,
+        summary: args.summary,
+        tests_verified: args.tests_verified !== false,
+        reviewer: args.reviewer || agent,
+      });
+
+    case 'task_heartbeat':
+      return await recordHeartbeat({
+        agent: args.agent || agent,
+        task_id: args.task_id,
+        status: args.status,
+        message: args.message,
+      });
 
     case 'finding_create':
       return await createFinding({
@@ -437,9 +638,6 @@ export async function executeTool(name: string, args: Record<string, any> = {}, 
       }
       return await getAgentStatuses();
 
-    case 'workspace_state':
-      return await getWorkspaceState();
-
     case 'activity_list':
       return await getActivities(args.limit || 30);
 
@@ -447,6 +645,7 @@ export async function executeTool(name: string, args: Record<string, any> = {}, 
       throw new Error(`Unknown tool "${name}". Supported tools: ${BRIDGE_TOOLS.map((t) => t.name).join(', ')}`);
   }
 }
+
 
 // Check authentication token
 export function verifyAuthToken(req: Request): boolean {

@@ -1,150 +1,122 @@
 import {
-  createFinding,
   createMessage,
-  createTask,
   getFindings,
   getProject,
   getTasks,
   logActivity,
-  setAgentStatus,
-  updateFinding,
   updateTask,
 } from './db.js';
 import { toolProjectGitDiff, toolProjectTest } from './projectTools.js';
 
 export interface AutoReviewCycleResult {
-  step: 'gemini_working' | 'gemini_completed' | 'chatgpt_reviewing' | 'review_passed' | 'review_failed' | 'idle';
+  step: 'ci_passed' | 'ci_failed' | 'awaiting_chatgpt_review' | 'gemini_working' | 'idle';
   message: string;
   task_id?: string;
   finding_id?: string;
+  test_output?: string;
 }
 
+/**
+ * CI / Verification Coordinator
+ * Runs automated project test checks on tasks in 'review' status to provide verified CI data
+ * for ChatGPT or human reviewers, but NEVER fabricates artificial approval.
+ */
 export async function checkAndTriggerAutoReview(): Promise<AutoReviewCycleResult> {
   const project = await getProject();
   if (!project.auto_review) {
-    return { step: 'idle', message: 'Auto Review is currently disabled' };
+    return { step: 'idle', message: 'Automated CI verification is currently disabled' };
   }
 
   const tasks = await getTasks();
 
-  // 1. Check if there are pending/assigned tasks for Gemini
-  const assignedTask = tasks.find((t) => t.assignee === 'gemini' && (t.status === 'assigned' || t.status === 'pending'));
-  if (assignedTask) {
-    // Gemini begins working
-    await updateTask(assignedTask.id, { status: 'working' }, 'gemini');
-    await setAgentStatus({
-      agent: 'gemini',
-      status: 'working',
-      current_task_id: assignedTask.id,
-      message: `Actively executing "${assignedTask.title}"`,
-    });
-    return {
-      step: 'gemini_working',
-      message: `Gemini is now actively working on ${assignedTask.id}: "${assignedTask.title}"`,
-      task_id: assignedTask.id,
-    };
-  }
+  // Check if there are tasks awaiting ChatGPT review that need automated CI verification
+  const reviewTasks = tasks.filter((t) => t.status === 'review');
+  const unverifiedReviewTask = reviewTasks.find((t) => !t.result || !t.result.includes('[Automated CI Check]'));
 
-  // 2. Check if there are tasks awaiting ChatGPT review
-  const reviewTask = tasks.find((t) => t.status === 'review');
-  if (reviewTask) {
-    await setAgentStatus({
-      agent: 'chatgpt',
-      status: 'reviewing',
-      current_task_id: reviewTask.id,
-      message: `Reviewing implementation and git diff for ${reviewTask.id}`,
+  if (unverifiedReviewTask) {
+    // Run automated tests in background to assist the reviewer
+    const testResult = await toolProjectTest({
+      command: project.test_command || 'npm run lint',
+      agent: 'system',
     });
 
-    // Run test validation and check git diff
-    const testResult = await toolProjectTest();
     const diffResult = await toolProjectGitDiff();
 
+    const timestamp = new Date().toISOString();
+    let ciNote = '';
+
     if (testResult.success) {
-      // Review PASS
+      ciNote = `\n\n[Automated CI Check at ${timestamp}]: PASSED (exit code 0 in ${testResult.durationMs}ms).\nReady for explicit review decision via "task_review".`;
+
       await updateTask(
-        reviewTask.id,
+        unverifiedReviewTask.id,
         {
-          status: 'completed',
-          result: (reviewTask.result || '') + `\n\n[Auto-Review PASS]: Tests passed in ${testResult.durationMs}ms. Git diff verified by ChatGPT.`,
+          result: (unverifiedReviewTask.result || '') + ciNote,
         },
-        'chatgpt'
+        'system'
       );
 
-      if (reviewTask.related_finding) {
-        await updateFinding(
-          reviewTask.related_finding,
-          {
-            status: 'verified',
-            resolution: `Verified resolved by ChatGPT after passing automated tests and inspecting diff.`,
-          },
-          'chatgpt'
-        );
-      }
-
-      await setAgentStatus({
-        agent: 'chatgpt',
-        status: 'idle',
-        current_task_id: null,
-        message: `Approved ${reviewTask.id}. Ready for next task.`,
-      });
-
-      await setAgentStatus({
-        agent: 'gemini',
-        status: 'idle',
-        current_task_id: null,
-        message: `Task ${reviewTask.id} completed. Standing by.`,
-      });
-
-      await createMessage({
-        from: 'chatgpt',
-        to: 'gemini',
-        type: 'review',
-        content: `Auto-Review PASSED for ${reviewTask.id}: All tests passed and code changes are verified. Task marked completed.`,
-        task_id: reviewTask.id,
-        finding_id: reviewTask.related_finding,
+      await logActivity({
+        agent: 'system',
+        action: `Automated CI Check Passed`,
+        entity_type: 'task',
+        entity_id: unverifiedReviewTask.id,
+        details: `Tests PASSED in ${testResult.durationMs}ms. Awaiting ChatGPT review.`,
       });
 
       return {
-        step: 'review_passed',
-        message: `ChatGPT completed review for ${reviewTask.id}: PASSED. Task marked completed.`,
-        task_id: reviewTask.id,
-        finding_id: reviewTask.related_finding || undefined,
+        step: 'ci_passed',
+        message: `Automated CI verification PASSED for ${unverifiedReviewTask.id}. Ready for ChatGPT to call "task_review".`,
+        task_id: unverifiedReviewTask.id,
+        finding_id: unverifiedReviewTask.related_finding || undefined,
+        test_output: testResult.stdout,
       };
     } else {
-      // Review FAIL -> Create follow-up task
+      ciNote = `\n\n[Automated CI Check at ${timestamp}]: FAILED (exit code ${testResult.exitCode} in ${testResult.durationMs}ms).\nError: ${testResult.stderr || testResult.stdout}`;
+
       await updateTask(
-        reviewTask.id,
+        unverifiedReviewTask.id,
         {
-          status: 'blocked',
-          result: (reviewTask.result || '') + `\n\n[Auto-Review FAILED]: Tests failed with exit code ${testResult.exitCode}. Follow-up task created.`,
+          result: (unverifiedReviewTask.result || '') + ciNote,
         },
-        'chatgpt'
+        'system'
       );
 
-      const followUp = await createTask({
-        title: `Fix regression: ${reviewTask.title}`,
-        description: `Auto-review test run failed after ${reviewTask.id}. Error output: ${testResult.stderr || testResult.stdout}. Please inspect test failures and fix.`,
-        priority: 'high',
-        assignee: 'gemini',
-        created_by: 'chatgpt',
-        related_files: reviewTask.related_files,
-        related_finding: reviewTask.related_finding,
-      });
-
-      await setAgentStatus({
-        agent: 'chatgpt',
-        status: 'idle',
-        current_task_id: null,
-        message: `Created follow-up ${followUp.id} due to test failure.`,
+      await logActivity({
+        agent: 'system',
+        action: `Automated CI Check Failed`,
+        entity_type: 'task',
+        entity_id: unverifiedReviewTask.id,
+        details: `Tests FAILED with exit code ${testResult.exitCode}.`,
       });
 
       return {
-        step: 'review_failed',
-        message: `ChatGPT review FAILED for ${reviewTask.id} (tests failed). Follow-up ${followUp.id} dispatched to Gemini.`,
-        task_id: followUp.id,
+        step: 'ci_failed',
+        message: `Automated CI verification FAILED for ${unverifiedReviewTask.id}. Reviewer should inspect failures or request changes.`,
+        task_id: unverifiedReviewTask.id,
+        finding_id: unverifiedReviewTask.related_finding || undefined,
+        test_output: testResult.stderr || testResult.stdout,
       };
     }
   }
 
-  return { step: 'idle', message: 'No tasks currently awaiting processing or review.' };
+  if (reviewTasks.length > 0) {
+    return {
+      step: 'awaiting_chatgpt_review',
+      message: `${reviewTasks.length} task(s) currently awaiting explicit ChatGPT review decision.`,
+      task_id: reviewTasks[0].id,
+    };
+  }
+
+  const workingTasks = tasks.filter((t) => t.status === 'working');
+  if (workingTasks.length > 0) {
+    return {
+      step: 'gemini_working',
+      message: `Gemini is actively executing ${workingTasks[0].id}: "${workingTasks[0].title}".`,
+      task_id: workingTasks[0].id,
+    };
+  }
+
+  return { step: 'idle', message: 'No tasks currently pending review or execution.' };
 }
+

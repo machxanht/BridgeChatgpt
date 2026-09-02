@@ -28,7 +28,17 @@ export type MessageType =
   | 'status'
   | 'question'
   | 'result'
-  | 'handoff';
+  | 'handoff'
+  | 'task_created'
+  | 'task_claimed'
+  | 'implementation_started'
+  | 'implementation_finished'
+  | 'review_requested'
+  | 'review_approved'
+  | 'review_changes_requested'
+  | 'task_blocked'
+  | 'agent_question'
+  | 'agent_answer';
 
 export type AgentOperationalStatus =
   | 'idle'
@@ -96,6 +106,8 @@ export interface AgentStatus {
   status: AgentOperationalStatus;
   current_task_id?: string | null;
   last_active_at: string;
+  last_heartbeat_at?: string;
+  is_stale?: boolean;
   message?: string | null;
 }
 
@@ -155,3 +167,35 @@ export interface TestExecutionResult {
   durationMs: number;
   timestamp: string;
 }
+
+export type TaskReviewDecision = 'approve' | 'request_changes';
+
+export interface TaskReviewPayload {
+  id: string;
+  decision: TaskReviewDecision;
+  reviewer?: 'chatgpt' | 'human';
+  summary: string;
+  tests_verified?: boolean;
+}
+
+export interface WorkflowStateResponse {
+  project: {
+    project_name: string;
+    project_root: string;
+    repository_url: string;
+    default_branch: string;
+    current_goal: string;
+    test_command: string;
+  };
+  my_agent: AgentStatus;
+  action_required: boolean;
+  next_action: 'claim_task' | 'continue_task' | 'review_task' | 'standby';
+  active_task: Task | null;
+  pending_tasks_for_me: Task[];
+  tasks_needing_review: Task[];
+  open_findings: Finding[];
+  recent_messages: Message[];
+  agents: Record<'chatgpt' | 'gemini' | 'human', AgentStatus>;
+  server_time: string;
+}
+

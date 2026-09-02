@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import {
+  claimNextTask,
   createFinding,
   createMessage,
   createTask,
@@ -12,8 +13,11 @@ import {
   getProject,
   getTask,
   getTasks,
+  getWorkflowStateForAgent,
   getWorkspaceState,
   logActivity,
+  recordHeartbeat,
+  reviewTask,
   setAgentStatus,
   updateFinding,
   updateProject,
@@ -26,14 +30,18 @@ import {
   verifyAuthToken,
 } from './mcp.js';
 import {
+  toolProjectCreateFile,
+  toolProjectDeleteFile,
   toolProjectGitDiff,
   toolProjectGitLog,
   toolProjectGitStatus,
   toolProjectInfo,
   toolProjectListFiles,
+  toolProjectPatchFile,
   toolProjectReadFile,
   toolProjectSearch,
   toolProjectTest,
+  toolProjectWriteFile,
 } from './projectTools.js';
 import { checkAndTriggerAutoReview } from './autoReview.js';
 
@@ -46,6 +54,16 @@ apiRouter.all('/mcp', handleMcpRequest);
 apiRouter.get('/workspace', async (req: Request, res: Response) => {
   try {
     const state = await getWorkspaceState();
+    res.json(state);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.get('/workflow', async (req: Request, res: Response) => {
+  try {
+    const agent = (req.query.agent as string) || 'gemini';
+    const state = await getWorkflowStateForAgent(agent);
     res.json(state);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -100,6 +118,16 @@ apiRouter.get('/project/file', async (req: Request, res: Response) => {
   }
 });
 
+apiRouter.post('/project/file', async (req: Request, res: Response) => {
+  try {
+    const { file_path, content, create_if_missing } = req.body;
+    const result = await toolProjectWriteFile({ file_path, content, create_if_missing }, 'human');
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 apiRouter.post('/project/search', async (req: Request, res: Response) => {
   try {
     const { query, is_regex, file_extension, max_results } = req.body;
@@ -144,8 +172,8 @@ apiRouter.get('/project/git/log', async (req: Request, res: Response) => {
 
 apiRouter.post('/project/test', async (req: Request, res: Response) => {
   try {
-    const { command, timeout_ms } = req.body;
-    const testResult = await toolProjectTest({ command, timeout_ms });
+    const { command, timeout_ms, agent } = req.body;
+    const testResult = await toolProjectTest({ command, timeout_ms, agent: agent || 'human' });
     res.json(testResult);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -172,6 +200,47 @@ apiRouter.post('/tasks', async (req: Request, res: Response) => {
   try {
     const task = await createTask(req.body);
     res.status(201).json(task);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/tasks/claim', async (req: Request, res: Response) => {
+  try {
+    const agent = req.body.agent || 'gemini';
+    const claimed = await claimNextTask(agent);
+    res.json(claimed);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/tasks/:id/review', async (req: Request, res: Response) => {
+  try {
+    const { decision, summary, tests_verified, reviewer } = req.body;
+    const reviewResult = await reviewTask({
+      id: req.params.id,
+      decision,
+      summary,
+      tests_verified: tests_verified !== false,
+      reviewer: reviewer || 'chatgpt',
+    });
+    res.json(reviewResult);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/tasks/:id/heartbeat', async (req: Request, res: Response) => {
+  try {
+    const { agent, status, message } = req.body;
+    const heartbeat = await recordHeartbeat({
+      agent: agent || 'gemini',
+      task_id: req.params.id,
+      status: status || 'working',
+      message,
+    });
+    res.json(heartbeat);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
