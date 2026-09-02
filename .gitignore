@@ -12,4 +12,6 @@ data/batches.json
 data/batches.json.*.tmp
 data/workspace-registry.json
 data/workspace-registry.json.*.tmp
+data/resource-registry.json
+data/resource-registry.json.*.tmp
 bridge-bus/outbox/
