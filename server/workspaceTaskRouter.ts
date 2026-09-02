@@ -8,6 +8,7 @@ import {
   updateTask,
 } from './db.js';
 import { attachTaskBinding, extractTaskBinding, type TaskBinding } from './taskBinding.js';
+import { buildProjectBootstrap, type ProjectBrainBootstrap } from './projectBrain.js';
 import type { AgentType, Task, TaskPriority } from '../src/types.js';
 
 const PRIORITY_WEIGHTS: Record<TaskPriority, number> = { urgent: 1, high: 2, medium: 3, low: 4 };
@@ -52,8 +53,15 @@ export async function claimNextBoundTask(input: {
   project_id: string;
   agent_instance_id: string;
   allow_legacy?: boolean;
-}): Promise<{ claimed: boolean; message?: string; task: Task | null; binding: TaskBinding | null }> {
+}): Promise<{
+  claimed: boolean;
+  message?: string;
+  task: Task | null;
+  binding: TaskBinding | null;
+  project_context: ProjectBrainBootstrap;
+}> {
   return withClaimLock(async () => {
+    const projectContext = await buildProjectBootstrap(input.workspace_id, input.project_id);
     const tasks = await getTasks({ assignee: input.agent, limit: 200 });
     const eligible = tasks.filter(task => {
       if (!['assigned', 'pending'].includes(task.status)) return false;
@@ -76,18 +84,31 @@ export async function claimNextBoundTask(input: {
         message: `No task available for ${input.agent_instance_id} in ${input.workspace_id}.`,
         task: null,
         binding: null,
+        project_context: projectContext,
       };
     }
 
     const latest = await getTask(selected.id);
     if (!latest || !['assigned', 'pending'].includes(latest.status)) {
-      return { claimed: false, message: `${selected.id} changed before claim.`, task: null, binding: null };
+      return {
+        claimed: false,
+        message: `${selected.id} changed before claim.`,
+        task: null,
+        binding: null,
+        project_context: projectContext,
+      };
     }
 
     await updateTask(selected.id, { status: 'working' }, input.agent);
     const refreshed = await getTask(selected.id);
     if (!refreshed || refreshed.status !== 'working') {
-      return { claimed: false, message: `${selected.id} claim verification failed.`, task: null, binding: null };
+      return {
+        claimed: false,
+        message: `${selected.id} claim verification failed.`,
+        task: null,
+        binding: null,
+        project_context: projectContext,
+      };
     }
 
     const parsed = extractTaskBinding(refreshed.description);
@@ -118,6 +139,7 @@ export async function claimNextBoundTask(input: {
       message: `Successfully claimed ${refreshed.id} for ${input.agent_instance_id}`,
       task: { ...refreshed, description: parsed.description },
       binding: parsed.binding,
+      project_context: projectContext,
     };
   });
 }
