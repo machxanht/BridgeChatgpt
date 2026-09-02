@@ -9,6 +9,7 @@ import {
   WorkspaceState,
 } from '../types.js';
 import { MissionControlView } from './MissionControlView.js';
+import { ResourceRoutingPanel } from './ResourceRoutingPanel.js';
 
 interface WorkspaceViewProps {
   state: WorkspaceState;
@@ -40,21 +41,26 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onCancelTask,
   onOpenAdvancedTab,
 }) => {
-  // If backend mission_control data is available, render AI Mission Control
+  // If backend mission_control data is available, render AI Mission Control.
+  // URL-based project/session routing is mounted here so it is part of the real
+  // main screen rather than an optional/legacy identity banner.
   if (state.mission_control) {
     return (
-      <MissionControlView
-        state={state}
-        missionControl={state.mission_control}
-        onSendCommand={onSendCommand}
-        onPauseAll={onPauseAll}
-        onResumeAll={onResumeAll}
-        onStopAgent={onStopAgent}
-        onCancelTask={onCancelTask}
-        onTriggerAutoReviewCycle={onTriggerAutoReviewCycle}
-        isAutoReviewing={isAutoReviewing}
-        onOpenAdvancedTab={onOpenAdvancedTab}
-      />
+      <div className="space-y-4">
+        <ResourceRoutingPanel />
+        <MissionControlView
+          state={state}
+          missionControl={state.mission_control}
+          onSendCommand={onSendCommand}
+          onPauseAll={onPauseAll}
+          onResumeAll={onResumeAll}
+          onStopAgent={onStopAgent}
+          onCancelTask={onCancelTask}
+          onTriggerAutoReviewCycle={onTriggerAutoReviewCycle}
+          isAutoReviewing={isAutoReviewing}
+          onOpenAdvancedTab={onOpenAdvancedTab}
+        />
+      </div>
     );
   }
 
