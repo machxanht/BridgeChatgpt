@@ -15,6 +15,7 @@ import { startGitHubCommandBus } from './server/githubCommandBus.js';
 import { batchRouter } from './server/batchRoutes.js';
 import { startBatchOrchestrator } from './server/batchOrchestrator.js';
 import { projectBrainRouter } from './server/projectBrainRoutes.js';
+import { resourceRegistryRouter } from './server/resourceRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,6 +59,7 @@ async function startServer() {
         review_packets: 'ready',
         batch_orchestrator: 'ready',
         project_brain: 'ready',
+        resource_registry: 'ready',
         github_command_bus: process.env.GITHUB_COMMAND_BUS_ENABLED === 'false' ? 'disabled' : 'ready',
         service: 'Bridge — Shared AI Workspace',
         time: new Date().toISOString(),
@@ -73,6 +75,7 @@ async function startServer() {
         review_packets: 'degraded',
         batch_orchestrator: 'degraded',
         project_brain: 'degraded',
+        resource_registry: 'degraded',
         github_command_bus: 'degraded',
       });
     }
@@ -81,11 +84,16 @@ async function startServer() {
   app.get('/health', healthHandler);
   app.get('/api/health', healthHandler);
 
-  // External Google AI Studio Build-mode relay. It never calls Gemini itself;
+  // External Google AI Studio Build-mode relay. It never calls Gemini here;
   // it only exchanges task/state data with an authenticated Studio client.
   // The pairing guard resolves a single registered Studio session automatically
   // and blocks ambiguous multi-session claims unless agent_instance_id is explicit.
   app.use('/api/studio-relay', requireAuth, studioSessionPairingGuard, studioRelayRouter);
+
+  // User-facing URL registry. A Git repo is the project anchor; AI Studio app URLs
+  // and ChatGPT conversation URLs become stable routing targets without exposing
+  // workspace/agent IDs in the normal dashboard flow.
+  app.use('/api/resource-registry', requireAuth, resourceRegistryRouter);
 
   // Shared cross-session project memory. Thread/session scratch remains private;
   // this service carries durable goals, decisions, architecture, blockers and handoffs.
@@ -118,6 +126,7 @@ async function startServer() {
     console.log(`[Bridge Server] Running on http://0.0.0.0:${PORT}`);
     console.log(`[Bridge MCP] Streamable HTTP endpoint: http://0.0.0.0:${PORT}/mcp`);
     console.log(`[Bridge Studio Relay] REST endpoint: http://0.0.0.0:${PORT}/api/studio-relay`);
+    console.log('[Bridge Resource Registry] REST endpoint: /api/resource-registry');
     console.log('[Bridge Project Brain] REST endpoint: /api/project-brain');
     console.log('[Bridge Review Packets] REST endpoint: /api/review-packets');
     console.log('[Bridge Batch] REST endpoint: /api/batches');
