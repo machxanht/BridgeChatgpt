@@ -32,6 +32,19 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      - name: Package Bridge Wake extension
+        run: |
+          set -euo pipefail
+          cd chrome-extension
+          zip -qr ../bridge-wake.zip bridge-wake
+          test -s ../bridge-wake.zip
+      - name: Upload Bridge Wake extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-wake
+          path: bridge-wake.zip
+          if-no-files-found: error
+          retention-days: 30
       - name: Production startup smoke test
         env:
           NODE_ENV: production
