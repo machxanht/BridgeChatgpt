@@ -32,3 +32,26 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      - name: Production startup smoke test
+        env:
+          NODE_ENV: production
+          PORT: 3101
+          GITHUB_COMMAND_BUS_ENABLED: "false"
+        run: |
+          set -euo pipefail
+          npm start > /tmp/bridge-start.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3101/health > /tmp/bridge-health.json; then
+              cat /tmp/bridge-health.json
+              exit 0
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              cat /tmp/bridge-start.log
+              exit 1
+            fi
+            sleep 1
+          done
+          cat /tmp/bridge-start.log
+          exit 1
