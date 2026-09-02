@@ -20,10 +20,10 @@ export function buildWorkflowStages(task:Task|null):{stages:WorkflowStageItem[];
  return {currentIndex,stages:base.map(([id,label,description],i)=>({id,label,description,status:(task?.status==='completed'||i<currentIndex?'completed':i===currentIndex?'current':'upcoming') as any}))};
 }
 function fmt(a:Activity){const ag=a.agent.toUpperCase(),x=(a.action||'').toLowerCase();if(x.includes('claimed task'))return `${ag} đã tiếp nhận ${a.entity_id||'công việc'}`;if(x.includes('test'))return `${ag} đang chạy kiểm thử`;if(x.includes('review'))return `${ag} đang xử lý bước đánh giá ${a.entity_id||''}`.trim();return `${ag}: ${a.action}${a.details?` — ${a.details}`:''}`;}
-function accountFor(id:string):{label:string;source:string}{
- if(id==='chatgpt') return {label:process.env.CHATGPT_ACCOUNT_LABEL||'Tài khoản ChatGPT hiện tại',source:process.env.CHATGPT_ACCOUNT_LABEL?'Cấu hình Bridge':'ChatGPT Web / MCP'};
- if(id==='gemini') return {label:process.env.GEMINI_ACCOUNT_LABEL||'Tài khoản Google AI Studio hiện tại',source:process.env.GEMINI_ACCOUNT_LABEL?'Cấu hình Bridge':'Google AI Studio / Gemini'};
- return {label:process.env.HUMAN_ACCOUNT_LABEL||'Người điều hành',source:'Bridge UI'};
+function accountFor(id:string):{label:string;source:NonNullable<AgentDisplayInfo['account_source']>}{
+ if(id==='chatgpt') return {label:process.env.CHATGPT_ACCOUNT_LABEL||'Tài khoản ChatGPT hiện tại',source:process.env.CHATGPT_ACCOUNT_LABEL?'runtime_config':'session'};
+ if(id==='gemini') return {label:process.env.GEMINI_ACCOUNT_LABEL||'Tài khoản Google AI Studio hiện tại',source:process.env.GEMINI_ACCOUNT_LABEL?'runtime_config':'session'};
+ return {label:process.env.HUMAN_ACCOUNT_LABEL||'Người điều hành',source:process.env.HUMAN_ACCOUNT_LABEL?'runtime_config':'session'};
 }
 export async function buildMissionControlData():Promise<MissionControlData>{
  const project=await getProject(), raw=await getAgentStatuses(), tasks=await getTasks({limit:50}), findings=await getFindings({limit:50}), activities=await getActivities(20);
@@ -38,8 +38,8 @@ export async function buildMissionControlData():Promise<MissionControlData>{
   const task=s?.current_task_id?tasks.find(t=>t.id===s.current_task_id):undefined,m=runtimeAgentMetrics[def.id]||{requests_count:0,input_tokens:0,output_tokens:0,tests_executed:0},acct=accountFor(def.id);
   let activity=task?`Đang xử lý ${task.id}: ${task.title}`:'Đang chờ nhiệm vụ.',step=task?.status==='review'?'Chờ đánh giá.':task?'Đang thực thi.':'Sẵn sàng.';
   if(def.id==='chatgpt'&&!fresh){activity='ChatGPT hoạt động theo yêu cầu qua MCP, không duy trì kết nối nền liên tục.';step='Sẵn sàng khi ChatGPT gọi Bridge MCP.';}
-  if(def.id==='gemini'&&geminiExternal&&!fresh){activity='AI Studio Agent mode đã chọn; Bridge đang chờ lần gọi MCP tiếp theo.';step='Không cần GEMINI_API_KEY cho chế độ external AI Studio agent.';}
-  else if(def.id==='gemini'&&!geminiApiWorker){activity='Chưa chọn executor Gemini khả dụng.';step='Dùng AI Studio Agent + Bridge MCP, hoặc bật Gemini API worker.';}
+  if(def.id==='gemini'&&geminiExternal&&!fresh){activity='AI Studio relay mode đã chọn; Bridge đang chờ heartbeat từ Studio.';step='Studio cần gọi /api/studio-relay/heartbeat để xác nhận kết nối thật.';}
+  else if(def.id==='gemini'&&!geminiApiWorker){activity='Chưa chọn executor Gemini khả dụng.';step='Dùng AI Studio relay, hoặc bật Gemini API worker.';}
   return {id:def.id,name:def.name,role:def.role,avatar_type:def.avatar_type,account_label:acct.label,account_source:acct.source,connection_status:connection,last_seen_seconds:last,last_seen_text:!has?'Chưa có hoạt động':last<60?`${last} giây trước`:`${Math.floor(last/60)} phút trước`,current_activity_detail:activity,current_step_text:step,current_task_id:s?.current_task_id||null,current_task_title:task?.title||null,stage_index:task?buildWorkflowStages(task).currentIndex:0,quota:{requests_count:m.requests_count,input_tokens:m.input_tokens,output_tokens:m.output_tokens,tests_executed:m.tests_executed,estimated_cost_usd:0,provider_reported_quota:false,provider_quota_text:'Provider không cung cấp quota cho Bridge; chỉ hiển thị usage Bridge đo được.'}};
  });
  const recent_activities:RecentActivityItem[]=activities.slice(0,8).map(a=>({id:a.id,time:new Date(a.created_at).toLocaleTimeString('vi-VN'),agent:a.agent,text:fmt(a),raw_action:a.action,details:a.details||undefined}));
