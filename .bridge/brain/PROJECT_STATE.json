@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "goal-shared-project-context",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "goal",
+      "content": "Make ChatGPT Web sessions and AI Studio workers collaborate on the same project without requiring one session to replay another session's full conversation history.",
+      "source_agent": "chatgpt",
+      "source_session": "architecture",
+      "source_task_id": null,
+      "created_at": "2026-09-03T05:10:00.000Z",
+      "updated_at": "2026-09-03T05:10:00.000Z"
+    },
+    {
+      "id": "decision-project-brain",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "decision",
+      "content": "Shared project knowledge belongs in Project Brain, not in any individual ChatGPT chat or Studio tab. Session scratch remains private; durable goals, decisions, architecture, blockers, facts, and handoffs are shared.",
+      "source_agent": "chatgpt",
+      "source_session": "architecture",
+      "source_task_id": null,
+      "created_at": "2026-09-03T05:10:00.000Z",
+      "updated_at": "2026-09-03T05:10:00.000Z"
+    },
+    {
+      "id": "architecture-runtime-roles",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "architecture",
+      "content": "Normal ChatGPT/Sol is the senior coder, architect and reviewer; Google AI Studio is the workspace/execution backend and optional junior coder; Bridge owns task/state/context orchestration; GitHub is source of truth.",
+      "source_agent": "chatgpt",
+      "source_session": "architecture",
+      "source_task_id": null,
+      "created_at": "2026-09-03T05:10:00.000Z",
+      "updated_at": "2026-09-03T05:10:00.000Z"
+    },
+    {
+      "id": "architecture-context-model",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "architecture",
+      "content": "Use thread/session identity only to track who is doing work. Cross-session understanding comes from a shared Project Brain bootstrap. Task routing and knowledge sharing are separate concerns.",
+      "source_agent": "chatgpt",
+      "source_session": "architecture",
+      "source_task_id": null,
+      "created_at": "2026-09-03T05:10:00.000Z",
+      "updated_at": "2026-09-03T05:10:00.000Z"
+    },
+    {
+      "id": "blocker-chatgpt-background",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "blocker",
+      "content": "Normal ChatGPT Web sessions cannot currently be externally woken or continue autonomously in the background. New ChatGPT sessions must explicitly join/load project context before acting.",
+      "source_agent": "chatgpt",
+      "source_session": "architecture",
+      "source_task_id": null,
+      "created_at": "2026-09-03T05:10:00.000Z",
+      "updated_at": "2026-09-03T05:10:00.000Z"
+    },
+    {
+      "id": "decision-memory-patterns",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "decision",
+      "content": "Project Brain follows proven patterns from OpenHands project memory, Letta git-backed shared memory, CrewAI scoped crew memory, and workflow/thread state separation used by LangGraph and Microsoft Agent Framework.",
+      "source_agent": "chatgpt",
+      "source_session": "research",
+      "source_task_id": null,
+      "created_at": "2026-09-03T05:10:00.000Z",
+      "updated_at": "2026-09-03T05:10:00.000Z"
+    }
+  ]
+}
