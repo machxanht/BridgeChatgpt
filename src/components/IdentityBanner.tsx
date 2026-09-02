@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Save, Send, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Clipboard, Plus, Save, Send, X } from 'lucide-react';
 import type { WorkspaceState } from '../types.js';
 
 const CHATGPT_EMAIL_KEY = 'bridge.display.chatgptEmail';
@@ -64,6 +64,7 @@ export const IdentityBanner: React.FC = () => {
   const [sessionLabel, setSessionLabel] = useState('');
   const [taskTarget, setTaskTarget] = useState('');
   const [taskText, setTaskText] = useState('');
+  const [copiedInstance, setCopiedInstance] = useState('');
   const [feedback, setFeedback] = useState('');
 
   const load = async () => {
@@ -230,6 +231,24 @@ export const IdentityBanner: React.FC = () => {
     }
   };
 
+  const copyStudioActivation = async (instance: AgentInstance) => {
+    if (!current) return;
+    const command = [
+      'Check Bridge and use this exact Studio identity for all relay calls until this project changes:',
+      `workspace_id=${current.workspace_id}`,
+      `project_id=${current.project_id}`,
+      `agent_instance_id=${instance.agent_instance_id}`,
+      'Claim and process pending tasks only for this workspace/project. Do not use studio-legacy for this session.',
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopiedInstance(instance.agent_instance_id);
+      window.setTimeout(() => setCopiedInstance(''), 1800);
+    } catch {
+      setFeedback('Lỗi: Không copy được lệnh kích Studio trên thiết bị này.');
+    }
+  };
+
   return (
     <div className="relative z-30 border-b border-white/5 bg-slate-950/85 backdrop-blur-xl">
       <div className="max-w-7xl mx-auto px-4 lg:px-6 py-2">
@@ -266,7 +285,21 @@ export const IdentityBanner: React.FC = () => {
                 </div>
                 <div className="rounded-lg border border-cyan-500/15 bg-cyan-950/20 p-2">
                   <div className="text-[10px] font-semibold text-cyan-300">STUDIO SESSIONS — {current.project_name}</div>
-                  <div className="mt-1 text-[11px] text-slate-300">{current.studio_instances.length ? current.studio_instances.map(item => `${item.account_label || 'Studio'} / ${item.session_label}`).join(' · ') : 'Chưa gắn session'}</div>
+                  {current.studio_instances.length ? (
+                    <div className="mt-1 space-y-1.5">
+                      {current.studio_instances.map(instance => (
+                        <div key={instance.agent_instance_id} className="flex items-center gap-2 rounded-md bg-black/20 px-2 py-1.5 text-[10px]">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-slate-200 truncate"><b>{instance.session_label}</b> · {instance.account_label || 'account chưa đặt'} · <span className="font-mono text-cyan-300">{instance.agent_instance_id}</span></div>
+                            <div className="text-slate-500">{instance.status === 'active' ? 'đang hoạt động' : instance.status === 'idle' ? 'đang nghỉ' : 'offline'}</div>
+                          </div>
+                          <button onClick={() => copyStudioActivation(instance)} className="shrink-0 rounded-md border border-cyan-500/20 px-2 py-1 text-cyan-200 hover:text-white" title="Copy lệnh kích đúng Studio session này">
+                            {copiedInstance === instance.agent_instance_id ? <><Check className="w-3 h-3 inline mr-1" />Đã copy</> : <><Clipboard className="w-3 h-3 inline mr-1" />Kích đúng session</>}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <div className="mt-1 text-[11px] text-slate-300">Chưa gắn session</div>}
                 </div>
               </div>
             )}
