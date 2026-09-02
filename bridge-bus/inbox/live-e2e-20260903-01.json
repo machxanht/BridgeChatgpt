@@ -1,0 +1,12 @@
+{
+  "id": "live-e2e-20260903-01",
+  "type": "task_create",
+  "created_by": "chatgpt",
+  "title": "LIVE E2E: Bridge round-trip proof",
+  "description": "This is the first clean live end-to-end Bridge test after public deployment. In the AI Studio workspace, create a new text file at bridge-bus/e2e-proof.txt containing exactly: BRIDGE_LIVE_E2E_OK. Do not modify unrelated files. Then run only the minimum verification needed to confirm the file exists and report completion through the Studio Relay with the changed-file artifact for bridge-bus/e2e-proof.txt so ChatGPT can review and apply it to GitHub.",
+  "priority": "high",
+  "assignee": "gemini",
+  "related_files": [
+    "bridge-bus/e2e-proof.txt"
+  ]
+}
