@@ -8,6 +8,7 @@ import {
   setAgentStatus,
   updateTask,
 } from './db.js';
+import { extractExecutionPayload, studioInputContract } from './executionPayload.js';
 
 /** REST relay for Google AI Studio Build mode. Bridge never calls Gemini here. */
 export const studioRelayRouter = Router();
@@ -92,14 +93,47 @@ const resultContract = {
     'For a new file, return base_sha: null.',
     'Never submit secrets, runtime data, command-bus files, Git internals, dependency trees, or private keys as artifacts.',
     'Do not git push. ChatGPT will compare base_sha with current GitHub before applying artifacts.',
+    'When a ChatGPT execution payload was supplied, return the final workspace form of every file changed by that task.',
   ],
   max_artifacts: MAX_ARTIFACT_COUNT,
   max_payload_bytes: MAX_ARTIFACT_BYTES,
 };
 
+function prepareTaskForStudio(task: any) {
+  if (!task) return { task: null, execution_payload: null };
+  const parsed = extractExecutionPayload(String(task.description || ''));
+  return {
+    task: { ...task, description: parsed.description },
+    execution_payload: parsed.payload,
+  };
+}
+
 studioRelayRouter.get('/state', async (_req: Request, res: Response) => {
-  try { const state = await getWorkflowStateForAgent('gemini'); res.json({ ok: true, executor: 'google-ai-studio', result_contract: resultContract, ...state }); }
-  catch (err: any) { res.status(500).json({ ok: false, error: err.message }); }
+  try {
+    const state = await getWorkflowStateForAgent('gemini');
+    res.json({
+      ok: true,
+      executor: 'google-ai-studio',
+      input_contract: studioInputContract,
+      result_contract: resultContract,
+      ...state,
+    });
+  } catch (err: any) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+studioRelayRouter.get('/input/:task_id', async (req: Request, res: Response) => {
+  try {
+    const task = await getTask(req.params.task_id);
+    if (!task) { res.status(404).json({ ok: false, error: `Task ${req.params.task_id} not found` }); return; }
+    if (task.assignee !== 'gemini') { res.status(403).json({ ok: false, error: `Task ${task.id} is not assigned to Gemini/Studio` }); return; }
+    const prepared = prepareTaskForStudio(task);
+    res.json({
+      ok: true,
+      input_contract: studioInputContract,
+      task: prepared.task,
+      execution_payload: prepared.execution_payload,
+    });
+  } catch (err: any) { res.status(400).json({ ok: false, error: err.message }); }
 });
 
 studioRelayRouter.post('/heartbeat', async (req: Request, res: Response) => {
@@ -108,8 +142,19 @@ studioRelayRouter.post('/heartbeat', async (req: Request, res: Response) => {
 });
 
 studioRelayRouter.post('/claim', async (_req: Request, res: Response) => {
-  try { await recordHeartbeat({ agent: 'gemini', status: 'idle', message: 'Google AI Studio checking for work' }); const claim = await claimNextTask('gemini'); res.json({ ok: true, result_contract: resultContract, ...claim }); }
-  catch (err: any) { res.status(400).json({ ok: false, error: err.message }); }
+  try {
+    await recordHeartbeat({ agent: 'gemini', status: 'idle', message: 'Google AI Studio checking for work' });
+    const claim = await claimNextTask('gemini');
+    const prepared = prepareTaskForStudio(claim.task);
+    res.json({
+      ok: true,
+      input_contract: studioInputContract,
+      result_contract: resultContract,
+      ...claim,
+      task: prepared.task,
+      execution_payload: prepared.execution_payload,
+    });
+  } catch (err: any) { res.status(400).json({ ok: false, error: err.message }); }
 });
 
 studioRelayRouter.post('/progress', async (req: Request, res: Response) => {
