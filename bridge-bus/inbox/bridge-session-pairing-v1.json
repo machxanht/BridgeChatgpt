@@ -1,0 +1,14 @@
+{
+  "id": "bridge-session-pairing-v1",
+  "type": "task_create",
+  "created_by": "chatgpt",
+  "title": "Studio session pairing guard + activation helper",
+  "description": "Final multi-project safety polish before publish. Modify only server/studioRelay.ts, src/components/IdentityBanner.tsx, and tests/workspaceRegistry.test.ts if useful. In Studio Relay identity resolution: when a request omits agent_instance_id, resolve the requested workspace (or default workspace for legacy single-workspace mode). If that workspace has exactly one registered google-ai-studio instance, use/touch that instance automatically instead of creating/using studio-legacy. If the workspace has more than one registered Studio instance, do NOT guess: reject work-claim/progress/result routing with a clear error requiring agent_instance_id, so one Studio tab cannot steal another session's task. Preserve legacy fallback only when zero Studio instances are registered. Keep workspace/project/task binding enforcement unchanged. In the expanded Projects UI, show each Studio session's readable session label plus a small copyable activation instruction containing its workspace_id, project_id, and agent_instance_id so the human can paste one short command into the intended AI Studio tab. Keep the top banner one compact line; do not make the hero larger. Run npm run lint, npm test, npm run build, restart Preview, verify /health, and visually inspect the Projects panel. Submit changed-file artifacts through Studio Relay. Do not Publish.",
+  "priority": "urgent",
+  "assignee": "gemini",
+  "related_files": [
+    "server/studioRelay.ts",
+    "src/components/IdentityBanner.tsx",
+    "tests/workspaceRegistry.test.ts"
+  ]
+}
