@@ -30,8 +30,7 @@ interface AgentMetrics {
   tests_executed: number;
 }
 
-// Runtime metrics MUST start at zero. Bridge only displays usage it actually observes.
-// Provider subscription quota is never inferred from these counters.
+// Never seed or invent usage. These counters only contain events observed by Bridge.
 const runtimeAgentMetrics: Record<string, AgentMetrics> = {};
 
 export function incrementAgentMetrics(agent: string, delta: Partial<AgentMetrics>) {
@@ -118,26 +117,41 @@ export async function buildMissionControlData(): Promise<MissionControlData> {
     };
   }
 
-  // Only real Bridge agents are shown. Future agents appear when the backend stores a real status/heartbeat for them.
   const definitions = [
     { id: 'chatgpt', name: 'ChatGPT', role: 'Reviewer & Kiến trúc sư', avatar_type: 'chatgpt' as const },
     { id: 'gemini', name: 'Gemini', role: 'Coder & Executor', avatar_type: 'gemini' as const },
     { id: 'human', name: 'Human', role: 'Điều hành', avatar_type: 'human' as const },
   ];
   const now = Date.now();
+  const geminiWorkerConfigured = process.env.GEMINI_WORKER_ENABLED === 'true' && Boolean(process.env.GEMINI_API_KEY);
+
   const agents: AgentDisplayInfo[] = definitions.map(def => {
     const dbStatus = rawAgents[def.id as 'chatgpt' | 'gemini' | 'human'];
     const parsed = dbStatus?.last_active_at ? Date.parse(dbStatus.last_active_at) : NaN;
-    const hasHeartbeat = Number.isFinite(parsed);
-    const lastSeen = hasHeartbeat ? Math.max(0, Math.floor((now - parsed) / 1000)) : Number.MAX_SAFE_INTEGER;
+    const hasActivity = Number.isFinite(parsed);
+    const lastSeen = hasActivity ? Math.max(0, Math.floor((now - parsed) / 1000)) : -1;
+    const fresh = hasActivity && lastSeen <= 30;
+    const stale = hasActivity && lastSeen > 30 && lastSeen <= 90;
+
     let connection: AgentDisplayInfo['connection_status'];
-    if (!hasHeartbeat || lastSeen > 90) connection = 'disconnected';
-    else if (isSystemPaused) connection = 'waiting';
-    else if (lastSeen > 30) connection = 'stale';
-    else if (dbStatus?.status === 'working') connection = 'working';
-    else if (dbStatus?.status === 'reviewing') connection = 'reviewing';
-    else if (dbStatus?.status === 'blocked') connection = 'blocked';
-    else connection = 'connected';
+    if (isSystemPaused) {
+      connection = 'waiting';
+    } else if (def.id === 'human') {
+      // This snapshot was requested by the dashboard, so the operator UI itself is active.
+      connection = 'connected';
+    } else if (def.id === 'chatgpt') {
+      // ChatGPT Web is request-driven, not a daemon. Lack of a continuous heartbeat is NOT a disconnect.
+      if (fresh && dbStatus?.status === 'reviewing') connection = 'reviewing';
+      else if (fresh && dbStatus?.status === 'working') connection = 'working';
+      else connection = 'waiting';
+    } else {
+      // Gemini is a real background worker only when the worker is configured.
+      if (!geminiWorkerConfigured) connection = 'blocked';
+      else if (fresh && dbStatus?.status === 'working') connection = 'working';
+      else if (fresh) connection = 'connected';
+      else if (stale) connection = 'stale';
+      else connection = 'disconnected';
+    }
 
     const task = dbStatus?.current_task_id ? tasks.find(t => t.id === dbStatus.current_task_id) : undefined;
     const metrics = runtimeAgentMetrics[def.id] || { requests_count: 0, input_tokens: 0, output_tokens: 0, tests_executed: 0 };
@@ -150,17 +164,31 @@ export async function buildMissionControlData(): Promise<MissionControlData> {
       provider_reported_quota: false,
       provider_quota_text: 'Provider không cung cấp quota cho Bridge; chỉ hiển thị usage Bridge đo được.',
     };
-    const offline = connection === 'disconnected';
+
+    let activity = task ? `Đang xử lý ${task.id}: ${task.title}` : 'Đang chờ nhiệm vụ.';
+    let step = task?.status === 'review' ? 'Chờ đánh giá.' : task ? 'Đang thực thi.' : 'Sẵn sàng.';
+    if (def.id === 'chatgpt' && !fresh) {
+      activity = 'ChatGPT hoạt động theo yêu cầu qua MCP, không duy trì kết nối nền liên tục.';
+      step = 'Sẵn sàng khi ChatGPT gọi Bridge MCP.';
+    }
+    if (def.id === 'gemini' && !geminiWorkerConfigured) {
+      activity = 'Gemini worker chưa được cấu hình để chạy tự động.';
+      step = 'Cần GEMINI_WORKER_ENABLED=true và GEMINI_API_KEY trong runtime.';
+    } else if (def.id === 'gemini' && connection === 'disconnected') {
+      activity = 'Gemini worker đã cấu hình nhưng không có heartbeat mới.';
+      step = 'Kiểm tra tiến trình Bridge/Gemini worker.';
+    }
+
     return {
       id: def.id,
       name: def.name,
       role: def.role,
       avatar_type: def.avatar_type,
       connection_status: connection,
-      last_seen_seconds: hasHeartbeat ? lastSeen : -1,
-      last_seen_text: !hasHeartbeat ? 'Chưa có heartbeat' : lastSeen < 60 ? `${lastSeen} giây trước` : `${Math.floor(lastSeen / 60)} phút trước`,
-      current_activity_detail: offline ? 'Không có kết nối hoạt động được xác nhận.' : task ? `Đang xử lý ${task.id}: ${task.title}` : 'Đang chờ nhiệm vụ.',
-      current_step_text: offline ? 'Chờ heartbeat mới.' : task?.status === 'review' ? 'Chờ đánh giá.' : task ? 'Đang thực thi.' : 'Sẵn sàng.',
+      last_seen_seconds: lastSeen,
+      last_seen_text: !hasActivity ? 'Chưa có hoạt động' : lastSeen < 60 ? `${lastSeen} giây trước` : `${Math.floor(lastSeen / 60)} phút trước`,
+      current_activity_detail: activity,
+      current_step_text: step,
       current_task_id: dbStatus?.current_task_id || null,
       current_task_title: task?.title || null,
       stage_index: task ? buildWorkflowStages(task).currentIndex : 0,
@@ -194,7 +222,6 @@ export async function buildMissionControlData(): Promise<MissionControlData> {
 export async function pauseAllAgents(): Promise<{ success: boolean; message: string }> {
   isSystemPaused = true;
   pausedAt = new Date().toISOString();
-  // Stop the actual autonomous loop, not merely the dashboard status.
   const { stopGeminiWorker } = await import('./geminiWorker.js');
   stopGeminiWorker();
   await logActivity({ agent: 'human', action: 'Pause all agents', entity_type: 'system', details: 'Autonomous Gemini worker stopped.' });
