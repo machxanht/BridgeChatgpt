@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { getProject } from './db.js';
 import { getResourceRegistry, removeResourceTarget, upsertResourceTarget } from './resourceRegistry.js';
 import { upsertWorkspace } from './workspaceRegistry.js';
+import { buildWakeQueue } from './wakeQueue.js';
 
 export const resourceRegistryRouter = Router();
 
@@ -47,6 +48,21 @@ resourceRegistryRouter.get('/', async (_req: Request, res: Response) => {
   try {
     const project = await getProject();
     res.json({ ok: true, ...(await getResourceRegistry(project)) });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+resourceRegistryRouter.get('/wake-queue', async (_req: Request, res: Response) => {
+  try {
+    const project = await getProject();
+    const events = await buildWakeQueue(project);
+    res.json({
+      ok: true,
+      events,
+      event_count: events.length,
+      generated_at: new Date().toISOString(),
+    });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err.message });
   }
