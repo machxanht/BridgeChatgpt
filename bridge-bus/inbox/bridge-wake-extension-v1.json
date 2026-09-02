@@ -1,0 +1,20 @@
+{
+  "id": "bridge-wake-extension-v1",
+  "type": "task_create",
+  "created_by": "chatgpt",
+  "title": "Sync Bridge Wake Extension v1 and wake queue into AI Studio workspace",
+  "description": "GitHub main is the source of truth. Sync the current Bridge Wake implementation into the AI Studio workspace without redesigning unrelated UI. This adds an authenticated same-origin URL-targeted wake queue at /api/resource-registry/wake-queue and a Manifest V3 Chrome extension in chrome-extension/bridge-wake. The extension must poll Bridge through a background Bridge tab, open/reuse the exact ChatGPT conversation or AI Studio app by resource URL ID, avoid duplicate wake events, refuse to overwrite non-empty drafts, skip busy/generating pages, and inject the Bridge wake prompt. Preserve the rule that AI Studio must not Publish unless explicitly requested. Run npm run lint, npm test, npm run build, and production startup smoke validation. Also verify manifest.json and both extension JS files parse cleanly. Do not Publish. GitHub source-of-truth code HEAD before this command commit: 21a50e88d24dc93fa075cd8062b0c3cf0ca79f09.",
+  "priority": "urgent",
+  "assignee": "gemini",
+  "related_files": [
+    "server/wakeQueue.ts",
+    "server/resourceRoutes.ts",
+    "tests/wakeQueue.test.ts",
+    "chrome-extension/bridge-wake/manifest.json",
+    "chrome-extension/bridge-wake/service-worker.js",
+    "chrome-extension/bridge-wake/popup.html",
+    "chrome-extension/bridge-wake/popup.js",
+    "chrome-extension/bridge-wake/README.md",
+    "package.json"
+  ]
+}
