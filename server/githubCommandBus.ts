@@ -3,6 +3,7 @@ import path from 'path';
 import { createTask, getTask, reviewTask, isCommandProcessed, recordCommandReceipt } from './db.js';
 import { attachExecutionPayload } from './executionPayload.js';
 import { createBatch, startBatch, type BatchLimits, type BatchTaskInput } from './batchOrchestrator.js';
+import { attachTaskBinding } from './taskBinding.js';
 
 const BUS_DIR = path.resolve(process.cwd(), 'bridge-bus');
 const INBOX_DIR = path.join(BUS_DIR, 'inbox');
@@ -28,6 +29,9 @@ export interface BusCommand {
   assignee?: 'gemini' | 'chatgpt' | 'human';
   related_files?: string[];
   execution_payload?: unknown;
+  workspace_id?: string;
+  project_id?: string;
+  agent_instance_id?: string | null;
   task_id?: string;
   decision?: 'approve' | 'request_changes';
   summary?: string;
@@ -54,24 +58,35 @@ export async function execute(command: BusCommand) {
   if (!command.id || !command.type) throw new Error('Command requires id and type.');
   if (command.type === 'task_create') {
     if (!command.title || !command.description) throw new Error('task_create requires title and description.');
-    const prepared = command.execution_payload === undefined
+    const payloadPrepared = command.execution_payload === undefined
       ? { description: command.description, payload: null }
       : attachExecutionPayload(command.description, command.execution_payload);
+    const bindingPrepared = command.workspace_id || command.project_id || command.agent_instance_id
+      ? attachTaskBinding(payloadPrepared.description, {
+          workspace_id: command.workspace_id,
+          project_id: command.project_id,
+          agent_instance_id: command.agent_instance_id || null,
+        })
+      : { description: payloadPrepared.description, binding: null };
     const task = await createTask({
       title: command.title,
-      description: prepared.description,
+      description: bindingPrepared.description,
       priority: command.priority || 'medium',
       assignee: command.assignee || 'gemini',
       related_files: command.related_files || [],
       created_by: command.created_by || 'chatgpt',
     });
-    const resultTask = prepared.payload ? { ...task, description: command.description } : task;
+    const resultTask = payloadPrepared.payload || bindingPrepared.binding
+      ? { ...task, description: command.description }
+      : task;
     return {
       ok: true,
       command_id: command.id,
       type: command.type,
       task: resultTask,
-      execution_payload_attached: Boolean(prepared.payload),
+      execution_payload_attached: Boolean(payloadPrepared.payload),
+      task_binding_attached: Boolean(bindingPrepared.binding),
+      task_binding: bindingPrepared.binding,
     };
   }
   if (command.type === 'task_review') {
@@ -167,8 +182,6 @@ export async function processGitHubRemoteCommandBusOnce() {
     if (!response.ok) throw new Error(`GitHub inbox HTTP ${response.status}: ${await response.text()}`);
     const items = await response.json() as GitHubContentItem[];
     for (const item of items.filter(i => i.type === 'file' && i.name.endsWith('.json')).sort((a, b) => a.name.localeCompare(b.name))) {
-      // Existing checkout files are handled locally. This also prevents historical
-      // commands from being replayed merely because remote polling was enabled.
       if (fs.existsSync(path.join(INBOX_DIR, item.name))) continue;
       if (!item.download_url) continue;
       const commandResponse = await fetch(item.download_url, { headers: { 'User-Agent': 'Bridge-GitHub-Command-Bus' } });
