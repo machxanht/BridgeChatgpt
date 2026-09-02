@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { createTask, getTask, reviewTask, isCommandProcessed, recordCommandReceipt } from './db.js';
 import { attachExecutionPayload } from './executionPayload.js';
+import { createBatch, startBatch, type BatchLimits, type BatchTaskInput } from './batchOrchestrator.js';
 
 const BUS_DIR = path.resolve(process.cwd(), 'bridge-bus');
 const INBOX_DIR = path.join(BUS_DIR, 'inbox');
@@ -19,7 +20,7 @@ let remoteRunning = false;
 
 export interface BusCommand {
   id: string;
-  type: 'task_create' | 'task_review';
+  type: 'task_create' | 'task_review' | 'batch_create';
   created_by?: 'chatgpt' | 'human';
   title?: string;
   description?: string;
@@ -31,6 +32,11 @@ export interface BusCommand {
   decision?: 'approve' | 'request_changes';
   summary?: string;
   tests_verified?: boolean;
+  batch_title?: string;
+  batch_goal?: string;
+  batch_tasks?: BatchTaskInput[];
+  batch_limits?: Partial<BatchLimits>;
+  auto_start?: boolean;
 }
 
 interface GitHubContentItem { name: string; path: string; type: string; download_url?: string | null; }
@@ -74,6 +80,25 @@ export async function execute(command: BusCommand) {
     if (!existing) throw new Error(`Task ${command.task_id} not found.`);
     const task = await reviewTask({ id: command.task_id, decision: command.decision, summary: command.summary, tests_verified: command.tests_verified ?? true, reviewer: 'chatgpt' });
     return { ok: true, command_id: command.id, type: command.type, task };
+  }
+  if (command.type === 'batch_create') {
+    if (!command.batch_title || !command.batch_goal || !Array.isArray(command.batch_tasks) || command.batch_tasks.length === 0) {
+      throw new Error('batch_create requires batch_title, batch_goal, and batch_tasks.');
+    }
+    const batch = await createBatch({
+      title: command.batch_title,
+      goal: command.batch_goal,
+      tasks: command.batch_tasks,
+      limits: command.batch_limits,
+      created_by: command.created_by || 'chatgpt',
+    });
+    const resultBatch = command.auto_start === false ? batch : await startBatch(batch.id);
+    return {
+      ok: true,
+      command_id: command.id,
+      type: command.type,
+      batch: resultBatch,
+    };
   }
   throw new Error(`Unsupported command type: ${(command as any).type}`);
 }
