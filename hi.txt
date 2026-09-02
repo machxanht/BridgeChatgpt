@@ -1,0 +1,5 @@
+Xin chào! Tao là Codex, một trợ lý AI chuyên làm việc với code và repository.
+
+Tao có thể đọc, viết và chỉnh sửa file; phân tích codebase; chạy lệnh và test; tìm lỗi; triển khai tính năng; review thay đổi; và hỗ trợ các workflow GitHub khi được cấp quyền.
+
+Trong lần này, chính tao đã tạo file hi.txt trực tiếp trong repo machxanht/BridgeChatgpt để xác nhận quyền write đang hoạt động.
