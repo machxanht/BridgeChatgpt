@@ -14,6 +14,7 @@ import { reviewPacketsRouter } from './server/reviewPackets.js';
 import { startGitHubCommandBus } from './server/githubCommandBus.js';
 import { batchRouter } from './server/batchRoutes.js';
 import { startBatchOrchestrator } from './server/batchOrchestrator.js';
+import { projectBrainRouter } from './server/projectBrainRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,6 +57,7 @@ async function startServer() {
         studio_relay: 'ready',
         review_packets: 'ready',
         batch_orchestrator: 'ready',
+        project_brain: 'ready',
         github_command_bus: process.env.GITHUB_COMMAND_BUS_ENABLED === 'false' ? 'disabled' : 'ready',
         service: 'Bridge — Shared AI Workspace',
         time: new Date().toISOString(),
@@ -70,6 +72,7 @@ async function startServer() {
         studio_relay: 'degraded',
         review_packets: 'degraded',
         batch_orchestrator: 'degraded',
+        project_brain: 'degraded',
         github_command_bus: 'degraded',
       });
     }
@@ -83,6 +86,10 @@ async function startServer() {
   // The pairing guard resolves a single registered Studio session automatically
   // and blocks ambiguous multi-session claims unless agent_instance_id is explicit.
   app.use('/api/studio-relay', requireAuth, studioSessionPairingGuard, studioRelayRouter);
+
+  // Shared cross-session project memory. Thread/session scratch remains private;
+  // this service carries durable goals, decisions, architecture, blockers and handoffs.
+  app.use('/api/project-brain', requireAuth, projectBrainRouter);
 
   // Batch/epic orchestration: DAG scheduling, leases, retry/review limits and dashboard.
   app.use('/api/batches', requireAuth, batchRouter);
@@ -111,6 +118,7 @@ async function startServer() {
     console.log(`[Bridge Server] Running on http://0.0.0.0:${PORT}`);
     console.log(`[Bridge MCP] Streamable HTTP endpoint: http://0.0.0.0:${PORT}/mcp`);
     console.log(`[Bridge Studio Relay] REST endpoint: http://0.0.0.0:${PORT}/api/studio-relay`);
+    console.log('[Bridge Project Brain] REST endpoint: /api/project-brain');
     console.log('[Bridge Review Packets] REST endpoint: /api/review-packets');
     console.log('[Bridge Batch] REST endpoint: /api/batches');
     console.log('[Bridge GitHub Bus] Inbox: bridge-bus/inbox');
