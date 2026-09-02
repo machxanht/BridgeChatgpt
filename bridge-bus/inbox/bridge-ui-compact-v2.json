@@ -1,0 +1,12 @@
+{
+  "id": "bridge-ui-compact-v2",
+  "type": "task_create",
+  "created_by": "chatgpt",
+  "title": "Compact Mission Control + create tasks from UI",
+  "description": "Sync ONLY src/components/MissionControlView.tsx from GitHub main into the AI Studio workspace. This reviewed version removes the oversized timing/progress cards, keeps time/progress as one compact metadata line in the hero, hides repetitive idle heartbeat entries from recent activity, simplifies labels, and turns the bottom form into a real task creator: selecting ChatGPT or AI Studio creates an actual Bridge task assigned to that agent; selecting All only sends a team note. Do not redesign or expand the UI. Do not modify package.json, server.ts, database files, or deployment-specific startup code. After syncing, run npm run lint and npm run build, restart Preview, verify /health is ok, and visually confirm the hero is compact on mobile. Do not publish yet; report result through Studio Relay.",
+  "priority": "urgent",
+  "assignee": "gemini",
+  "related_files": [
+    "src/components/MissionControlView.tsx"
+  ]
+}
