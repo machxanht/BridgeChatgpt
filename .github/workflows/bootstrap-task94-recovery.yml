@@ -22,24 +22,30 @@ jobs:
         run: |
           set -euo pipefail
           cat bridge-recovery/task94/*.part > /tmp/task94-recovery.json
-          echo '8434ed70ee9a5eddaf8f44f3050af120ddcda6c633f1f15dd969c025cd5ec7ac  /tmp/task94-recovery.json' | sha256sum -c -
           node <<'NODE'
           const fs = require('fs');
           const cp = require('child_process');
+          const crypto = require('crypto');
           const path = require('path');
           const packet = JSON.parse(fs.readFileSync('/tmp/task94-recovery.json', 'utf8'));
           if (packet.task_id !== 'TASK-94') throw new Error('Unexpected task id');
           const arts = packet.artifacts;
-          const wanted = ['server/db.ts', 'server/githubCommandBus.ts', 'tests/bridge.test.ts'];
-          if (!Array.isArray(arts) || arts.length !== 3 || wanted.some(x => !arts.some(a => a.path === x))) {
-            throw new Error('Unexpected TASK-94 artifact set');
-          }
+          const expected = new Map([
+            ['server/db.ts', { base: '502eee1b45cf9b9583c1c7e3af5b046a73c7c1f6', next: 'bc0e6955b8e55f064f5af613f09e00d2580e131e' }],
+            ['server/githubCommandBus.ts', { base: 'bd71536710c4b6f61a25173b1bb121852fc6a860', next: 'd890bee83d69ea55d8ce5f55672dee3c9bc6ede6' }],
+            ['tests/bridge.test.ts', { base: 'c1616d751e6a3db4e88dec8071f5d1118743d391', next: 'b303aadba4bb31b14666065e4dde8516192dc966' }],
+          ]);
+          if (!Array.isArray(arts) || arts.length !== expected.size) throw new Error('Unexpected TASK-94 artifact count');
           for (const a of arts) {
-            if (!wanted.includes(a.path) || a.operation !== 'update' || typeof a.content !== 'string' || !/^[0-9a-f]{40}$/.test(a.base_sha || '')) {
-              throw new Error('Invalid artifact ' + a.path);
+            const exp = expected.get(a.path);
+            if (!exp || a.operation !== 'update' || typeof a.content !== 'string' || a.base_sha !== exp.base) {
+              throw new Error('Invalid artifact metadata ' + a.path);
             }
+            const bytes = Buffer.from(a.content, 'utf8');
+            const gitBlob = crypto.createHash('sha1').update(Buffer.from(`blob ${bytes.length}\0`)).update(bytes).digest('hex');
+            if (gitBlob !== exp.next) throw new Error(`Recovered content SHA mismatch ${a.path}: ${gitBlob} != ${exp.next}`);
             const current = cp.execFileSync('git', ['rev-parse', `HEAD:${a.path}`], { encoding: 'utf8' }).trim();
-            if (current !== a.base_sha) throw new Error(`Base SHA mismatch ${a.path}: ${current} != ${a.base_sha}`);
+            if (current !== exp.base) throw new Error(`Base SHA mismatch ${a.path}: ${current} != ${exp.base}`);
             fs.mkdirSync(path.dirname(a.path), { recursive: true });
             fs.writeFileSync(a.path, a.content, 'utf8');
           }
