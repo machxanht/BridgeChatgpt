@@ -1,0 +1,14 @@
+{
+  "id": "CMD-BOOTSTRAP-TASK94-BRANCH-20260902",
+  "type": "task_create",
+  "title": "Bootstrap TASK-94 implementation onto isolated GitHub branch",
+  "description": "Recovery/bootstrap task. The current AI Studio workspace already contains the completed TASK-94 implementation. Do NOT reimplement TASK-94 and do NOT claim or modify another task. Preserve the existing TASK-94 working files. Publish ONLY these three existing TASK-94 files to the already-created remote branch bootstrap/task94: server/db.ts, server/githubCommandBus.ts, tests/bridge.test.ts. Requirements: (1) do not pull, sync, merge, rebase, or checkout main in a way that overwrites the current workspace; (2) do not modify GitHub main; (3) do not include any of the other dirty workspace files; (4) stage exactly the three listed files and no others; (5) commit message must be 'fix: durable IDs and command idempotency bootstrap'; (6) push only to remote branch bootstrap/task94; (7) do not approve TASK-94 or any Bridge task; (8) do not submit another Studio Relay implementation result for TASK-94; this task is only a one-time recovery transport of the already-completed files; (9) after push, report the remote commit SHA and the exact three changed paths. If pushing cannot be performed safely without pulling/syncing or including unrelated files, stop and report blocked rather than altering main or losing the existing TASK-94 workspace changes.",
+  "priority": "urgent",
+  "assignee": "gemini",
+  "created_by": "chatgpt",
+  "related_files": [
+    "server/db.ts",
+    "server/githubCommandBus.ts",
+    "tests/bridge.test.ts"
+  ]
+}
