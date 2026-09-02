@@ -27,7 +27,14 @@ jobs:
           const cp = require('child_process');
           const crypto = require('crypto');
           const path = require('path');
-          const packet = JSON.parse(fs.readFileSync('/tmp/task94-recovery.json', 'utf8'));
+          const raw = fs.readFileSync('/tmp/task94-recovery.json', 'utf8');
+          let packet;
+          try {
+            packet = JSON.parse(raw);
+          } catch (err) {
+            console.error('JSON_PARSE_ERROR:', err instanceof Error ? err.message : String(err));
+            process.exit(22);
+          }
           if (packet.task_id !== 'TASK-94') throw new Error('Unexpected task id');
           const arts = packet.artifacts;
           const expected = new Map([
