@@ -1,0 +1,20 @@
+{
+  "id": "resource-url-router-v1",
+  "type": "task_create",
+  "created_by": "chatgpt",
+  "title": "Sync URL-based Project Router v1 into AI Studio workspace",
+  "description": "GitHub main is the source of truth. Sync the current URL-based Project Router implementation into the AI Studio workspace without changing its intended behavior. The user-facing model is Repo URL + AI Studio app URL(s) + ChatGPT conversation URL(s); internal workspace/agent IDs must stay hidden from the normal UX. Ensure the real Mission Control renders ResourceRoutingPanel, URL parsing supports AI Studio /apps/<app-id> and ChatGPT /c/<conversation-id> (including nested project chat paths), and Studio relay can resolve studio_app_id/resource_id through the Resource Registry. Run npm run lint, npm test, npm run build, and production startup smoke validation. Do not Publish. Do not redesign unrelated UI. GitHub source of truth HEAD at task creation: 654822e989c1f05b114016f263b700fab7816e57.",
+  "priority": "urgent",
+  "assignee": "gemini",
+  "related_files": [
+    "server/resourceRegistry.ts",
+    "server/resourceRoutes.ts",
+    "server/studioSessionPairingGuard.ts",
+    "server.ts",
+    "src/components/ResourceRoutingPanel.tsx",
+    "src/components/WorkspaceView.tsx",
+    "tests/resourceRegistry.test.ts",
+    "package.json",
+    ".gitignore"
+  ]
+}
