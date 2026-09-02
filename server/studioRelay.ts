@@ -20,10 +20,26 @@ type ChangedFileArtifact = {
 };
 
 const MAX_ARTIFACT_BYTES = 2 * 1024 * 1024;
+const MAX_ARTIFACT_COUNT = 100;
+const MAX_PATH_LENGTH = 300;
 const VALID_SHA = /^[0-9a-f]{40}$/i;
+const BLOCKED_EXACT = new Set([
+  '.env', '.npmrc', '.netrc', 'credentials.json', 'service-account.json',
+  'id_rsa', 'id_ed25519', 'data/bridge.sqlite',
+]);
+const BLOCKED_PREFIXES = ['.git/', 'data/', 'node_modules/', 'bridge-bus/inbox/', 'bridge-bus/outbox/'];
+const BLOCKED_SUFFIXES = ['.pem', '.key', '.p12', '.pfx'];
 
-function safePath(path: string): boolean {
-  return Boolean(path) && !path.startsWith('/') && !path.includes('..') && !path.includes('\\') && !path.includes('\0');
+function safePath(value: string): boolean {
+  if (!value || value.length > MAX_PATH_LENGTH || value.startsWith('/') || value.includes('\\') || value.includes('\0')) return false;
+  const segments = value.split('/');
+  if (segments.some(segment => !segment || segment === '.' || segment === '..')) return false;
+  const lower = value.toLowerCase();
+  if (BLOCKED_EXACT.has(lower)) return false;
+  if (lower.startsWith('.env.')) return false;
+  if (BLOCKED_PREFIXES.some(prefix => lower.startsWith(prefix))) return false;
+  if (BLOCKED_SUFFIXES.some(suffix => lower.endsWith(suffix))) return false;
+  return true;
 }
 
 function normalizeArtifacts(value: unknown): ChangedFileArtifact[] {
@@ -37,8 +53,10 @@ function normalizeArtifacts(value: unknown): ChangedFileArtifact[] {
 }
 
 function validateArtifacts(artifacts: ChangedFileArtifact[]): string | null {
+  if (artifacts.length > MAX_ARTIFACT_COUNT) return `artifact count exceeds ${MAX_ARTIFACT_COUNT}`;
   const seen = new Set<string>();
   for (const artifact of artifacts) {
+    if (!safePath(artifact.path)) return `artifact path is not allowed: ${artifact.path}`;
     if (seen.has(artifact.path)) return `duplicate artifact path: ${artifact.path}`;
     seen.add(artifact.path);
     if (!['create', 'update', 'delete'].includes(artifact.operation)) return `artifact ${artifact.path} requires operation create, update, or delete`;
@@ -61,6 +79,7 @@ function validateArtifacts(artifacts: ChangedFileArtifact[]): string | null {
 const resultContract = {
   review_requires_artifacts: true,
   conflict_safe: true,
+  protected_paths: ['.env*', '.git/**', 'data/**', 'node_modules/**', 'bridge-bus/inbox/**', 'bridge-bus/outbox/**', 'credential/private-key files'],
   artifact_format: {
     path: 'relative/path',
     operation: 'create|update|delete',
@@ -71,8 +90,10 @@ const resultContract = {
     'Submit every changed text file exactly once.',
     'Before updating/deleting an existing file, read its Git blob SHA and return it as base_sha.',
     'For a new file, return base_sha: null.',
+    'Never submit secrets, runtime data, command-bus files, Git internals, dependency trees, or private keys as artifacts.',
     'Do not git push. ChatGPT will compare base_sha with current GitHub before applying artifacts.',
   ],
+  max_artifacts: MAX_ARTIFACT_COUNT,
   max_payload_bytes: MAX_ARTIFACT_BYTES,
 };
 
@@ -97,6 +118,7 @@ studioRelayRouter.post('/progress', async (req: Request, res: Response) => {
     if (!task_id) { res.status(400).json({ ok: false, error: 'task_id is required' }); return; }
     const task = await getTask(task_id);
     if (!task) { res.status(404).json({ ok: false, error: `Task ${task_id} not found` }); return; }
+    if (task.assignee !== 'gemini' || !['working', 'blocked'].includes(task.status)) { res.status(409).json({ ok: false, error: `Task ${task_id} is not actively owned by Gemini` }); return; }
     const allowedStages = new Set(['inspecting', 'editing', 'testing', 'submitting', 'working', 'blocked']);
     const normalizedStage = allowedStages.has(stage) ? stage : 'working';
     const status = normalizedStage === 'blocked' ? 'blocked' : 'working';
@@ -111,7 +133,10 @@ studioRelayRouter.post('/result', async (req: Request, res: Response) => {
     if (!task_id || !summary) { res.status(400).json({ ok: false, error: 'task_id and summary are required' }); return; }
     const task = await getTask(task_id);
     if (!task) { res.status(404).json({ ok: false, error: `Task ${task_id} not found` }); return; }
+    if (task.assignee !== 'gemini' || !['working', 'blocked'].includes(task.status)) { res.status(409).json({ ok: false, error: `Task ${task_id} cannot accept a Studio result from status ${task.status}` }); return; }
+    if (Array.isArray(rawArtifacts) && rawArtifacts.length > MAX_ARTIFACT_COUNT) { res.status(413).json({ ok: false, error: `artifact count exceeds ${MAX_ARTIFACT_COUNT}` }); return; }
     const artifacts = normalizeArtifacts(rawArtifacts);
+    if (Array.isArray(rawArtifacts) && artifacts.length !== rawArtifacts.length) { res.status(400).json({ ok: false, error: 'one or more artifact paths are unsafe or protected' }); return; }
     if (!blocked && artifacts.length === 0) { res.status(400).json({ ok: false, error: 'artifacts are required before review; Git push is not required.' }); return; }
     const artifactError = validateArtifacts(artifacts);
     if (artifactError) { res.status(400).json({ ok: false, error: artifactError }); return; }
