@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { createTask, getTask, reviewTask, isCommandProcessed, recordCommandReceipt } from './db.js';
+import { attachExecutionPayload } from './executionPayload.js';
 
 const BUS_DIR = path.resolve(process.cwd(), 'bridge-bus');
 const INBOX_DIR = path.join(BUS_DIR, 'inbox');
@@ -25,6 +26,7 @@ export interface BusCommand {
   priority?: 'urgent' | 'high' | 'medium' | 'low';
   assignee?: 'gemini' | 'chatgpt' | 'human';
   related_files?: string[];
+  execution_payload?: unknown;
   task_id?: string;
   decision?: 'approve' | 'request_changes';
   summary?: string;
@@ -46,8 +48,25 @@ export async function execute(command: BusCommand) {
   if (!command.id || !command.type) throw new Error('Command requires id and type.');
   if (command.type === 'task_create') {
     if (!command.title || !command.description) throw new Error('task_create requires title and description.');
-    const task = await createTask({ title: command.title, description: command.description, priority: command.priority || 'medium', assignee: command.assignee || 'gemini', related_files: command.related_files || [], created_by: command.created_by || 'chatgpt' });
-    return { ok: true, command_id: command.id, type: command.type, task };
+    const prepared = command.execution_payload === undefined
+      ? { description: command.description, payload: null }
+      : attachExecutionPayload(command.description, command.execution_payload);
+    const task = await createTask({
+      title: command.title,
+      description: prepared.description,
+      priority: command.priority || 'medium',
+      assignee: command.assignee || 'gemini',
+      related_files: command.related_files || [],
+      created_by: command.created_by || 'chatgpt',
+    });
+    const resultTask = prepared.payload ? { ...task, description: command.description } : task;
+    return {
+      ok: true,
+      command_id: command.id,
+      type: command.type,
+      task: resultTask,
+      execution_payload_attached: Boolean(prepared.payload),
+    };
   }
   if (command.type === 'task_review') {
     if (!command.task_id || !command.decision || !command.summary) throw new Error('task_review requires task_id, decision, and summary.');
