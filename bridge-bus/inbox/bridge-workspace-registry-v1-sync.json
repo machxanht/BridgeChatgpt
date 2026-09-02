@@ -1,0 +1,17 @@
+{
+  "id": "bridge-workspace-registry-v1-sync",
+  "type": "task_create",
+  "created_by": "chatgpt",
+  "title": "Workspace Registry + Project Binding v1 sync",
+  "description": "Sync the new project-centric Workspace Registry implementation from GitHub main into the current AI Studio workspace. Update ONLY these files so they exactly match GitHub main: server/workspaceRegistry.ts, server/taskBinding.ts, server/workspaceTaskRouter.ts, server/githubCommandBus.ts, server/studioRelay.ts, src/components/IdentityBanner.tsx. This adds project/workspace records, per-session agent_instance_id bindings, account/session display labels, GitHub task binding metadata, instance-aware Studio claim routing, and a compact expandable Projects UI. Preserve the current Studio-specific deployment startup. Do NOT replace package.json or server.ts. Do NOT edit data/bridge.sqlite, data/batches.json, data/workspace-registry.json, or historical task state. After syncing, run npm run lint and npm run build, restart Preview, verify GET /health is ok, verify GET /api/studio-relay/registry returns a default workspace, and visually confirm the top bar stays one compact line until Projects is expanded. Do not Publish yet. Report the task ID, checks, and whether the workspace is ready for final review.",
+  "priority": "urgent",
+  "assignee": "gemini",
+  "related_files": [
+    "server/workspaceRegistry.ts",
+    "server/taskBinding.ts",
+    "server/workspaceTaskRouter.ts",
+    "server/githubCommandBus.ts",
+    "server/studioRelay.ts",
+    "src/components/IdentityBanner.tsx"
+  ]
+}
