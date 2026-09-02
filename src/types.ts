@@ -121,6 +121,92 @@ export interface Activity {
   created_at: string;
 }
 
+export interface AgentQuotaUsage {
+  requests_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  tests_executed: number;
+  estimated_cost_usd?: number;
+  provider_reported_quota: boolean;
+  provider_quota_text: string;
+}
+
+export interface AgentDisplayInfo {
+  id: string;
+  name: string;
+  role: string;
+  avatar_type: 'chatgpt' | 'gemini' | 'codex' | 'claude' | 'human' | 'system';
+  connection_status: 'connected' | 'working' | 'waiting' | 'reviewing' | 'blocked' | 'disconnected' | 'stale' | 'error';
+  last_seen_seconds: number;
+  last_seen_text: string;
+  current_activity_detail: string;
+  current_step_text: string;
+  current_task_id?: string | null;
+  current_task_title?: string | null;
+  current_stage_label?: string;
+  stage_index?: number;
+  quota: AgentQuotaUsage;
+}
+
+export interface WorkflowStageItem {
+  id: string;
+  label: string;
+  status: 'completed' | 'current' | 'upcoming';
+  description?: string;
+}
+
+export interface CurrentJobInfo {
+  id: string;
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  status: TaskStatus;
+  assignee: string;
+  created_by: string;
+  updated_at: string;
+  related_files: string[];
+  stages: WorkflowStageItem[];
+  current_stage_index: number;
+}
+
+export interface RepositoryInfo {
+  name: string;
+  url: string;
+  branch: string;
+  status_clean: boolean;
+  modified_count: number;
+  untracked_count: number;
+  modified_files: string[];
+  last_commit_hash: string;
+  last_commit_message: string;
+  last_commit_date: string;
+}
+
+export interface RecentActivityItem {
+  id: string;
+  time: string;
+  agent: string;
+  text: string;
+  raw_action: string;
+  details?: string;
+}
+
+export interface MissionControlData {
+  repository: RepositoryInfo;
+  agents: AgentDisplayInfo[];
+  current_job: CurrentJobInfo | null;
+  recent_activities: RecentActivityItem[];
+  emergency_state: {
+    paused: boolean;
+    paused_at?: string | null;
+  };
+  stats: {
+    total_tasks: number;
+    completed_tasks: number;
+    open_findings: number;
+  };
+}
+
 export interface WorkspaceState {
   project: ProjectConfig;
   agents: Record<'chatgpt' | 'gemini' | 'human', AgentStatus>;
@@ -128,6 +214,7 @@ export interface WorkspaceState {
   findings: Finding[];
   recent_messages: Message[];
   recent_activity: Activity[];
+  mission_control?: MissionControlData;
   stats: {
     total_tasks: number;
     pending_tasks: number;

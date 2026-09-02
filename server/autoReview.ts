@@ -41,12 +41,15 @@ export async function checkAndTriggerAutoReview(): Promise<AutoReviewCycleResult
     });
 
     const diffResult = await toolProjectGitDiff();
+    const diffSummary = diffResult?.has_changes
+      ? `\nWorking Tree Changes Detected: (Diff size: ${diffResult.diff.length} characters)`
+      : '\nWorking Tree Clean (No uncommitted changes)';
 
     const timestamp = new Date().toISOString();
     let ciNote = '';
 
     if (testResult.success) {
-      ciNote = `\n\n[Automated CI Check at ${timestamp}]: PASSED (exit code 0 in ${testResult.durationMs}ms).\nReady for explicit review decision via "task_review".`;
+      ciNote = `\n\n[Automated CI Check at ${timestamp}]: PASSED (exit code 0 in ${testResult.durationMs}ms).${diffSummary}\nReady for explicit review decision via "task_review".`;
 
       await updateTask(
         unverifiedReviewTask.id,
@@ -72,7 +75,7 @@ export async function checkAndTriggerAutoReview(): Promise<AutoReviewCycleResult
         test_output: testResult.stdout,
       };
     } else {
-      ciNote = `\n\n[Automated CI Check at ${timestamp}]: FAILED (exit code ${testResult.exitCode} in ${testResult.durationMs}ms).\nError: ${testResult.stderr || testResult.stdout}`;
+      ciNote = `\n\n[Automated CI Check at ${timestamp}]: FAILED (exit code ${testResult.exitCode} in ${testResult.durationMs}ms).${diffSummary}\nError: ${testResult.stderr || testResult.stdout}`;
 
       await updateTask(
         unverifiedReviewTask.id,

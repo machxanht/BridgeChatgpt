@@ -44,17 +44,81 @@ import {
   toolProjectWriteFile,
 } from './projectTools.js';
 import { checkAndTriggerAutoReview } from './autoReview.js';
+import { requireAuth } from './auth.js';
+import {
+  buildMissionControlData,
+  cancelCurrentTask,
+  pauseAllAgents,
+  resumeAllAgents,
+  stopSingleAgent,
+} from './missionControl.js';
 
 export const apiRouter = Router();
 
-// ---------------- MCP ROUTE ----------------
+// ---------------- MCP ROUTE (Self-authenticating JSON-RPC) ----------------
 apiRouter.all('/mcp', handleMcpRequest);
 
-// ---------------- WORKSPACE SNAPSHOT ----------------
+// ---------------- REST API AUTHENTICATION MIDDLEWARE ----------------
+// Centralized protection for all privileged REST endpoints
+apiRouter.use(requireAuth);
+
+// ---------------- WORKSPACE & MISSION CONTROL SNAPSHOT ----------------
 apiRouter.get('/workspace', async (req: Request, res: Response) => {
   try {
     const state = await getWorkspaceState();
-    res.json(state);
+    const missionControl = await buildMissionControlData();
+    res.json({
+      ...state,
+      mission_control: missionControl,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.get('/mission-control', async (req: Request, res: Response) => {
+  try {
+    const data = await buildMissionControlData();
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------- ORCHESTRATOR EMERGENCY CONTROLS ----------------
+apiRouter.post('/orchestrator/pause-all', async (req: Request, res: Response) => {
+  try {
+    const result = await pauseAllAgents();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/orchestrator/resume', async (req: Request, res: Response) => {
+  try {
+    const result = await resumeAllAgents();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/orchestrator/stop-agent', async (req: Request, res: Response) => {
+  try {
+    const agent = req.body.agent || 'gemini';
+    const result = await stopSingleAgent(agent);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/orchestrator/cancel-task', async (req: Request, res: Response) => {
+  try {
+    const taskId = req.body.taskId;
+    const result = await cancelCurrentTask(taskId);
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -417,14 +481,26 @@ apiRouter.post('/command', async (req: Request, res: Response) => {
       return;
     }
 
-    const agentTarget = targetAgent || 'all';
+    const trimmed = command.trim();
+    let agentTarget = targetAgent || 'all';
 
-    // Log human command
+    // Parse @ mentions if present in command text
+    if (trimmed.startsWith('@chatgpt') || trimmed.includes('@chatgpt')) {
+      agentTarget = 'chatgpt';
+    } else if (trimmed.startsWith('@gemini') || trimmed.includes('@gemini')) {
+      agentTarget = 'gemini';
+    } else if (trimmed.startsWith('@codex') || trimmed.includes('@codex')) {
+      agentTarget = 'codex';
+    } else if (trimmed.startsWith('@all') || trimmed.includes('@all')) {
+      agentTarget = 'all';
+    }
+
+    // Log human command in activity audit
     await logActivity({
       agent: 'human',
-      action: 'Issued workspace instruction',
+      action: 'Chỉ thị từ Trung Tâm Điều Khiển',
       entity_type: 'system',
-      details: `[Target: ${agentTarget.toUpperCase()}]: "${command}"`,
+      details: `[Đích: ${agentTarget.toUpperCase()}]: "${trimmed}"`,
     });
 
     // Create broadcast/targeted message
@@ -432,34 +508,73 @@ apiRouter.post('/command', async (req: Request, res: Response) => {
       from: 'human',
       to: agentTarget,
       type: 'handoff',
-      content: command,
+      content: trimmed,
     });
 
-    // If instruction implies creating task or reviewing
-    const lower = command.toLowerCase();
+    const lower = trimmed.toLowerCase();
     let createdTask = null;
     let createdFinding = null;
+    let actionResult = null;
 
-    if (lower.startsWith('task:') || lower.startsWith('todo:') || lower.startsWith('fix:')) {
-      const title = command.replace(/^(task:|todo:|fix:)\s*/i, '').trim();
+    // Natural Language Emergency Commands
+    if (lower === 'pause' || lower === 'tạm dừng' || lower === 'tạm dừng tất cả' || lower === 'pause all') {
+      actionResult = await pauseAllAgents();
+    } else if (lower === 'resume' || lower === 'tiếp tục' || lower === 'tiếp tục hoạt động' || lower === 'resume all') {
+      actionResult = await resumeAllAgents();
+    } else if (lower.includes('dừng gemini') || lower.includes('stop gemini')) {
+      actionResult = await stopSingleAgent('gemini');
+    } else if (lower.includes('dừng chatgpt') || lower.includes('stop chatgpt')) {
+      actionResult = await stopSingleAgent('chatgpt');
+    } else if (
+      lower.startsWith('task:') ||
+      lower.startsWith('todo:') ||
+      lower.startsWith('fix:') ||
+      lower.startsWith('nhiệm vụ:') ||
+      lower.startsWith('sửa:') ||
+      lower.includes('giao cho gemini') ||
+      lower.includes('give to gemini')
+    ) {
+      const cleanTitle = trimmed
+        .replace(/^(@[a-zA-Z0-9_-]+\s*)?/i, '')
+        .replace(/^(task:|todo:|fix:|nhiệm vụ:|sửa:)\s*/i, '')
+        .trim();
+
       createdTask = await createTask({
-        title,
-        description: `Requested by Human operator: ${command}`,
-        assignee: 'gemini',
+        title: cleanTitle || trimmed,
+        description: `Yêu cầu từ người điều hành qua Mission Control: "${trimmed}"`,
+        assignee: agentTarget === 'codex' ? 'gemini' : 'gemini',
         created_by: 'human',
         priority: 'high',
       });
-    } else if (lower.startsWith('bug:') || lower.startsWith('finding:')) {
-      const title = command.replace(/^(bug:|finding:)\s*/i, '').trim();
+    } else if (
+      lower.startsWith('bug:') ||
+      lower.startsWith('finding:') ||
+      lower.startsWith('lỗi:') ||
+      lower.startsWith('phát hiện:')
+    ) {
+      const cleanTitle = trimmed
+        .replace(/^(@[a-zA-Z0-9_-]+\s*)?/i, '')
+        .replace(/^(bug:|finding:|lỗi:|phát hiện:)\s*/i, '')
+        .trim();
+
       createdFinding = await createFinding({
-        title,
+        title: cleanTitle || trimmed,
         severity: 'high',
-        description: `Human reported finding: ${command}`,
+        description: `Lỗi báo cáo từ người điều hành: "${trimmed}"`,
         file: 'src/App.tsx',
         line: 1,
         created_by: 'human',
         assigned_to: 'gemini',
       });
+    } else if (
+      lower.includes('review') ||
+      lower.includes('đánh giá') ||
+      lower.includes('kiểm tra') ||
+      lower.includes('inspect')
+    ) {
+      // Trigger Auto-Review / evaluation cycle
+      await checkAndTriggerAutoReview();
+      actionResult = { triggered_review: true };
     }
 
     res.json({
@@ -467,6 +582,7 @@ apiRouter.post('/command', async (req: Request, res: Response) => {
       message: msg,
       createdTask,
       createdFinding,
+      actionResult,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

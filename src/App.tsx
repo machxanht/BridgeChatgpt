@@ -287,6 +287,50 @@ export default function App() {
     }
   };
 
+  const handlePauseAll = async () => {
+    try {
+      await fetch('/api/orchestrator/pause-all', { method: 'POST' });
+      fetchWorkspace();
+    } catch (err) {
+      console.error('Error pausing agents:', err);
+    }
+  };
+
+  const handleResumeAll = async () => {
+    try {
+      await fetch('/api/orchestrator/resume', { method: 'POST' });
+      fetchWorkspace();
+    } catch (err) {
+      console.error('Error resuming agents:', err);
+    }
+  };
+
+  const handleStopAgent = async (agent: string) => {
+    try {
+      await fetch('/api/orchestrator/stop-agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent }),
+      });
+      fetchWorkspace();
+    } catch (err) {
+      console.error('Error stopping agent:', err);
+    }
+  };
+
+  const handleCancelTask = async (taskId?: string) => {
+    try {
+      await fetch('/api/orchestrator/cancel-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId }),
+      });
+      fetchWorkspace();
+    } catch (err) {
+      console.error('Error cancelling task:', err);
+    }
+  };
+
   const handleSeedSampleScenario = async () => {
     try {
       await fetch('/api/seed-sample', { method: 'POST' });
@@ -305,8 +349,8 @@ export default function App() {
             <div className="h-5 w-5 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin"></div>
           </div>
           <div className="flex flex-col items-center gap-1 text-center">
-            <span className="text-slate-100 font-semibold tracking-tight">Bridge / Workspace</span>
-            <span className="text-xs text-slate-400">Connecting to shared AI collaboration runtime...</span>
+            <span className="text-slate-100 font-semibold tracking-tight">BRIDGE / AI MISSION CONTROL</span>
+            <span className="text-xs text-slate-400">Đang kết nối tới môi trường cộng tác AI...</span>
           </div>
         </div>
       </div>
@@ -354,6 +398,11 @@ export default function App() {
             onTriggerAutoReviewCycle={handleTriggerAutoReviewCycle}
             isAutoReviewing={isAutoReviewing}
             onSeedSampleScenario={handleSeedSampleScenario}
+            onPauseAll={handlePauseAll}
+            onResumeAll={handleResumeAll}
+            onStopAgent={handleStopAgent}
+            onCancelTask={handleCancelTask}
+            onOpenAdvancedTab={(tab) => setActiveTab(tab)}
           />
         )}
 

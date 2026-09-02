@@ -6,6 +6,7 @@ import { createServer as createViteServer } from 'vite';
 import { apiRouter } from './server/routes.js';
 import { initDatabase } from './server/db.js';
 import { handleMcpRequest } from './server/mcp.js';
+import { startGeminiWorker, getGeminiWorkerConfig } from './server/geminiWorker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,6 +17,14 @@ async function startServer() {
 
   // Initialize SQLite database
   await initDatabase();
+
+  // Optionally start background Gemini worker if enabled in environment
+  const workerConfig = getGeminiWorkerConfig();
+  if (workerConfig.enabled && process.env.GEMINI_API_KEY) {
+    startGeminiWorker();
+  } else {
+    console.log('[Bridge] Gemini autonomous background worker is idle (GEMINI_WORKER_ENABLED=false or GEMINI_API_KEY not set)');
+  }
 
   // Middleware
   app.use(cors({

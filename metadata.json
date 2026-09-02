@@ -1,6 +1,6 @@
 {
-  "name": "Bridge — Shared AI Workspace",
-  "description": "A shared project context and collaboration layer for ChatGPT (Reviewer) and Gemini (Coder) with remote Streamable HTTP MCP server, SQLite persistence, and live workspace UI.",
+  "name": "Bridge — AI Mission Control",
+  "description": "AI Mission Control dashboard and collaboration layer for ChatGPT and Gemini with active repository status, dynamic agent cards, live task progress, and global command center.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

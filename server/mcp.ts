@@ -647,30 +647,10 @@ export async function executeTool(name: string, args: Record<string, any> = {}, 
 }
 
 
-// Check authentication token
-export function verifyAuthToken(req: Request): boolean {
-  const configuredToken = process.env.BRIDGE_MCP_TOKEN;
-  if (!configuredToken) {
-    // If no token is configured in environment, allow local access
-    return true;
-  }
+import { verifyToken } from './auth.js';
 
-  const authHeader = req.headers.authorization;
-  if (authHeader) {
-    const parts = authHeader.split(' ');
-    if (parts.length === 2 && (parts[0] === 'Bearer' || parts[0] === 'Token')) {
-      if (parts[1] === configuredToken) return true;
-    }
-  }
-
-  const headerToken = req.headers['x-bridge-token'] || req.headers['x-mcp-token'];
-  if (headerToken === configuredToken) return true;
-
-  const queryToken = req.query.token as string;
-  if (queryToken === configuredToken) return true;
-
-  return false;
-}
+// Centralized authentication token verifier (re-exported for backward compatibility)
+export const verifyAuthToken = verifyToken;
 
 // Extract agent name from headers if provided
 function extractCallerAgent(req: Request): string {

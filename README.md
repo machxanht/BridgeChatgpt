@@ -43,8 +43,11 @@ Bridge is a lightweight, remote-first shared workspace and MCP communication ser
 ```
 
 ### Key Technical Decisions
-- **Streamable HTTP MCP Transport**: Standard JSON-RPC 2.0 / MCP 2024-11-05 over HTTP `POST /mcp` instead of SSE-only, supporting both remote agent frameworks and OpenAI Actions.
-- **Sandboxed File Operations**: All filesystem reads, searches, and test executions are strictly contained inside the configured `project_root` with path traversal guards.
+- **Streamable HTTP MCP & Authenticated REST**: Standard JSON-RPC 2.0 / MCP 2024-11-05 over HTTP `POST /mcp` and protected REST API endpoints authenticated via `Authorization: Bearer <BRIDGE_MCP_TOKEN>` or same-origin browser validation.
+- **Sandboxed File Operations**: All filesystem reads, searches, and test executions are strictly contained inside the configured `project_root` with path traversal guards and sensitive pattern blocking (`.env*`, `*.pem`, `*.key`).
+- **Atomic Concurrency & Mutex**: Task claiming uses atomic database locking and in-memory async mutexes to prevent double-claiming by concurrent workers.
+- **Autonomous Gemini Worker**: In addition to interactive remote MCP clients, Bridge includes an autonomous worker loop capable of claiming assigned tasks, executing file operations, running the automated test suite, and submitting structured review reports.
+- **Strict Verification Boundaries**: Automated CI verification and auto-review routines record test logs and Git diffs directly on task cards, but strictly leave the final approval to ChatGPT/Human (CI never marks tasks as completed or impersonates ChatGPT).
 - **Local Embedded SQLite**: Zero external infrastructure dependencies (no Redis, Kafka, or Kubernetes). Fast, persistent, and easy to run anywhere.
 
 ---

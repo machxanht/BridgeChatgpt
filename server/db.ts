@@ -533,6 +533,42 @@ export async function deleteTask(id: string): Promise<boolean> {
   return true;
 }
 
+class AsyncMutex {
+  private queue: Array<() => void> = [];
+  private locked = false;
+
+  async acquire(): Promise<() => void> {
+    return new Promise((resolve) => {
+      const release = () => {
+        if (this.queue.length > 0) {
+          const next = this.queue.shift()!;
+          next();
+        } else {
+          this.locked = false;
+        }
+      };
+
+      if (!this.locked) {
+        this.locked = true;
+        resolve(release);
+      } else {
+        this.queue.push(() => resolve(release));
+      }
+    });
+  }
+
+  async runExclusive<T>(fn: () => Promise<T> | T): Promise<T> {
+    const release = await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+}
+
+export const dbMutex = new AsyncMutex();
+
 const PRIORITY_WEIGHTS: Record<TaskPriority, number> = {
   urgent: 1,
   high: 2,
@@ -546,77 +582,89 @@ export async function claimNextTask(agent: AgentType = 'gemini'): Promise<{
   message?: string;
   task: Task | null;
 }> {
-  const d = await getDb();
-  const allTasks = await getTasks({ assignee: agent });
-  const eligible = allTasks.filter((t) => t.status === 'assigned' || t.status === 'pending');
+  return await dbMutex.runExclusive(async () => {
+    const d = await getDb();
+    const allTasks = await getTasks({ assignee: agent });
+    const eligible = allTasks.filter((t) => t.status === 'assigned' || t.status === 'pending');
 
-  if (eligible.length === 0) {
-    return {
-      claimed: false,
-      message: `No pending or assigned tasks available for agent "${agent}".`,
-      task: null,
-    };
-  }
-
-  // Sort by priority (urgent -> high -> medium -> low), then oldest created_at
-  eligible.sort((a, b) => {
-    const weightA = PRIORITY_WEIGHTS[a.priority] || 3;
-    const weightB = PRIORITY_WEIGHTS[b.priority] || 3;
-    if (weightA !== weightB) {
-      return weightA - weightB;
+    if (eligible.length === 0) {
+      return {
+        claimed: false,
+        message: `No pending or assigned tasks available for agent "${agent}".`,
+        task: null,
+      };
     }
-    return a.created_at.localeCompare(b.created_at);
-  });
 
-  const selected = eligible[0];
+    // Sort by priority (urgent -> high -> medium -> low), then oldest created_at
+    eligible.sort((a, b) => {
+      const weightA = PRIORITY_WEIGHTS[a.priority] || 3;
+      const weightB = PRIORITY_WEIGHTS[b.priority] || 3;
+      if (weightA !== weightB) {
+        return weightA - weightB;
+      }
+      return a.created_at.localeCompare(b.created_at);
+    });
 
-  // Atomically claim the task
-  const now = new Date().toISOString();
-  d.run(
-    `UPDATE tasks SET status = 'working', updated_at = ? WHERE id = ? AND (status = 'assigned' OR status = 'pending')`,
-    [now, selected.id]
-  );
-  persistToDisk();
+    const selected = eligible[0];
 
-  const refreshed = await getTask(selected.id);
-  if (!refreshed || refreshed.status !== 'working') {
+    // Atomically claim the selected task using SQL conditional update
+    const now = new Date().toISOString();
+    d.run(
+      `UPDATE tasks SET status = 'working', updated_at = ? WHERE id = ? AND (status = 'assigned' OR status = 'pending')`,
+      [now, selected.id]
+    );
+
+    const rowsModified = d.getRowsModified();
+    if (rowsModified !== 1) {
+      return {
+        claimed: false,
+        message: `Task ${selected.id} was claimed or modified concurrently by another worker.`,
+        task: null,
+      };
+    }
+
+    persistToDisk();
+
+    const refreshed = await getTask(selected.id);
+    if (!refreshed || refreshed.status !== 'working') {
+      return {
+        claimed: false,
+        message: `Task ${selected.id} status verification failed after claim.`,
+        task: null,
+      };
+    }
+
+    // Update agent status to working
+    await setAgentStatus({
+      agent: agent as any,
+      status: 'working',
+      current_task_id: selected.id,
+      message: `Actively executing "${selected.title}"`,
+    });
+
+    await logActivity({
+      agent,
+      action: `Claimed task ${selected.id}`,
+      entity_type: 'task',
+      entity_id: selected.id,
+      details: `Priority: ${selected.priority} | "${selected.title}"`,
+    });
+
+    await createMessage({
+      from: agent,
+      to: 'chatgpt',
+      type: 'task_claimed',
+      content: `${agent.toUpperCase()} claimed ${selected.id}: "${selected.title}". Implementation started.`,
+      task_id: selected.id,
+      finding_id: selected.related_finding,
+    });
+
     return {
-      claimed: false,
-      message: `Task ${selected.id} was claimed by another worker concurrently.`,
-      task: null,
+      claimed: true,
+      message: `Successfully claimed task ${selected.id}`,
+      task: refreshed,
     };
-  }
-
-  // Update agent status to working
-  await setAgentStatus({
-    agent: agent as any,
-    status: 'working',
-    current_task_id: selected.id,
-    message: `Actively executing "${selected.title}"`,
   });
-
-  await logActivity({
-    agent,
-    action: `Claimed task ${selected.id}`,
-    entity_type: 'task',
-    entity_id: selected.id,
-    details: `Priority: ${selected.priority} | "${selected.title}"`,
-  });
-
-  await createMessage({
-    from: agent,
-    to: 'chatgpt',
-    type: 'task_claimed',
-    content: `${agent.toUpperCase()} claimed ${selected.id}: "${selected.title}". Implementation started.`,
-    task_id: selected.id,
-    finding_id: selected.related_finding,
-  });
-
-  return {
-    claimed: true,
-    message: `Successfully claimed task ${selected.id}`,
-    task: refreshed,
-  };
 }
 
 // Explicit Review Submission (ChatGPT or Human Reviewer)
@@ -1124,20 +1172,21 @@ export async function setAgentStatus(input: {
   };
 }
 
-export async function recordHeartbeat(input: {
+export async function recordHeartbeat(input: 'chatgpt' | 'gemini' | 'human' | {
   agent: 'chatgpt' | 'gemini' | 'human';
   task_id?: string | null;
   status?: AgentOperationalStatus;
   message?: string | null;
 }): Promise<AgentStatus> {
+  const agentName = typeof input === 'string' ? input : input.agent;
   const currentStatuses = await getAgentStatuses();
-  const current = currentStatuses[input.agent];
-  const newStatus = input.status || current?.status || 'idle';
-  const newTaskId = input.task_id !== undefined ? input.task_id : (current?.current_task_id || null);
-  const newMessage = input.message !== undefined ? input.message : (current?.message || null);
+  const current = currentStatuses[agentName];
+  const newStatus = (typeof input === 'object' && input.status) || current?.status || 'idle';
+  const newTaskId = (typeof input === 'object' && input.task_id !== undefined) ? input.task_id : (current?.current_task_id || null);
+  const newMessage = (typeof input === 'object' && input.message !== undefined) ? input.message : (current?.message || null);
 
   return await setAgentStatus({
-    agent: input.agent,
+    agent: agentName,
     status: newStatus,
     current_task_id: newTaskId,
     message: newMessage,
