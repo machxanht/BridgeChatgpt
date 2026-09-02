@@ -76,8 +76,11 @@ export function buildWakeQueueFromData(snapshot: ResourceRegistrySnapshot, tasks
 
   for (const workspace of snapshot.workspaces) {
     const allTargets = [...workspace.chatgpt_targets, ...workspace.studio_targets];
+    // The user commonly replaces a long/laggy ChatGPT thread with a newer thread in the
+    // same project. Handoffs from Studio should therefore wake the newest saved ChatGPT
+    // conversation, while direct ChatGPT tasks remain pinned to their exact URL target.
     const primaryChatgpt = [...workspace.chatgpt_targets]
-      .sort((a, b) => a.created_at.localeCompare(b.created_at))[0] || null;
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] || null;
 
     for (const task of tasks) {
       const binding = extractTaskBinding(String(task.description || '')).binding;
