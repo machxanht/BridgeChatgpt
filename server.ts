@@ -7,26 +7,25 @@ import { apiRouter } from './server/routes.js';
 import { initDatabase } from './server/db.js';
 import { handleMcpRequest } from './server/mcp.js';
 import { startGeminiWorker, getGeminiWorkerConfig } from './server/geminiWorker.js';
+import { requireAuth } from './server/auth.js';
+import { studioRelayRouter } from './server/studioRelay.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
 
-  // Initialize SQLite database
   await initDatabase();
 
-  // Optionally start background Gemini worker if enabled in environment
   const workerConfig = getGeminiWorkerConfig();
   if (workerConfig.enabled && process.env.GEMINI_API_KEY) {
     startGeminiWorker();
   } else {
-    console.log('[Bridge] Gemini autonomous background worker is idle (GEMINI_WORKER_ENABLED=false or GEMINI_API_KEY not set)');
+    console.log('[Bridge] Gemini API worker idle. External AI Studio relay can still be used.');
   }
 
-  // Middleware
   app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
@@ -35,20 +34,19 @@ async function startServer() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
-  // Root MCP endpoints (Streamable HTTP MCP Protocol)
   app.all('/mcp', handleMcpRequest);
 
-  // Health check endpoints (/health and /api/health)
-  const healthHandler = async (req: express.Request, res: express.Response) => {
+  const healthHandler = async (_req: express.Request, res: express.Response) => {
     try {
       const { getProject } = await import('./server/db.js');
       const project = await getProject();
       res.json({
         status: 'ok',
         server: 'healthy',
-        database: 'connected (SQLite WAL & Memory-Disk Persistence)',
+        database: 'connected (sql.js persisted to disk)',
         project: project.project_name,
         mcp: 'ready (Streamable HTTP)',
+        studio_relay: 'ready',
         service: 'Bridge — Shared AI Workspace',
         time: new Date().toISOString(),
       });
@@ -59,6 +57,7 @@ async function startServer() {
         database: `error: ${err.message}`,
         project: 'unknown',
         mcp: 'degraded',
+        studio_relay: 'degraded',
       });
     }
   };
@@ -66,13 +65,15 @@ async function startServer() {
   app.get('/health', healthHandler);
   app.get('/api/health', healthHandler);
 
-  // REST API router
+  // External Google AI Studio Build-mode relay. It never calls Gemini itself;
+  // it only exchanges task/state data with an authenticated Studio client.
+  app.use('/api/studio-relay', requireAuth, studioRelayRouter);
+
   app.use('/api', apiRouter);
 
-  // Vite middleware in development vs Static files in production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true, host: '0.0.0.0', port: 3000 },
+      server: { middlewareMode: true, host: '0.0.0.0', port: PORT },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -80,7 +81,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
     console.log('[Server] Serving production build from', distPath);
@@ -89,6 +90,7 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Bridge Server] Running on http://0.0.0.0:${PORT}`);
     console.log(`[Bridge MCP] Streamable HTTP endpoint: http://0.0.0.0:${PORT}/mcp`);
+    console.log(`[Bridge Studio Relay] REST endpoint: http://0.0.0.0:${PORT}/api/studio-relay`);
   });
 }
 
