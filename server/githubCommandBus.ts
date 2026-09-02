@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { createTask, getTask, reviewTask } from './db.js';
+import { createTask, getTask, reviewTask, isCommandProcessed, recordCommandReceipt } from './db.js';
 
 const BUS_DIR = path.resolve(process.cwd(), 'bridge-bus');
 const INBOX_DIR = path.join(BUS_DIR, 'inbox');
@@ -16,7 +16,7 @@ let remoteTimer: NodeJS.Timeout | null = null;
 let running = false;
 let remoteRunning = false;
 
-interface BusCommand {
+export interface BusCommand {
   id: string;
   type: 'task_create' | 'task_review';
   created_by?: 'chatgpt' | 'human';
@@ -40,9 +40,9 @@ function ensureDirs() {
 
 function safeId(id: string) { return id.replace(/[^a-zA-Z0-9._-]/g, '_'); }
 function resultPath(id: string) { return path.join(OUTBOX_DIR, `${safeId(id)}.result.json`); }
-function writeResult(id: string, payload: unknown) { fs.writeFileSync(resultPath(id), JSON.stringify(payload, null, 2) + '\n', 'utf8'); }
+function writeResult(id: string, payload: unknown) { ensureDirs(); fs.writeFileSync(resultPath(id), JSON.stringify(payload, null, 2) + '\n', 'utf8'); }
 
-async function execute(command: BusCommand) {
+export async function execute(command: BusCommand) {
   if (!command.id || !command.type) throw new Error('Command requires id and type.');
   if (command.type === 'task_create') {
     if (!command.title || !command.description) throw new Error('task_create requires title and description.');
@@ -59,12 +59,39 @@ async function execute(command: BusCommand) {
   throw new Error(`Unsupported command type: ${(command as any).type}`);
 }
 
-async function processCommand(command: BusCommand, fallbackId: string) {
-  const id = command.id || fallbackId;
-  if (fs.existsSync(resultPath(id))) return false;
-  try { writeResult(id, await execute(command)); }
-  catch (err: any) { writeResult(id, { ok: false, command_id: id, error: err?.message || String(err) }); }
-  return true;
+let commandProcessingTail: Promise<void> = Promise.resolve();
+
+async function withCommandProcessingLock<T>(fn: () => Promise<T>): Promise<T> {
+  let release!: () => void;
+  const previous = commandProcessingTail;
+  commandProcessingTail = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
+export async function processCommand(command: BusCommand, fallbackId: string): Promise<boolean> {
+  return withCommandProcessingLock(async () => {
+    const id = command.id || fallbackId;
+    if (await isCommandProcessed(id)) return false;
+    try {
+      const result = await execute(command);
+      await recordCommandReceipt({
+        command_id: id,
+        command_type: command.type,
+        status: 'success',
+        result: JSON.stringify(result),
+      });
+      writeResult(id, result);
+      return true;
+    } catch (err: any) {
+      writeResult(id, { ok: false, command_id: id, error: err?.message || String(err) });
+      return false;
+    }
+  });
 }
 
 export async function processGitHubCommandBusOnce() {
