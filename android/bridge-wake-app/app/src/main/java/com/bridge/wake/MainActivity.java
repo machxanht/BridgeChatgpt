@@ -30,6 +30,11 @@ import android.widget.TextView;
 
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.List;
 
 public class MainActivity extends Activity {
@@ -43,6 +48,7 @@ public class MainActivity extends Activity {
     private TextView wakeBadge;
     private TextView accessBanner;
     private TextView pairBadge;
+    private TextView pairStatusBanner;
     private WebView dashboardWeb;
 
     private final Runnable refreshUiLoop = new Runnable() {
@@ -57,8 +63,7 @@ public class MainActivity extends Activity {
         @Override
         public void run() {
             if (preferences != null && preferences.getString("wake_token", "").isEmpty()) {
-                String url = dashboardWeb == null ? null : dashboardWeb.getUrl();
-                if (url != null && url.startsWith(BRIDGE_URL)) requestPairToken();
+                requestPairToken();
             }
             handler.postDelayed(this, 8000L);
         }
@@ -133,7 +138,7 @@ public class MainActivity extends Activity {
 
         LinearLayout titleWrap = new LinearLayout(this);
         titleWrap.setOrientation(LinearLayout.VERTICAL);
-        TextView title = text("🟣 BRIDGE", 20f, Color.WHITE, true);
+        TextView title = text("🟣 BRIDGE  v" + BuildConfig.VERSION_NAME, 20f, Color.WHITE, true);
         TextView subtitle = text("Mission Control + Wake Engine", 10f, Color.rgb(148, 163, 184), false);
         titleWrap.addView(title);
         titleWrap.addView(subtitle);
@@ -152,6 +157,12 @@ public class MainActivity extends Activity {
         wakeParams.setMargins(dp(8), 0, 0, 0);
         header.addView(wakeBadge, wakeParams);
         root.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        pairStatusBanner = text("Pairing diagnostics", 10f, Color.rgb(254, 226, 226), false);
+        pairStatusBanner.setGravity(Gravity.CENTER_VERTICAL);
+        pairStatusBanner.setPadding(dp(14), dp(7), dp(14), dp(7));
+        pairStatusBanner.setBackgroundColor(Color.rgb(69, 10, 10));
+        root.addView(pairStatusBanner, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         accessBanner = text("🔐 Bật Accessibility một lần để Bridge tự điều khiển Chrome", 12f, Color.rgb(254, 243, 199), true);
         accessBanner.setGravity(Gravity.CENTER_VERTICAL);
@@ -210,8 +221,6 @@ public class MainActivity extends Activity {
                 String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase();
                 if (BRIDGE_HOST.equals(host)) return false;
 
-                // Login and AI surfaces always stay in the system browser. The APK never embeds
-                // Google or ChatGPT credentials/cookies.
                 openChrome(uri.toString());
                 return true;
             }
@@ -228,12 +237,80 @@ public class MainActivity extends Activity {
     }
 
     private void requestPairToken() {
-        String script = "(async()=>{try{" +
-            "const r=await fetch('/api/android-wake/pair-token',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json','X-Bridge-UI':'browser-dashboard'}});" +
-            "const d=await r.json().catch(()=>({}));" +
-            "BridgePairNative.onPairResult(JSON.stringify({ok:r.ok,status:r.status,token:d.token||'',error:d.error||''}));" +
-            "}catch(e){BridgePairNative.onPairResult(JSON.stringify({ok:false,status:0,error:String(e)}));}})();";
-        dashboardWeb.evaluateJavascript(script, null);
+        if (preferences == null || !preferences.getString("wake_token", "").isEmpty()) return;
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            try {
+                URL endpoint = new URL(BRIDGE_URL + "api/android-wake/pair-token");
+                connection = (HttpURLConnection) endpoint.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(10_000);
+                connection.setReadTimeout(10_000);
+                connection.setUseCaches(false);
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("X-Bridge-UI", "browser-dashboard");
+                connection.setRequestProperty("Origin", "https://bridge-ai-mission-control.ai.studio");
+                connection.setRequestProperty("Referer", BRIDGE_URL);
+                String userAgent = dashboardWeb == null ? "Mozilla/5.0 Chrome Android Bridge" : dashboardWeb.getSettings().getUserAgentString();
+                connection.setRequestProperty("User-Agent", userAgent);
+
+                int status = connection.getResponseCode();
+                InputStream input = status >= 200 && status < 400 ? connection.getInputStream() : connection.getErrorStream();
+                String body = readStream(input);
+                JSONObject response = body.isEmpty() ? new JSONObject() : new JSONObject(body);
+                JSONObject packet = new JSONObject();
+                packet.put("ok", status >= 200 && status < 300 && response.optBoolean("ok", false));
+                packet.put("status", status);
+                packet.put("token", response.optString("token", ""));
+                packet.put("error", response.optString("error", body.isEmpty() ? "HTTP " + status : body));
+                handlePairPacket(packet);
+            } catch (Exception error) {
+                try {
+                    JSONObject packet = new JSONObject();
+                    packet.put("ok", false);
+                    packet.put("status", 0);
+                    packet.put("error", error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage()));
+                    handlePairPacket(packet);
+                } catch (Exception ignored) {}
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }, "bridge-native-pair").start();
+    }
+
+    private String readStream(InputStream input) throws Exception {
+        if (input == null) return "";
+        StringBuilder body = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(input))) {
+            String line;
+            while ((line = reader.readLine()) != null) body.append(line);
+        }
+        return body.toString();
+    }
+
+    private void handlePairPacket(JSONObject packet) {
+        runOnUiThread(() -> {
+            try {
+                String token = packet.optString("token", "");
+                int status = packet.optInt("status", 0);
+                if (packet.optBoolean("ok", false) && token.startsWith("bridgewake.")) {
+                    preferences.edit()
+                        .putString("wake_token", token)
+                        .putString("last_pair_error", "")
+                        .apply();
+                    WakeState.log(MainActivity.this, "🔑 Bridge connected · Wake Engine ready");
+                    startWakeService();
+                } else {
+                    String error = packet.optString("error", "HTTP " + status);
+                    String diagnostic = "HTTP " + status + " · " + error;
+                    preferences.edit().putString("last_pair_error", diagnostic).apply();
+                    WakeState.log(MainActivity.this, "⏳ Bridge pairing: " + diagnostic);
+                }
+            } catch (Exception error) {
+                preferences.edit().putString("last_pair_error", "Pair parse: " + error.getMessage()).apply();
+            }
+            refreshUi();
+        });
     }
 
     private void syncResourceRegistryBackup() {
@@ -337,6 +414,16 @@ public class MainActivity extends Activity {
         pairBadge.setText(paired ? "● CONNECTED" : "○ PAIRING");
         pairBadge.setBackgroundColor(paired ? Color.rgb(124, 58, 237) : Color.rgb(180, 83, 9));
 
+        if (pairStatusBanner != null) {
+            if (paired) {
+                pairStatusBanner.setVisibility(View.GONE);
+            } else {
+                String detail = preferences.getString("last_pair_error", "");
+                pairStatusBanner.setVisibility(View.VISIBLE);
+                pairStatusBanner.setText("v" + BuildConfig.VERSION_NAME + " · " + (detail.isEmpty() ? "đang pair Bridge…" : detail));
+            }
+        }
+
         if (accessibility) {
             accessBanner.setVisibility(View.GONE);
         } else {
@@ -438,23 +525,12 @@ public class MainActivity extends Activity {
     private class PairNative {
         @JavascriptInterface
         public void onPairResult(String raw) {
-            runOnUiThread(() -> {
-                try {
-                    JSONObject packet = new JSONObject(raw);
-                    String token = packet.optString("token", "");
-                    if (packet.optBoolean("ok", false) && token.startsWith("bridgewake.")) {
-                        preferences.edit().putString("wake_token", token).apply();
-                        WakeState.log(MainActivity.this, "🔑 Bridge connected · Wake Engine ready");
-                        startWakeService();
-                    } else {
-                        String error = packet.optString("error", "HTTP " + packet.optInt("status", 0));
-                        WakeState.log(MainActivity.this, "⏳ Bridge pairing: " + error);
-                    }
-                } catch (Exception error) {
-                    WakeState.log(MainActivity.this, "⚠ Pair parse lỗi: " + error.getMessage());
-                }
+            try {
+                handlePairPacket(new JSONObject(raw));
+            } catch (Exception error) {
+                preferences.edit().putString("last_pair_error", "JS pair parse: " + error.getMessage()).apply();
                 refreshUi();
-            });
+            }
         }
     }
 }
