@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/scripts/apply-single-flight-recovery-hotfix.mjs'
+      - '.github/scripts/fix-hotfix-generator.mjs'
       - '.github/workflows/bridge-wake-hotfix-once.yml'
   workflow_dispatch:
 
@@ -29,6 +30,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Repair generator quoting
+        run: node .github/scripts/fix-hotfix-generator.mjs
 
       - name: Apply deterministic hotfix
         run: node .github/scripts/apply-single-flight-recovery-hotfix.mjs
@@ -96,6 +100,7 @@ jobs:
       - name: Remove one-shot machinery
         run: |
           git rm .github/scripts/apply-single-flight-recovery-hotfix.mjs
+          git rm .github/scripts/fix-hotfix-generator.mjs
           git rm .github/workflows/bridge-wake-hotfix-once.yml
 
       - name: Commit verified hotfix
