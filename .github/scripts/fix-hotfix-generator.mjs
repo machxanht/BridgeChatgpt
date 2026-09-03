@@ -78,10 +78,28 @@ const replacement = [
 ].join('\n');
 
 source = source.slice(0, start) + replacement + source.slice(end);
-// The generator itself uses template literals to emit TypeScript/Java. The first
-// version over-escaped intended target-code interpolations as `\\${...}`, which
-// makes Node evaluate them in the generator. Collapse exactly that pattern to
-// `\${...}` so the interpolation is emitted literally into the target file.
+// Emit target-code interpolations literally instead of evaluating them in this generator.
 source = source.replaceAll('\\\\${', '\\${');
+
+// `Bundle args = new Bundle()` appears more than once in the Accessibility service.
+// Scope the FILLING-state insertion to the SET_TEXT block so deterministic patching
+// still fails closed everywhere else.
+const oldFillPatch = [
+  "replaceOnce(",
+  "  'android/bridge-wake-app/app/src/main/java/com/bridge/wake/BridgeAccessibilityService.java',",
+  "  `        Bundle args = new Bundle();`,",
+  "  `        setAutomationState(STATE_FILLING, pending.optString(\"task_id\", \"\"));\\n        Bundle args = new Bundle();`",
+  ");",
+].join('\n');
+const newFillPatch = [
+  "replaceOnce(",
+  "  'android/bridge-wake-app/app/src/main/java/com/bridge/wake/BridgeAccessibilityService.java',",
+  "  `        Bundle args = new Bundle();\\n        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, prompt);`,",
+  "  `        setAutomationState(STATE_FILLING, pending.optString(\"task_id\", \"\"));\\n        Bundle args = new Bundle();\\n        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, prompt);`",
+  ");",
+].join('\n');
+if (!source.includes(oldFillPatch)) throw new Error('FILLING patch block not found in generator');
+source = source.replace(oldFillPatch, newFillPatch);
+
 fs.writeFileSync(path, source, 'utf8');
-console.log('hotfix generator quoting/interpolation repaired');
+console.log('hotfix generator quoting/interpolation/Android marker repaired');
