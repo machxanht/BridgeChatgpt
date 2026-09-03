@@ -22,7 +22,9 @@ public class BridgeAccessibilityService extends AccessibilityService {
     private static final long MODAL_RETRY_MS = 650L;
     private static final long SEND_VERIFY_MS = 1100L;
     private static final long RECOVERY_WINDOW_MS = 3 * 60_000L;
-    private static final long RECOVERY_REFRESH_GAP_MS = 10_000L;
+    private static final long RECOVERY_ACTION_MIN_DELAY_MS = 3_000L;
+    private static final long RECOVERY_ACTION_MAX_DELAY_MS = 5_000L;
+    private static final int MAX_RETRIES_PER_REFRESH = 3;
     private static final int MAX_HARD_REFRESHES = 2;
 
     private static final String STATE_IDLE = "IDLE";
@@ -31,6 +33,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
     private static final String STATE_FILLING = "FILLING";
     private static final String STATE_SENDING = "SENDING";
     private static final String STATE_WAITING_RESULT = "WAITING_RESULT";
+    private static final String STATE_RECOVER_RETRY = "RECOVER_RETRY";
     private static final String STATE_RECOVER_REFRESH = "RECOVER_REFRESH";
     private static final String STATE_BLOCKED = "BLOCKED";
 
@@ -242,6 +245,9 @@ public class BridgeAccessibilityService extends AccessibilityService {
             .putLong("recovery_until", now + RECOVERY_WINDOW_MS)
             .putInt("recovery_refresh_count", refreshCount)
             .putLong("recovery_last_refresh_at", lastRefreshAt)
+            .putInt("recovery_retry_count", 0)
+            .putLong("recovery_last_retry_at", 0L)
+            .remove("recovery_next_action_at")
             .remove("pending_event")
             .remove("pending_opened_at");
         if (!eventId.isEmpty()) editor.putLong("delivered_" + eventId, now);
@@ -266,51 +272,142 @@ public class BridgeAccessibilityService extends AccessibilityService {
             || treeContains(root, "there was an unexpected error")
             || treeContains(root, "something went wrong");
         boolean cancelled = treeContains(root, "canceled") || treeContains(root, "cancelled");
-        if (!internalError && !cancelled) return;
-
-        int refreshes = prefs.getInt("recovery_refresh_count", 0);
-        long lastRefreshAt = prefs.getLong("recovery_last_refresh_at", 0L);
-        if (refreshes >= MAX_HARD_REFRESHES) {
-            String taskId = "";
-            try { taskId = new JSONObject(raw).optString("task_id", ""); } catch (Exception ignored) { }
-            setAutomationState(STATE_BLOCKED, taskId);
-            requestRecoveryBlocked(raw, refreshes, "studio-internal-error-circuit-breaker");
-            WakeState.log(this, "⛔ Studio vẫn lỗi sau " + MAX_HARD_REFRESHES + " reload · mark blocked" + (taskId.isEmpty() ? "" : " · " + taskId));
-            clearRecovery("circuit-breaker");
+        if (!internalError && !cancelled) {
+            if (STATE_RECOVER_RETRY.equals(prefs.getString("automation_state", ""))
+                || STATE_RECOVER_REFRESH.equals(prefs.getString("automation_state", ""))) {
+                String taskId = "";
+                try { taskId = new JSONObject(raw).optString("task_id", ""); } catch (Exception ignored) { }
+                setAutomationState(STATE_WAITING_RESULT, taskId);
+            }
             return;
         }
-        if (now - lastRefreshAt < RECOVERY_REFRESH_GAP_MS) return;
 
         JSONObject pending;
         try {
             pending = new JSONObject(raw);
-            prefs.edit()
-                .putString("pending_event", pending.toString())
-                .putLong("pending_opened_at", now)
-                .putInt("recovery_refresh_count", refreshes + 1)
-                .putLong("recovery_last_refresh_at", now)
-                .apply();
         } catch (Exception error) {
-            WakeState.log(this, "⚠ Không khôi phục được task trước reload: " + error.getMessage());
+            WakeState.log(this, "⚠ Recovery task parse lỗi: " + error.getMessage());
+            clearRecovery("parse-error");
             return;
         }
 
-        setAutomationState(STATE_RECOVER_REFRESH, pending.optString("task_id", ""));
-        AccessibilityNodeInfo refresh = findChromeRefreshButton(root);
-        boolean reloaded = refresh != null && refresh.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-        if (!reloaded) {
-            reloaded = requestExactTargetReload(pending);
+        String taskId = pending.optString("task_id", "");
+        int refreshes = prefs.getInt("recovery_refresh_count", 0);
+        int retries = prefs.getInt("recovery_retry_count", 0);
+        long nextActionAt = prefs.getLong("recovery_next_action_at", 0L);
+
+        if (nextActionAt <= 0L) {
+            long delay = nextRecoveryDelayMs();
+            prefs.edit().putLong("recovery_next_action_at", now + delay).apply();
+            setAutomationState(STATE_RECOVER_RETRY, taskId);
+            WakeState.log(this, "⏳ Studio lỗi · đợi " + delay + "ms trước recovery · " + taskId);
+            scheduleRecoveryCheck(delay);
+            return;
+        }
+        if (now < nextActionAt) return;
+
+        if (retries < MAX_RETRIES_PER_REFRESH) {
+            AccessibilityNodeInfo retry = findStudioRetryButton(root);
+            boolean clicked = retry != null && retry.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            if (clicked) {
+                int nextRetry = retries + 1;
+                long delay = nextRecoveryDelayMs();
+                prefs.edit()
+                    .putInt("recovery_retry_count", nextRetry)
+                    .putLong("recovery_last_retry_at", now)
+                    .putLong("recovery_next_action_at", now + delay)
+                    .apply();
+                setAutomationState(STATE_RECOVER_RETRY, taskId);
+                WakeState.log(this, "↻ Studio Retry " + nextRetry + "/" + MAX_RETRIES_PER_REFRESH
+                    + " · chờ " + delay + "ms trước kiểm tra lại · " + taskId);
+                scheduleRecoveryCheck(delay);
+                return;
+            }
+            WakeState.log(this, "⏳ Không bấm được Retry · chuyển sang reload sau khoảng chờ hiện tại · " + taskId);
         }
 
-        if (reloaded) {
-            WakeState.log(this, "🔄 Studio internal error · reload exact target " + (refreshes + 1) + "/" + MAX_HARD_REFRESHES + " · giữ nguyên task");
-        } else {
-            prefs.edit().remove("pending_event").remove("pending_opened_at").apply();
-            setAutomationState(STATE_BLOCKED, pending.optString("task_id", ""));
+        if (refreshes >= MAX_HARD_REFRESHES) {
+            setAutomationState(STATE_BLOCKED, taskId);
+            requestRecoveryBlocked(raw, refreshes, "studio-internal-error-retry-refresh-circuit-breaker");
+            WakeState.log(this, "⛔ Studio vẫn lỗi sau Retry/Reload có giới hạn · mark blocked · " + taskId);
+            clearRecovery("circuit-breaker");
+            return;
+        }
+
+        AccessibilityNodeInfo refresh = findChromeRefreshButton(root);
+        boolean reloaded = refresh != null && refresh.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        if (!reloaded) reloaded = requestExactTargetReload(pending);
+
+        if (!reloaded) {
+            setAutomationState(STATE_BLOCKED, taskId);
             requestRecoveryBlocked(raw, refreshes + 1, "reload-action-unavailable");
             clearRecovery("reload-action-unavailable");
-            WakeState.log(this, "⛔ Không reload được exact target · mark blocked");
+            WakeState.log(this, "⛔ Không reload được exact target · mark blocked · " + taskId);
+            return;
         }
+
+        int nextRefresh = refreshes + 1;
+        long settleDelay = nextRecoveryDelayMs();
+        prefs.edit()
+            .putInt("recovery_refresh_count", nextRefresh)
+            .putLong("recovery_last_refresh_at", now)
+            .putInt("recovery_retry_count", 0)
+            .putLong("recovery_last_retry_at", 0L)
+            .putLong("recovery_next_action_at", now + settleDelay)
+            .apply();
+        setAutomationState(STATE_RECOVER_REFRESH, taskId);
+        WakeState.log(this, "🔄 Studio reload " + nextRefresh + "/" + MAX_HARD_REFRESHES
+            + " · chờ " + settleDelay + "ms cho trang load ổn định · giữ nguyên " + taskId);
+        scheduleRecoveryCheck(settleDelay);
+    }
+
+    private long nextRecoveryDelayMs() {
+        long span = RECOVERY_ACTION_MAX_DELAY_MS - RECOVERY_ACTION_MIN_DELAY_MS + 1L;
+        return RECOVERY_ACTION_MIN_DELAY_MS + Math.floorMod(System.nanoTime(), span);
+    }
+
+    private void scheduleRecoveryCheck(long delayMs) {
+        handler.postDelayed(() -> {
+            if (sending) return;
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root != null) processPostSendRecovery(root, System.currentTimeMillis());
+        }, Math.max(250L, delayMs + 120L));
+    }
+
+    private AccessibilityNodeInfo findStudioRetryButton(AccessibilityNodeInfo root) {
+        Deque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
+        queue.add(root);
+        AccessibilityNodeInfo best = null;
+        int bestScore = Integer.MIN_VALUE;
+
+        while (!queue.isEmpty()) {
+            AccessibilityNodeInfo node = queue.removeFirst();
+            String descriptor = describe(node).toLowerCase(Locale.ROOT).trim();
+            if (node.isClickable() && node.isEnabled() && node.isVisibleToUser()) {
+                int score = 0;
+                if (descriptor.matches(".*(retry|try again|thử lại).*")) score += 30;
+                if (descriptor.matches(".*(reload|refresh|send|submit|publish|share|feedback|report).*")) score -= 35;
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = node;
+                }
+            }
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) queue.addLast(child);
+            }
+        }
+
+        if (bestScore >= 20) return best;
+
+        AccessibilityNodeInfo marker = findNodeContaining(root, "retry");
+        if (marker == null) marker = findNodeContaining(root, "try again");
+        AccessibilityNodeInfo current = marker;
+        for (int depth = 0; current != null && depth < 5; depth++) {
+            if (current.isClickable() && current.isEnabled() && current.isVisibleToUser()) return current;
+            current = current.getParent();
+        }
+        return null;
     }
 
     private AccessibilityNodeInfo findChromeRefreshButton(AccessibilityNodeInfo root) {
@@ -553,6 +650,9 @@ public class BridgeAccessibilityService extends AccessibilityService {
             .remove("recovery_until")
             .remove("recovery_refresh_count")
             .remove("recovery_last_refresh_at")
+            .remove("recovery_retry_count")
+            .remove("recovery_last_retry_at")
+            .remove("recovery_next_action_at")
             .apply();
         WakeState.log(this, "🧹 Recovery kết thúc: " + reason);
     }

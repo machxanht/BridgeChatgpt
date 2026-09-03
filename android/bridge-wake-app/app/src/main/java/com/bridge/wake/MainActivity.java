@@ -50,6 +50,7 @@ public class MainActivity extends Activity {
     private TextView pairBadge;
     private TextView pairStatusBanner;
     private WebView dashboardWeb;
+    private long lastDashboardReloadAt = 0L;
 
     private final Runnable refreshUiLoop = new Runnable() {
         @Override
@@ -94,7 +95,7 @@ public class MainActivity extends Activity {
             startWakeService();
         }
 
-        dashboardWeb.loadUrl(BRIDGE_URL);
+        reloadBridgeDashboard(false);
         handler.post(refreshUiLoop);
         handler.postDelayed(pairRetryLoop, 3000L);
         handler.postDelayed(registryBackupLoop, 6000L);
@@ -107,6 +108,8 @@ public class MainActivity extends Activity {
         if (preferences.getBoolean("wake_enabled", true)) {
             startWakeService();
         }
+        String currentUrl = dashboardWeb == null ? null : dashboardWeb.getUrl();
+        if (currentUrl != null && currentUrl.startsWith(BRIDGE_URL)) reloadBridgeDashboard(false);
     }
 
     @Override
@@ -181,7 +184,7 @@ public class MainActivity extends Activity {
         bottom.setBackgroundColor(Color.rgb(15, 23, 42));
 
         Button home = navButton("🟣\nBridge");
-        home.setOnClickListener(v -> dashboardWeb.loadUrl(BRIDGE_URL));
+        home.setOnClickListener(v -> reloadBridgeDashboard(true));
         bottom.addView(home, navParams());
 
         Button wakeNow = navButton("⚡\nWake now");
@@ -212,6 +215,7 @@ public class MainActivity extends Activity {
         settings.setLoadsImagesAutomatically(true);
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(false);
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
 
         dashboardWeb.addJavascriptInterface(new PairNative(), "BridgePairNative");
         dashboardWeb.setWebViewClient(new WebViewClient() {
@@ -234,6 +238,17 @@ public class MainActivity extends Activity {
                 }
             }
         });
+    }
+
+    private void reloadBridgeDashboard(boolean force) {
+        if (dashboardWeb == null) return;
+        long now = System.currentTimeMillis();
+        if (!force && now - lastDashboardReloadAt < 1500L) return;
+        lastDashboardReloadAt = now;
+        dashboardWeb.stopLoading();
+        dashboardWeb.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
+        if (force) dashboardWeb.clearCache(true);
+        dashboardWeb.loadUrl(BRIDGE_URL + "?bridge_reload=" + now);
     }
 
     private void requestPairToken() {
