@@ -34,8 +34,8 @@ public class WakeService extends Service {
     public static final String ACTION_STOP = "com.bridge.wake.STOP";
 
     private static final String BRIDGE_QUEUE_URL = "https://bridge-ai-mission-control.ai.studio/api/android-wake/queue";
+    private static final String WAKE_LOGIC_VERSION = "0.4.8-idle-gate-v1";
     private static final long POLL_MS = 45_000L;
-    private static final long REDELIVERY_MS = 10 * 60_000L;
     private static final long STALE_PENDING_MS = 4 * 60_000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -53,6 +53,7 @@ public class WakeService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        clearLegacyWakeStateOnce();
         createChannel();
         startForeground(NOTIFICATION_ID, buildNotification("Bridge Wake đang khởi động"));
         WakeState.log(this, "⚡ Wake service ON");
@@ -85,6 +86,26 @@ public class WakeService extends Service {
         return null;
     }
 
+    private void clearLegacyWakeStateOnce() {
+        SharedPreferences prefs = getSharedPreferences(WakeState.PREFS, MODE_PRIVATE);
+        String applied = prefs.getString("wake_logic_version", "");
+        if (WAKE_LOGIC_VERSION.equals(applied)) return;
+
+        // APK upgrades preserve SharedPreferences. Old builds could therefore carry an
+        // already-obsolete prompt into a newer Accessibility service. Clear only the
+        // transient automation state; pairing and completed-task wake gates remain intact.
+        prefs.edit()
+            .putString("wake_logic_version", WAKE_LOGIC_VERSION)
+            .remove("pending_event")
+            .remove("pending_opened_at")
+            .remove("recovery_event")
+            .remove("recovery_until")
+            .remove("recovery_retry_count")
+            .remove("recovery_last_action_at")
+            .apply();
+        WakeState.log(this, "🧹 Wake v0.4.8 · đã xóa prompt automation cũ sau khi nâng cấp");
+    }
+
     private void pollNow() {
         if (!polling.compareAndSet(false, true)) return;
         executor.execute(() -> {
@@ -96,16 +117,9 @@ public class WakeService extends Service {
                     return;
                 }
 
-                String pendingRaw = prefs.getString("pending_event", "");
-                long pendingAt = prefs.getLong("pending_opened_at", 0L);
-                if (pendingRaw != null && !pendingRaw.isEmpty()) {
-                    if (pendingAt > 0 && System.currentTimeMillis() - pendingAt < STALE_PENDING_MS) {
-                        return;
-                    }
-                    prefs.edit().remove("pending_event").remove("pending_opened_at").apply();
-                    WakeState.log(this, "♻ Wake cũ quá hạn · thử lại");
-                }
-
+                // Always ask Bridge first. Older builds returned early when a local pending
+                // prompt existed, which meant a task removed/claimed on the server could
+                // continue typing locally for several minutes.
                 JSONObject packet = fetchQueue(token);
                 if (!packet.optBoolean("ok", false)) {
                     int status = packet.optInt("status", 0);
@@ -121,24 +135,57 @@ public class WakeService extends Service {
 
                 JSONArray events = packet.optJSONArray("events");
                 if (events == null || events.length() == 0) {
-                    updateNotification("Bridge Wake · không có task pending");
+                    clearOrphanPending(prefs, "queue-empty");
+                    updateNotification("Bridge Wake · idle · không có task");
                     return;
                 }
 
                 long now = System.currentTimeMillis();
+                String pendingRaw = prefs.getString("pending_event", "");
+                long pendingAt = prefs.getLong("pending_opened_at", 0L);
+                if (pendingRaw != null && !pendingRaw.isEmpty()) {
+                    String pendingGate = "";
+                    try {
+                        pendingGate = wakeGateKey(new JSONObject(pendingRaw));
+                    } catch (Exception ignored) { }
+
+                    boolean stillQueued = !pendingGate.isEmpty() && queueContainsGate(events, pendingGate);
+                    boolean stillFresh = pendingAt > 0 && now - pendingAt < STALE_PENDING_MS;
+                    if (stillQueued && stillFresh) {
+                        // Accessibility owns this live prompt. Do not reopen Chrome.
+                        return;
+                    }
+
+                    clearOrphanPending(prefs, stillQueued ? "pending-stale" : "task-no-longer-queued");
+                }
+
                 JSONObject selected = null;
+                String selectedGate = "";
                 for (int i = 0; i < Math.min(events.length(), 30); i++) {
                     JSONObject event = events.optJSONObject(i);
                     if (event == null) continue;
                     String eventId = event.optString("event_id", "");
                     if (eventId.isEmpty()) continue;
-                    long deliveredAt = prefs.getLong("delivered_" + eventId, 0L);
-                    if (deliveredAt > 0 && now - deliveredAt < REDELIVERY_MS) continue;
+
+                    // Gate by logical task+reason+target instead of event_id. event_id contains
+                    // updated_at and can change for the same task, which previously made the
+                    // same old task look new and wake Chrome again.
+                    String gate = wakeGateKey(event);
+                    if (gate.isEmpty()) continue;
+                    if (prefs.getLong(gate, 0L) > 0L) continue;
+
                     selected = event;
+                    selectedGate = gate;
                     break;
                 }
 
-                if (selected == null) return;
+                if (selected == null) {
+                    clearOrphanPending(prefs, "all-queued-work-already-woken");
+                    updateNotification("Bridge Wake · idle · không có task mới");
+                    return;
+                }
+
+                selected.put("wake_gate_key", selectedGate);
                 prefs.edit()
                     .putString("pending_event", selected.toString())
                     .putLong("pending_opened_at", now)
@@ -155,6 +202,32 @@ public class WakeService extends Service {
                 polling.set(false);
             }
         });
+    }
+
+    private String wakeGateKey(JSONObject event) {
+        String taskId = event.optString("task_id", "").trim();
+        String reason = event.optString("reason", "").trim();
+        String targetId = event.optString("target_id", "").trim();
+        if (taskId.isEmpty() || reason.isEmpty() || targetId.isEmpty()) return "";
+        // task_id/reason/target_id are Bridge-generated identifiers and safe as a
+        // SharedPreferences key. Deliberately exclude task.updated_at/status so metadata
+        // churn cannot resurrect the same wake instruction.
+        return "wake_gate:" + reason + ":" + targetId + ":" + taskId;
+    }
+
+    private boolean queueContainsGate(JSONArray events, String wantedGate) {
+        for (int i = 0; i < Math.min(events.length(), 100); i++) {
+            JSONObject event = events.optJSONObject(i);
+            if (event != null && wantedGate.equals(wakeGateKey(event))) return true;
+        }
+        return false;
+    }
+
+    private void clearOrphanPending(SharedPreferences prefs, String reason) {
+        String raw = prefs.getString("pending_event", "");
+        if (raw == null || raw.isEmpty()) return;
+        prefs.edit().remove("pending_event").remove("pending_opened_at").apply();
+        WakeState.log(this, "🧹 Không còn task cần Wake · bỏ prompt cũ (" + reason + ")");
     }
 
     private JSONObject fetchQueue(String token) throws Exception {
@@ -199,9 +272,6 @@ public class WakeService extends Service {
 
         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         intent.setPackage("com.android.chrome");
-        // Browser.EXTRA_APPLICATION_ID tells Chrome that all Bridge wakes belong to
-        // the same caller/session. Together with the task flags this strongly nudges
-        // Chrome to reuse the Bridge automation tab instead of spawning one tab per task.
         intent.putExtra(Browser.EXTRA_APPLICATION_ID, getPackageName());
         intent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK
@@ -230,7 +300,7 @@ public class WakeService extends Service {
             "Bridge Wake",
             NotificationManager.IMPORTANCE_LOW
         );
-        channel.setDescription("Bridge Wake kiểm tra task và mở đúng ChatGPT / AI Studio trong Chrome.");
+        channel.setDescription("Bridge Wake chỉ mở Chrome khi có task mới được map đúng session.");
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) manager.createNotificationChannel(channel);
     }
