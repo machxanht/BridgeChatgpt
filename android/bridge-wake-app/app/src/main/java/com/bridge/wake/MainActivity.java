@@ -25,7 +25,6 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import org.json.JSONObject;
@@ -34,24 +33,22 @@ import java.util.List;
 
 public class MainActivity extends Activity {
     private static final String BRIDGE_URL = "https://bridge-ai-mission-control.ai.studio/";
+    private static final String BRIDGE_HOST = "bridge-ai-mission-control.ai.studio";
     private static final String CHATGPT_URL = "https://chatgpt.com/";
     private static final String STUDIO_URL = "https://aistudio.google.com/";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private SharedPreferences preferences;
-    private TextView statusText;
-    private TextView pairText;
-    private TextView accessText;
-    private TextView logText;
-    private Button wakeToggle;
-    private WebView pairingWeb;
-    private boolean pairingStarted = false;
+    private TextView wakeBadge;
+    private TextView accessBanner;
+    private TextView pairBadge;
+    private WebView dashboardWeb;
 
     private final Runnable refreshUiLoop = new Runnable() {
         @Override
         public void run() {
             refreshUi();
-            handler.postDelayed(this, 1200L);
+            handler.postDelayed(this, 1500L);
         }
     };
 
@@ -59,12 +56,19 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences(WakeState.PREFS, Context.MODE_PRIVATE);
-        if (!preferences.contains("wake_enabled")) preferences.edit().putBoolean("wake_enabled", true).apply();
+        if (!preferences.contains("wake_enabled")) {
+            preferences.edit().putBoolean("wake_enabled", true).apply();
+        }
+
         buildUi();
-        configurePairingWebView();
+        configureDashboardWebView();
         requestNotificationPermission();
-        pairWithBridge();
-        if (preferences.getBoolean("wake_enabled", true)) startWakeService();
+
+        if (preferences.getBoolean("wake_enabled", true)) {
+            startWakeService();
+        }
+
+        dashboardWeb.loadUrl(BRIDGE_URL);
         handler.post(refreshUiLoop);
     }
 
@@ -72,119 +76,116 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshUi();
-        if (preferences.getString("wake_token", "").isEmpty()) pairWithBridge();
+        if (preferences.getBoolean("wake_enabled", true)) {
+            startWakeService();
+        }
     }
 
     @Override
     protected void onDestroy() {
         handler.removeCallbacksAndMessages(null);
-        if (pairingWeb != null) pairingWeb.destroy();
+        if (dashboardWeb != null) dashboardWeb.destroy();
         super.onDestroy();
     }
 
-    private void buildUi() {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(Color.rgb(2, 6, 23));
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(16), dp(16), dp(30));
-        scroll.addView(root, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        TextView title = text("⚡ BRIDGE WAKE", 24f, Color.WHITE, true);
-        root.addView(title);
-        TextView subtitle = text("Chrome thật + Accessibility · ChatGPT và AI Studio đăng nhập độc lập", 12f, Color.rgb(148, 163, 184), false);
-        subtitle.setPadding(0, dp(4), 0, dp(14));
-        root.addView(subtitle);
-
-        statusText = cardText("● WAKE ON", Color.rgb(110, 231, 183));
-        root.addView(statusText);
-
-        pairText = cardText("🔑 Đang pair Bridge...", Color.rgb(196, 181, 253));
-        root.addView(pairText);
-
-        accessText = cardText("🔐 Accessibility: đang kiểm tra", Color.rgb(125, 211, 252));
-        root.addView(accessText);
-
-        TextView setupTitle = text("THIẾT LẬP 1 LẦN", 13f, Color.rgb(226, 232, 240), true);
-        setupTitle.setPadding(0, dp(16), 0, dp(8));
-        root.addView(setupTitle);
-
-        Button accessibility = bigButton("1  🔐  BẬT ACCESSIBILITY", Color.rgb(30, 64, 175));
-        accessibility.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
-        root.addView(accessibility);
-
-        Button chatgpt = bigButton("2  🟢  MỞ CHATGPT TRONG CHROME", Color.rgb(6, 95, 70));
-        chatgpt.setOnClickListener(v -> openChrome(CHATGPT_URL));
-        root.addView(chatgpt);
-
-        Button studio = bigButton("3  🔵  MỞ AI STUDIO TRONG CHROME", Color.rgb(7, 89, 133));
-        studio.setOnClickListener(v -> openChrome(STUDIO_URL));
-        root.addView(studio);
-
-        TextView note = text(
-            "Đăng nhập Google/ChatGPT trực tiếp trong Chrome. Bridge Wake không nhận mật khẩu và không dùng cookie đăng nhập của hai dịch vụ này.",
-            11f,
-            Color.rgb(148, 163, 184),
-            false
-        );
-        note.setPadding(dp(2), dp(4), dp(2), dp(12));
-        root.addView(note);
-
-        TextView controlsTitle = text("ĐIỀU KHIỂN", 13f, Color.rgb(226, 232, 240), true);
-        controlsTitle.setPadding(0, dp(8), 0, dp(8));
-        root.addView(controlsTitle);
-
-        wakeToggle = bigButton("⚡ WAKE ON", Color.rgb(109, 40, 217));
-        wakeToggle.setOnClickListener(v -> toggleWake());
-        root.addView(wakeToggle);
-
-        Button wakeNow = bigButton("⚡ KIỂM TRA NGAY", Color.rgb(180, 83, 9));
-        wakeNow.setOnClickListener(v -> {
-            preferences.edit().putBoolean("wake_enabled", true).apply();
-            startWakeService();
-            Intent intent = new Intent(this, WakeService.class);
-            intent.setAction(WakeService.ACTION_WAKE_NOW);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent); else startService(intent);
-            WakeState.log(this, "⚡ Kiểm tra Bridge ngay");
-            refreshUi();
-        });
-        root.addView(wakeNow);
-
-        Button bridge = bigButton("🟣 MỞ BRIDGE DASHBOARD", Color.rgb(76, 29, 149));
-        bridge.setOnClickListener(v -> openChrome(BRIDGE_URL));
-        root.addView(bridge);
-
-        TextView logTitle = text("HOẠT ĐỘNG GẦN ĐÂY", 13f, Color.rgb(226, 232, 240), true);
-        logTitle.setPadding(0, dp(16), 0, dp(8));
-        root.addView(logTitle);
-
-        logText = text("Chưa có log.", 11f, Color.rgb(203, 213, 225), false);
-        logText.setBackgroundColor(Color.rgb(15, 23, 42));
-        logText.setPadding(dp(12), dp(12), dp(12), dp(12));
-        root.addView(logText, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        pairingWeb = new WebView(this);
-        pairingWeb.setAlpha(0.01f);
-        LinearLayout.LayoutParams hidden = new LinearLayout.LayoutParams(1, 1);
-        hidden.gravity = Gravity.CENTER;
-        root.addView(pairingWeb, hidden);
-
-        setContentView(scroll);
+    @Override
+    public void onBackPressed() {
+        if (dashboardWeb != null && dashboardWeb.canGoBack()) {
+            dashboardWeb.goBack();
+            return;
+        }
+        super.onBackPressed();
     }
 
-    private void configurePairingWebView() {
-        WebSettings settings = pairingWeb.getSettings();
+    private void buildUi() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.rgb(2, 6, 23));
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(14), dp(10), dp(10), dp(10));
+        header.setBackgroundColor(Color.rgb(15, 23, 42));
+
+        LinearLayout titleWrap = new LinearLayout(this);
+        titleWrap.setOrientation(LinearLayout.VERTICAL);
+        TextView title = text("🟣 BRIDGE", 20f, Color.WHITE, true);
+        TextView subtitle = text("Mission Control + Wake Engine", 10f, Color.rgb(148, 163, 184), false);
+        titleWrap.addView(title);
+        titleWrap.addView(subtitle);
+        header.addView(titleWrap, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        pairBadge = pill("● CONNECT", Color.rgb(124, 58, 237));
+        pairBadge.setOnClickListener(v -> dashboardWeb.reload());
+        header.addView(pairBadge);
+
+        wakeBadge = pill("⚡ WAKE ON", Color.rgb(5, 150, 105));
+        wakeBadge.setOnClickListener(v -> toggleWake());
+        LinearLayout.LayoutParams wakeParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38));
+        wakeParams.setMargins(dp(8), 0, 0, 0);
+        header.addView(wakeBadge, wakeParams);
+        root.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        accessBanner = text("🔐 Bật Accessibility một lần để Bridge tự điều khiển Chrome", 12f, Color.rgb(254, 243, 199), true);
+        accessBanner.setGravity(Gravity.CENTER_VERTICAL);
+        accessBanner.setPadding(dp(14), dp(10), dp(14), dp(10));
+        accessBanner.setBackgroundColor(Color.rgb(120, 53, 15));
+        accessBanner.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        root.addView(accessBanner, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        dashboardWeb = new WebView(this);
+        root.addView(dashboardWeb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        LinearLayout bottom = new LinearLayout(this);
+        bottom.setOrientation(LinearLayout.HORIZONTAL);
+        bottom.setGravity(Gravity.CENTER);
+        bottom.setPadding(dp(8), dp(7), dp(8), dp(7));
+        bottom.setBackgroundColor(Color.rgb(15, 23, 42));
+
+        Button home = navButton("🟣\nBridge");
+        home.setOnClickListener(v -> dashboardWeb.loadUrl(BRIDGE_URL));
+        bottom.addView(home, navParams());
+
+        Button wakeNow = navButton("⚡\nWake now");
+        wakeNow.setOnClickListener(v -> wakeNow());
+        bottom.addView(wakeNow, navParams());
+
+        Button chatgpt = navButton("🟢\nChatGPT");
+        chatgpt.setOnClickListener(v -> openChrome(CHATGPT_URL));
+        bottom.addView(chatgpt, navParams());
+
+        Button studio = navButton("🔵\nAI Studio");
+        studio.setOnClickListener(v -> openChrome(STUDIO_URL));
+        bottom.addView(studio, navParams());
+
+        Button settings = navButton("⚙\nSetup");
+        settings.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        bottom.addView(settings, navParams());
+
+        root.addView(bottom, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(68)));
+        setContentView(root);
+    }
+
+    private void configureDashboardWebView() {
+        WebSettings settings = dashboardWeb.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-        settings.setLoadsImagesAutomatically(false);
-        pairingWeb.addJavascriptInterface(new PairNative(), "BridgePairNative");
-        pairingWeb.setWebViewClient(new WebViewClient() {
+        settings.setDatabaseEnabled(true);
+        settings.setLoadsImagesAutomatically(true);
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(false);
+
+        dashboardWeb.addJavascriptInterface(new PairNative(), "BridgePairNative");
+        dashboardWeb.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
                 String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase();
-                if (host.equals("bridge-ai-mission-control.ai.studio")) return false;
+                if (BRIDGE_HOST.equals(host)) return false;
+
+                // Login and AI surfaces always stay in the system browser. The APK never embeds
+                // Google or ChatGPT credentials/cookies.
                 openChrome(uri.toString());
                 return true;
             }
@@ -192,16 +193,11 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if (url == null || !url.startsWith(BRIDGE_URL)) return;
-                requestPairToken();
+                if (url != null && url.startsWith(BRIDGE_URL)) {
+                    requestPairToken();
+                }
             }
         });
-    }
-
-    private void pairWithBridge() {
-        if (pairingStarted && !preferences.getString("wake_token", "").isEmpty()) return;
-        pairingStarted = true;
-        pairingWeb.loadUrl(BRIDGE_URL);
     }
 
     private void requestPairToken() {
@@ -210,7 +206,17 @@ public class MainActivity extends Activity {
             "const d=await r.json().catch(()=>({}));" +
             "BridgePairNative.onPairResult(JSON.stringify({ok:r.ok,status:r.status,token:d.token||'',error:d.error||''}));" +
             "}catch(e){BridgePairNative.onPairResult(JSON.stringify({ok:false,status:0,error:String(e)}));}})();";
-        pairingWeb.evaluateJavascript(script, null);
+        dashboardWeb.evaluateJavascript(script, null);
+    }
+
+    private void wakeNow() {
+        preferences.edit().putBoolean("wake_enabled", true).apply();
+        startWakeService();
+        Intent intent = new Intent(this, WakeService.class);
+        intent.setAction(WakeService.ACTION_WAKE_NOW);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent); else startService(intent);
+        WakeState.log(this, "⚡ Kiểm tra Bridge ngay");
+        refreshUi();
     }
 
     private void toggleWake() {
@@ -233,24 +239,22 @@ public class MainActivity extends Activity {
     }
 
     private void refreshUi() {
-        if (statusText == null) return;
+        if (wakeBadge == null) return;
+
         boolean enabled = preferences.getBoolean("wake_enabled", true);
         boolean paired = !preferences.getString("wake_token", "").isEmpty();
         boolean accessibility = isAccessibilityEnabled();
-        String pending = preferences.getString("pending_event", "");
 
-        statusText.setText(enabled ? "● WAKE ON · kiểm tra mỗi 45 giây" : "○ WAKE OFF");
-        statusText.setTextColor(enabled ? Color.rgb(110, 231, 183) : Color.rgb(148, 163, 184));
-        pairText.setText(paired ? "🔑 Bridge paired · wake token riêng đã lưu" : "🔑 Chưa pair được Bridge · chờ Bridge live hỗ trợ Android Wake");
-        accessText.setText(accessibility ? "🔐 Accessibility ON · chỉ Google Chrome" : "🔐 Accessibility OFF · bấm nút bên dưới để bật");
-        accessText.setTextColor(accessibility ? Color.rgb(125, 211, 252) : Color.rgb(251, 191, 36));
-        wakeToggle.setText(enabled ? "⏹ TẮT WAKE" : "⚡ BẬT WAKE");
+        wakeBadge.setText(enabled ? "⚡ WAKE ON" : "○ WAKE OFF");
+        wakeBadge.setBackgroundColor(enabled ? Color.rgb(5, 150, 105) : Color.rgb(71, 85, 105));
+        pairBadge.setText(paired ? "● CONNECTED" : "○ PAIRING");
+        pairBadge.setBackgroundColor(paired ? Color.rgb(124, 58, 237) : Color.rgb(180, 83, 9));
 
-        String log = preferences.getString("last_log", "");
-        if (pending != null && !pending.isEmpty()) {
-            logText.setText("📨 Có wake đang chờ Chrome xử lý\n\n" + (log == null ? "" : log));
+        if (accessibility) {
+            accessBanner.setVisibility(View.GONE);
         } else {
-            logText.setText(log == null || log.isEmpty() ? "Chưa có log." : log);
+            accessBanner.setVisibility(View.VISIBLE);
+            accessBanner.setText("🔐 SETUP 1 LẦN · chạm để bật Accessibility cho Bridge");
         }
     }
 
@@ -286,29 +290,31 @@ public class MainActivity extends Activity {
         }
     }
 
-    private TextView cardText(String value, int color) {
-        TextView text = text(value, 13f, color, true);
-        text.setBackgroundColor(Color.rgb(15, 23, 42));
-        text.setPadding(dp(12), dp(11), dp(12), dp(11));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, dp(4), 0, dp(4));
-        text.setLayoutParams(params);
-        return text;
+    private TextView pill(String label, int background) {
+        TextView badge = text(label, 10f, Color.WHITE, true);
+        badge.setGravity(Gravity.CENTER);
+        badge.setBackgroundColor(background);
+        badge.setPadding(dp(10), 0, dp(10), 0);
+        badge.setMinHeight(dp(38));
+        return badge;
     }
 
-    private Button bigButton(String label, int background) {
+    private Button navButton(String label) {
         Button button = new Button(this);
         button.setText(label);
         button.setAllCaps(false);
-        button.setTextColor(Color.WHITE);
-        button.setTextSize(13f);
-        button.setGravity(Gravity.CENTER_VERTICAL);
-        button.setBackgroundColor(background);
-        button.setPadding(dp(14), 0, dp(14), 0);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54));
-        params.setMargins(0, dp(5), 0, dp(5));
-        button.setLayoutParams(params);
+        button.setTextColor(Color.rgb(226, 232, 240));
+        button.setTextSize(10f);
+        button.setGravity(Gravity.CENTER);
+        button.setBackgroundColor(Color.TRANSPARENT);
+        button.setPadding(dp(2), 0, dp(2), 0);
         return button;
+    }
+
+    private LinearLayout.LayoutParams navParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        params.setMargins(dp(2), 0, dp(2), 0);
+        return params;
     }
 
     private TextView text(String value, float size, int color, boolean bold) {
@@ -333,11 +339,11 @@ public class MainActivity extends Activity {
                     String token = packet.optString("token", "");
                     if (packet.optBoolean("ok", false) && token.startsWith("bridgewake.")) {
                         preferences.edit().putString("wake_token", token).apply();
-                        WakeState.log(MainActivity.this, "🔑 Bridge paired · token chỉ đọc wake queue");
+                        WakeState.log(MainActivity.this, "🔑 Bridge connected · Wake Engine ready");
                         startWakeService();
                     } else {
                         String error = packet.optString("error", "HTTP " + packet.optInt("status", 0));
-                        WakeState.log(MainActivity.this, "⏳ Pair Bridge chưa sẵn sàng: " + error);
+                        WakeState.log(MainActivity.this, "⏳ Bridge pairing: " + error);
                     }
                 } catch (Exception error) {
                     WakeState.log(MainActivity.this, "⚠ Pair parse lỗi: " + error.getMessage());
