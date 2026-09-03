@@ -4,9 +4,8 @@ plugins {
 
 import java.util.Base64
 
-// Stable development signing for sideloaded Bridge APKs.
-// The private key is intentionally a project dev key (not a Play/production key) so
-// every GitHub Actions runner produces APKs Android can update in place.
+// Stable development signing is used for release-style sideload builds.
+// Debug builds intentionally use Android's normal debug signing, matching the older Bridge APK workflow.
 def bridgeKeystoreFile = rootProject.file('bridge-dev.keystore')
 def bridgeKeystoreB64 = rootProject.file('bridge-dev.keystore.b64')
 if (!bridgeKeystoreFile.exists() && bridgeKeystoreB64.exists()) {
@@ -43,7 +42,7 @@ android {
 
     buildTypes {
         debug {
-            signingConfig signingConfigs.bridgeStable
+            // Use Android's default debug keystore, like Bridge builds before stable signing was introduced.
         }
         release {
             signingConfig signingConfigs.bridgeStable
@@ -58,4 +57,4 @@ android {
     }
 }
 
-// Build stamp: v0.5.2 stable-signed + paced Retry x3 -> single locked Refresh -> same-task restore/resend + no-cache WebView.
+// Build stamp: v0.5.2 normal-debug available + stable release + paced Retry x3 -> single locked Refresh -> same-task restore/resend + no-cache WebView.
