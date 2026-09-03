@@ -59,7 +59,13 @@ const snapshot: ResourceRegistrySnapshot = {
   }],
 };
 
-function task(id: string, assignee: Task['assignee'], status: Task['status'], agentInstanceId: string): Task {
+function task(
+  id: string,
+  assignee: Task['assignee'],
+  status: Task['status'],
+  agentInstanceId: string,
+  createdAt: string,
+): Task {
   const prepared = attachTaskBinding(`${id} description`, {
     version: 1,
     workspace_id: 'workspace-demo',
@@ -74,36 +80,61 @@ function task(id: string, assignee: Task['assignee'], status: Task['status'], ag
     status,
     assignee,
     created_by: 'human',
-    created_at: now,
-    updated_at: now,
+    created_at: createdAt,
+    updated_at: createdAt,
     related_files: [],
     related_finding: null,
     result: null,
   };
 }
 
-const assignedStudio = task('TASK-1', 'gemini', 'assigned', 'studio-app-1234');
-const assignedChat = task('TASK-2', 'chatgpt', 'pending', 'chatgpt-chat-2222');
-const reviewStudio = task('TASK-3', 'gemini', 'review', 'studio-app-1234');
+const assignedStudio = task('TASK-1', 'gemini', 'assigned', 'studio-app-1234', '2026-01-03T00:00:01.000Z');
+const assignedChat = task('TASK-2', 'chatgpt', 'pending', 'chatgpt-chat-2222', '2026-01-03T00:00:02.000Z');
+const reviewStudio = task('TASK-3', 'gemini', 'review', 'studio-app-1234', '2026-01-03T00:00:03.000Z');
+const secondStudio = task('TASK-4', 'gemini', 'assigned', 'studio-app-1234', '2026-01-03T00:00:04.000Z');
 
-const queue = buildWakeQueueFromData(snapshot, [assignedStudio, assignedChat, reviewStudio]);
-assert.strictEqual(queue.length, 3);
+// One direct wake per exact target. TASK-4 must not leak through while TASK-1 is active,
+// and Studio review must not interrupt a ChatGPT conversation already holding TASK-2.
+const queue = buildWakeQueueFromData(snapshot, [assignedStudio, assignedChat, reviewStudio, secondStudio]);
+assert.strictEqual(queue.length, 2);
 
 const studioWake = queue.find(item => item.task_id === 'TASK-1');
 assert.ok(studioWake);
 assert.strictEqual(studioWake!.provider, 'google-ai-studio');
 assert.strictEqual(studioWake!.resource_id, 'app-1234');
 assert.match(studioWake!.prompt, /studio_app_id=app-1234/);
+assert.ok(!queue.some(item => item.task_id === 'TASK-4'));
 
 const chatWake = queue.find(item => item.task_id === 'TASK-2');
 assert.ok(chatWake);
 assert.strictEqual(chatWake!.resource_id, 'chat-2222');
 assert.match(chatWake!.prompt, /chatgpt_conversation_id=chat-2222/);
+assert.ok(!queue.some(item => item.task_id === 'TASK-3' && item.reason === 'review-ready'));
 
-const reviewWake = queue.find(item => item.task_id === 'TASK-3');
+// Completing the direct ChatGPT task allows the pending Studio review to wake ChatGPT,
+// but TASK-4 remains blocked because TASK-3 itself is still non-terminal on Studio.
+const queueAfterChatDone = buildWakeQueueFromData(snapshot, [
+  assignedStudio,
+  { ...assignedChat, status: 'completed' },
+  reviewStudio,
+  secondStudio,
+]);
+const reviewWake = queueAfterChatDone.find(item => item.task_id === 'TASK-3' && item.reason === 'review-ready');
 assert.ok(reviewWake);
-assert.strictEqual(reviewWake!.reason, 'review-ready');
 assert.strictEqual(reviewWake!.resource_id, 'chat-2222');
+assert.ok(!queueAfterChatDone.some(item => item.task_id === 'TASK-4'));
+
+// A later Studio task can wake only after every older task on that exact Studio target
+// becomes terminal.
+const queueAfterOlderStudioDone = buildWakeQueueFromData(snapshot, [
+  { ...assignedStudio, status: 'completed' },
+  { ...assignedChat, status: 'completed' },
+  { ...reviewStudio, status: 'completed' },
+  secondStudio,
+]);
+assert.strictEqual(queueAfterOlderStudioDone.length, 1);
+assert.strictEqual(queueAfterOlderStudioDone[0].task_id, 'TASK-4');
+assert.strictEqual(queueAfterOlderStudioDone[0].provider, 'google-ai-studio');
 
 assert.strictEqual(new Set(queue.map(item => item.event_id)).size, queue.length);
 console.log('wakeQueue.test.ts: all assertions passed');
