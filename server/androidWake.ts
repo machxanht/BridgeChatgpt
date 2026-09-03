@@ -8,6 +8,12 @@ export const androidWakeRouter = Router();
 
 const TOKEN_PREFIX = 'bridgewake';
 const TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
+// Production deployments created from AI Studio do not always expose a place to
+// inject BRIDGE_ANDROID_WAKE_SECRET/BRIDGE_MCP_TOKEN. Keep a process-local random
+// signing key as a safe fallback rather than hard-coding a public repo secret.
+// A new revision gets a new key; Bridge Android already auto-pairs again when its
+// previous token is rejected, so rotation on restart is expected and harmless.
+const PROCESS_WAKE_SECRET = crypto.randomBytes(32).toString('base64url');
 
 interface WakeTokenPayload {
   v: 1;
@@ -17,11 +23,7 @@ interface WakeTokenPayload {
 }
 
 function wakeSecret(): string {
-  const secret = process.env.BRIDGE_ANDROID_WAKE_SECRET || process.env.BRIDGE_MCP_TOKEN;
-  if (!secret) {
-    throw new Error('Bridge Android Wake requires BRIDGE_MCP_TOKEN or BRIDGE_ANDROID_WAKE_SECRET');
-  }
-  return secret;
+  return process.env.BRIDGE_ANDROID_WAKE_SECRET || process.env.BRIDGE_MCP_TOKEN || PROCESS_WAKE_SECRET;
 }
 
 function signBody(body: string) {
