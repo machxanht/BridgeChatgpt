@@ -64,7 +64,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
     private void processPending(AccessibilityNodeInfo root, JSONObject pending, String prompt) {
         if (dismissKnownBlockingModal(root)) {
             sending = true;
-            WakeState.log(this, "🧹 Đã đóng popup AI Studio đang chặn nút Send");
+            WakeState.log(this, "🧹 Đã đóng popup AI Studio đang chặn Wake");
             handler.postDelayed(() -> {
                 sending = false;
                 retryPendingDirect();
@@ -174,19 +174,34 @@ public class BridgeAccessibilityService extends AccessibilityService {
     }
 
     private boolean dismissKnownBlockingModal(AccessibilityNodeInfo root) {
-        boolean envModal = treeContains(root, "enter your environment variable to continue")
-            || (treeContains(root, "secret value") && treeContains(root, "apply"));
-        if (!envModal) return false;
+        AccessibilityNodeInfo envMarker = findNodeContaining(root, "enter your environment variable to continue");
+        boolean envModal = envMarker != null || (treeContains(root, "secret value") && treeContains(root, "apply"));
+
+        AccessibilityNodeInfo bugMarker = findNodeContaining(root, "submit bug");
+        boolean bugModal = bugMarker != null
+            && (treeContains(root, "tell us what went wrong")
+                || treeContains(root, "submitting this feedback report")
+                || treeContains(root, "feedback report"));
+
+        if (!envModal && !bugModal) return false;
+
+        AccessibilityNodeInfo marker = bugModal ? bugMarker : envMarker;
+        AccessibilityNodeInfo current = marker;
+        for (int depth = 0; current != null && depth < 7; depth++) {
+            AccessibilityNodeInfo close = findModalCloseButton(current);
+            if (close != null && close.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                WakeState.log(this, bugModal ? "🧹 Đã đóng Submit Bug" : "🧹 Đã đóng popup environment variable");
+                return true;
+            }
+            if (current.performAction(AccessibilityNodeInfo.ACTION_DISMISS)) {
+                WakeState.log(this, bugModal ? "🧹 Đã dismiss Submit Bug" : "🧹 Đã dismiss popup environment variable");
+                return true;
+            }
+            current = current.getParent();
+        }
 
         AccessibilityNodeInfo close = findModalCloseButton(root);
         if (close != null && close.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
-
-        AccessibilityNodeInfo marker = findNodeContaining(root, "enter your environment variable to continue");
-        AccessibilityNodeInfo current = marker;
-        for (int depth = 0; current != null && depth < 6; depth++) {
-            if (current.performAction(AccessibilityNodeInfo.ACTION_DISMISS)) return true;
-            current = current.getParent();
-        }
         return false;
     }
 
@@ -203,7 +218,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
                 int score = 0;
                 if (descriptor.matches(".*(close|dismiss|đóng|close button|dismiss button).*")) score += 12;
                 if (descriptor.equals("x") || descriptor.endsWith(" x")) score += 9;
-                if (descriptor.matches(".*(apply|secret value|send|submit|share).*")) score -= 12;
+                if (descriptor.matches(".*(apply|secret value|send|submit|share|feedback).*")) score -= 12;
                 if (score > bestScore) {
                     bestScore = score;
                     best = node;
@@ -248,8 +263,8 @@ public class BridgeAccessibilityService extends AccessibilityService {
             String className = node.getClassName() == null ? "" : node.getClassName().toString().toLowerCase(Locale.ROOT);
 
             boolean editable = node.isEditable() || className.contains("edittext");
-            boolean envField = descriptor.matches(".*(secret value|environment variable).*" );
-            if (editable && !envField && !looksLikeChromeAddressBar(descriptor)) {
+            boolean blockedField = descriptor.matches(".*(secret value|environment variable|tell us what went wrong|feedback report|submit bug).*" );
+            if (editable && !blockedField && !looksLikeChromeAddressBar(descriptor)) {
                 int score = 0;
                 if (descriptor.matches(".*(message|ask anything|ask for anything|make changes|prompt|chatgpt|type something|enter a prompt|send a message|gửi tin nhắn).*")) score += 8;
                 if (node.isFocused()) score += 2;
@@ -281,7 +296,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
             if (node.isClickable() && node.isEnabled() && node.isVisibleToUser()) {
                 int score = 0;
                 if (descriptor.matches(".*(send message|send prompt|send|submit|gửi|arrow upward|arrow_upward|arrow up|up arrow).*")) score += 8;
-                if (descriptor.matches(".*(stop|cancel|share|copy|apply).*")) score -= 10;
+                if (descriptor.matches(".*(stop|cancel|share|copy|apply|submit bug|feedback|report).*")) score -= 14;
                 if (score > bestScore) {
                     bestScore = score;
                     best = node;
