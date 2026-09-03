@@ -1,0 +1,21 @@
+{
+  "id": "bidirectional-wake-chatgpt-v1",
+  "type": "task_create",
+  "created_by": "chatgpt",
+  "title": "Complete bidirectional Wake: AI Studio -> exact ChatGPT conversation",
+  "description": "Complete and validate the missing ChatGPT half of Bridge Wake. Preserve normal ChatGPT Web/Sol as architect/reviewer and do not introduce Codex or Gemini API execution. Requirements: (1) inspect server/wakeQueue.ts, Android WakeService and BridgeAccessibilityService; keep existing Studio wake behavior intact. (2) When a Studio-bound task becomes review or blocked, Bridge must emit one logical wake for the newest registered ChatGPT conversation in the same project; direct ChatGPT tasks must remain pinned to their exact registered conversation. (3) Android must open/reuse the exact chatgpt.com/c/... URL, never a generic ChatGPT home page or share URL. (4) Accessibility must safely find the ChatGPT composer and Send control, avoid Chrome omnibox and unrelated drafts, dismiss only known non-destructive blocking UI, inject the Bridge Wake prompt, send once, and gate duplicate wakes by logical task/reason/target. (5) If the active project has no registered ChatGPT conversation, Bridge UI must show a compact actionable 'Bind ChatGPT conversation' state instead of pretending bidirectional wake is ready. Do not fabricate a URL. (6) Project switching must immediately change the ChatGPT wake target to that project's registered conversation. (7) Add diagnostics that distinguish: queued, browser opened, blocker dismissed, composer matched, prompt injected, send clicked, delivered, duplicate suppressed. (8) Add/extend tests for wakeQueue review-ready/blocked ChatGPT events and logical dedupe where practical. (9) Run Android build plus npm typecheck/tests/build and production startup smoke. Do not Publish unless required for backend/web changes to test live behavior; if Publish is required, report it explicitly. End with a clear limitation if a real ChatGPT conversation URL is not registered, because final end-to-end ChatGPT wake cannot be claimed without one.",
+  "priority": "high",
+  "assignee": "gemini",
+  "workspace_id": "workspace-proj-default",
+  "project_id": "proj-default",
+  "agent_instance_id": "studio-15c1d80d-6265-47e1-bdf2-e30fb7bf430c",
+  "related_files": [
+    "server/wakeQueue.ts",
+    "server/resourceRegistry.ts",
+    "server/resourceRoutes.ts",
+    "android/bridge-wake-app/app/src/main/java/com/bridge/wake/WakeService.java",
+    "android/bridge-wake-app/app/src/main/java/com/bridge/wake/BridgeAccessibilityService.java",
+    "src/components/ProjectRouterV2.tsx",
+    "src/components/BridgeChatPanel.tsx"
+  ]
+}
