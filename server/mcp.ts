@@ -226,6 +226,7 @@ export const BRIDGE_TOOLS: MCPToolDefinition[] = [
       type: 'object',
       properties: {
         agent: { type: 'string', enum: ['gemini', 'chatgpt', 'human'], description: 'Agent claiming the task (default: gemini)' },
+        task_id: { type: 'string', description: 'Optional exact task ID. Bound target lanes reject this claim if an earlier task is still non-terminal.' },
       },
     },
   },
@@ -531,7 +532,7 @@ export async function executeTool(name: string, args: Record<string, any> = {}, 
       });
 
     case 'task_claim_next':
-      return await claimNextTask(args.agent || agent);
+      return await claimNextTask(args.agent || agent, args.task_id);
 
     case 'task_list':
       return await getTasks({

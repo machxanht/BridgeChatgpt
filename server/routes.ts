@@ -272,7 +272,7 @@ apiRouter.post('/tasks', async (req: Request, res: Response) => {
 apiRouter.post('/tasks/claim', async (req: Request, res: Response) => {
   try {
     const agent = req.body.agent || 'gemini';
-    const claimed = await claimNextTask(agent);
+    const claimed = await claimNextTask(agent, req.body.task_id);
     res.json(claimed);
   } catch (err: any) {
     res.status(400).json({ error: err.message });

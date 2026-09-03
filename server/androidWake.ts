@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
-import { getProject } from './db.js';
+import { getProject, getTask, updateTask } from './db.js';
+import { extractTaskBinding } from './taskBinding.js';
 import { isSameOriginBrowserRequest } from './auth.js';
 import { buildWakeQueue } from './wakeQueue.js';
 
@@ -97,6 +98,66 @@ androidWakeRouter.get('/queue', async (req: Request, res: Response) => {
     const events = await buildWakeQueue(project);
     res.setHeader('Cache-Control', 'no-store');
     res.json({ ok: true, events, server_time: new Date().toISOString() });
+  } catch (error: any) {
+    res.status(500).json({ ok: false, error: error?.message || String(error) });
+  }
+});
+
+
+androidWakeRouter.post('/recovery-report', async (req: Request, res: Response) => {
+  try {
+    const token = readBearer(req);
+    const payload = token ? verifyWakeToken(token) : null;
+    if (!payload) {
+      res.status(401).json({ ok: false, error: 'Invalid or expired Android wake token.' });
+      return;
+    }
+
+    const taskId = String(req.body?.task_id || '').trim();
+    const targetId = String(req.body?.target_id || '').trim();
+    const provider = String(req.body?.provider || '').trim();
+    if (!taskId || !targetId || !provider) {
+      res.status(400).json({ ok: false, error: 'task_id, target_id and provider are required.' });
+      return;
+    }
+
+    const task = await getTask(taskId);
+    if (!task) {
+      res.status(404).json({ ok: false, error: 'Task ' + taskId + ' not found.' });
+      return;
+    }
+    const binding = extractTaskBinding(String(task.description || '')).binding;
+    if (!binding?.agent_instance_id || binding.agent_instance_id !== targetId) {
+      res.status(403).json({ ok: false, error: 'Recovery report target does not own this task.' });
+      return;
+    }
+    const expectedProvider = task.assignee === 'gemini' ? 'google-ai-studio' : task.assignee === 'chatgpt' ? 'chatgpt' : '';
+    if (!expectedProvider || expectedProvider !== provider) {
+      res.status(403).json({ ok: false, error: 'Recovery report provider does not match task assignee.' });
+      return;
+    }
+    if (task.status === 'completed' || task.status === 'cancelled') {
+      res.json({ ok: true, terminal: true, task });
+      return;
+    }
+    if (task.status === 'blocked') {
+      res.json({ ok: true, idempotent: true, task });
+      return;
+    }
+
+    const report = {
+      source: 'bridge-android-wake',
+      event_id: String(req.body?.event_id || ''),
+      target_id: targetId,
+      provider,
+      reason: String(req.body?.reason || 'bounded-recovery-exhausted'),
+      attempts: Number(req.body?.attempts || 0),
+      reported_at: new Date().toISOString(),
+    };
+    const note = '[Android Wake recovery BLOCKED]\n' + JSON.stringify(report, null, 2);
+    const result = task.result ? task.result + '\n\n' + note : note;
+    const updated = await updateTask(task.id, { status: 'blocked', result }, 'human');
+    res.json({ ok: true, blocked: true, task: updated });
   } catch (error: any) {
     res.status(500).json({ ok: false, error: error?.message || String(error) });
   }

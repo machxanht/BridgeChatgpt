@@ -16,6 +16,7 @@ import {
   WorkflowStateResponse,
   WorkspaceState,
 } from '../src/types.js';
+import { exactLaneBlocker, filterClaimableSingleFlight } from './singleFlight.js';
 
 let SQL: SqlJsStatic | null = null;
 let db: Database | null = null;
@@ -559,6 +560,17 @@ export async function updateTask(
     }
   }
 
+  const requestedStatus = cleanUpdates.status;
+  if (requestedStatus && ['working', 'review', 'blocked'].includes(requestedStatus)) {
+    const laneTasks = await getTasks({ assignee: current.assignee });
+    const blocker = exactLaneBlocker(current, laneTasks);
+    if (blocker) {
+      throw new Error(
+        `Single-flight lane busy: ${blocker.id} is ${blocker.status}; ${current.id} cannot enter ${requestedStatus} until the earlier task is completed or cancelled.`
+      );
+    }
+  }
+
   const updated: Task = {
     ...current,
     ...cleanUpdates,
@@ -639,7 +651,7 @@ const PRIORITY_WEIGHTS: Record<TaskPriority, number> = {
 };
 
 // Atomic Task Claiming for Execution Agents (e.g. Gemini)
-export async function claimNextTask(agent: AgentType = 'gemini'): Promise<{
+export async function claimNextTask(agent: AgentType = 'gemini', requestedTaskId?: string): Promise<{
   claimed: boolean;
   message?: string;
   task: Task | null;
@@ -647,29 +659,44 @@ export async function claimNextTask(agent: AgentType = 'gemini'): Promise<{
   return await dbMutex.runExclusive(async () => {
     const d = await getDb();
     const allTasks = await getTasks({ assignee: agent });
-    const eligible = allTasks.filter((t) => t.status === 'assigned' || t.status === 'pending');
+    const claimable = filterClaimableSingleFlight(allTasks, agent);
 
-    if (eligible.length === 0) {
-      return {
-        claimed: false,
-        message: `No pending or assigned tasks available for agent "${agent}".`,
-        task: null,
-      };
+    let selected: Task | null = null;
+    if (requestedTaskId) {
+      const requested = allTasks.find(task => task.id === requestedTaskId) || null;
+      if (!requested) {
+        return { claimed: false, message: `Task ${requestedTaskId} is not assigned to agent \"${agent}\".`, task: null };
+      }
+      if (!['assigned', 'pending'].includes(requested.status)) {
+        return { claimed: false, message: `Task ${requested.id} is ${requested.status}, not claimable.`, task: null };
+      }
+      const blocker = exactLaneBlocker(requested, allTasks);
+      if (blocker) {
+        return {
+          claimed: false,
+          message: `Single-flight lane busy: ${blocker.id} is ${blocker.status}; refusing to claim ${requested.id}.`,
+          task: null,
+        };
+      }
+      selected = requested;
+    } else {
+      if (claimable.length === 0) {
+        return {
+          claimed: false,
+          message: `No claimable pending/assigned tasks available for agent \"${agent}\"; an exact target lane may already be busy.`,
+          task: null,
+        };
+      }
+
+      claimable.sort((a, b) => {
+        const weightA = PRIORITY_WEIGHTS[a.priority] || 3;
+        const weightB = PRIORITY_WEIGHTS[b.priority] || 3;
+        if (weightA !== weightB) return weightA - weightB;
+        return a.created_at.localeCompare(b.created_at);
+      });
+      selected = claimable[0];
     }
 
-    // Sort by priority (urgent -> high -> medium -> low), then oldest created_at
-    eligible.sort((a, b) => {
-      const weightA = PRIORITY_WEIGHTS[a.priority] || 3;
-      const weightB = PRIORITY_WEIGHTS[b.priority] || 3;
-      if (weightA !== weightB) {
-        return weightA - weightB;
-      }
-      return a.created_at.localeCompare(b.created_at);
-    });
-
-    const selected = eligible[0];
-
-    // Atomically claim the selected task using SQL conditional update
     const now = new Date().toISOString();
     d.run(
       `UPDATE tasks SET status = 'working', updated_at = ? WHERE id = ? AND (status = 'assigned' OR status = 'pending')`,
@@ -696,12 +723,11 @@ export async function claimNextTask(agent: AgentType = 'gemini'): Promise<{
       };
     }
 
-    // Update agent status to working
     await setAgentStatus({
       agent: agent as any,
       status: 'working',
       current_task_id: selected.id,
-      message: `Actively executing "${selected.title}"`,
+      message: `Actively executing \"${selected.title}\"`,
     });
 
     await logActivity({
@@ -709,14 +735,14 @@ export async function claimNextTask(agent: AgentType = 'gemini'): Promise<{
       action: `Claimed task ${selected.id}`,
       entity_type: 'task',
       entity_id: selected.id,
-      details: `Priority: ${selected.priority} | "${selected.title}"`,
+      details: `Priority: ${selected.priority} | \"${selected.title}\"`,
     });
 
     await createMessage({
       from: agent,
       to: 'chatgpt',
       type: 'task_claimed',
-      content: `${agent.toUpperCase()} claimed ${selected.id}: "${selected.title}". Implementation started.`,
+      content: `${agent.toUpperCase()} claimed ${selected.id}: \"${selected.title}\". Implementation started.`,
       task_id: selected.id,
       finding_id: selected.related_finding,
     });
@@ -1259,7 +1285,7 @@ export async function getWorkflowStateForAgent(agentName: string = 'gemini'): Pr
   const openFindings = (await getFindings({ limit: 50 })).filter((f) => f.status === 'open' || f.status === 'assigned');
   const recentMessages = await getMessages({ limit: 15 });
 
-  const pendingForMe = tasks.filter((t) => t.assignee === normalizedAgent && (t.status === 'assigned' || t.status === 'pending'));
+  const pendingForMe = filterClaimableSingleFlight(tasks, normalizedAgent);
   const tasksInReview = tasks.filter((t) => t.status === 'review');
   const activeTask = myAgent.current_task_id ? tasks.find((t) => t.id === myAgent.current_task_id) || null : null;
 

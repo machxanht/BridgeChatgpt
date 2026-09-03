@@ -10,8 +10,8 @@ import {
 import { attachTaskBinding, extractTaskBinding, type TaskBinding } from './taskBinding.js';
 import { buildProjectBootstrap, type ProjectBrainBootstrap } from './projectBrain.js';
 import type { AgentType, Task, TaskPriority } from '../src/types.js';
+import { isNonTerminalTask, taskCreatedOrder } from './singleFlight.js';
 
-const PRIORITY_WEIGHTS: Record<TaskPriority, number> = { urgent: 1, high: 2, medium: 3, low: 4 };
 let claimTail: Promise<void> = Promise.resolve();
 
 async function withClaimLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -52,6 +52,7 @@ export async function claimNextBoundTask(input: {
   workspace_id: string;
   project_id: string;
   agent_instance_id: string;
+  task_id?: string;
   allow_legacy?: boolean;
 }): Promise<{
   claimed: boolean;
@@ -63,22 +64,17 @@ export async function claimNextBoundTask(input: {
   return withClaimLock(async () => {
     const projectContext = await buildProjectBootstrap(input.workspace_id, input.project_id);
     const tasks = await getTasks({ assignee: input.agent, limit: 200 });
-    const eligible = tasks.filter(task => {
-      if (!['assigned', 'pending'].includes(task.status)) return false;
+    const matchesLane = (task: Task) => {
       const binding = extractTaskBinding(task.description).binding;
       if (!binding) return Boolean(input.allow_legacy);
       if (binding.workspace_id !== input.workspace_id || binding.project_id !== input.project_id) return false;
       if (binding.agent_instance_id && binding.agent_instance_id !== input.agent_instance_id) return false;
       return true;
-    });
+    };
 
-    eligible.sort((a, b) => {
-      const priority = (PRIORITY_WEIGHTS[a.priority] || 3) - (PRIORITY_WEIGHTS[b.priority] || 3);
-      return priority || a.created_at.localeCompare(b.created_at);
-    });
-
-    const selected = eligible[0];
-    if (!selected) {
+    const routed = tasks.filter(matchesLane);
+    const firstOpen = routed.filter(isNonTerminalTask).sort(taskCreatedOrder)[0] || null;
+    if (!firstOpen) {
       return {
         claimed: false,
         message: `No task available for ${input.agent_instance_id} in ${input.workspace_id}.`,
@@ -88,11 +84,36 @@ export async function claimNextBoundTask(input: {
       };
     }
 
-    const latest = await getTask(selected.id);
-    if (!latest || !['assigned', 'pending'].includes(latest.status)) {
+    if (input.task_id && firstOpen.id !== input.task_id) {
+      const requestedExists = routed.some(task => task.id === input.task_id);
       return {
         claimed: false,
-        message: `${selected.id} changed before claim.`,
+        message: requestedExists
+          ? `Single-flight lane busy: ${firstOpen.id} is ${firstOpen.status}; refusing exact claim for ${input.task_id}.`
+          : `Task ${input.task_id} is not routed to ${input.agent_instance_id}.`,
+        task: null,
+        binding: null,
+        project_context: projectContext,
+      };
+    }
+
+    if (!['assigned', 'pending'].includes(firstOpen.status)) {
+      return {
+        claimed: false,
+        message: `Single-flight lane busy: ${firstOpen.id} is ${firstOpen.status}. The next task stays queued until it is completed or cancelled.`,
+        task: null,
+        binding: extractTaskBinding(firstOpen.description).binding,
+        project_context: projectContext,
+      };
+    }
+
+    const selected = firstOpen;
+    const latestTasks = await getTasks({ assignee: input.agent, limit: 200 });
+    const latestHead = latestTasks.filter(matchesLane).filter(isNonTerminalTask).sort(taskCreatedOrder)[0] || null;
+    if (!latestHead || latestHead.id !== selected.id || !['assigned', 'pending'].includes(latestHead.status)) {
+      return {
+        claimed: false,
+        message: `${selected.id} changed before claim or is no longer the lane head.`,
         task: null,
         binding: null,
         project_context: projectContext,

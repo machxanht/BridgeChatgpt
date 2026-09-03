@@ -50,7 +50,8 @@ function directPrompt(target: ResourceTargetView, task: Task, projectName: strin
       `project=${projectName}`,
       `repo=${repositoryUrl}`,
       `studio_app_id=${target.resource_id}`,
-      'Check Bridge now. Claim only pending work mapped to this Studio app, process it completely, run the required build/tests, and submit the result back to Bridge.',
+      `Claim exactly ${task.id} for this Studio target. When using the Studio relay, pass task_id=${task.id}; never use an unscoped claim-next to skip an earlier non-terminal task.`,
+      `Process only ${task.id} completely, run the required build/tests, and submit its result back to Bridge.`,
       'Do not start another Bridge task until this task reaches completed or cancelled.',
       'Do not Publish unless the user explicitly asks.',
     ].join('\n');

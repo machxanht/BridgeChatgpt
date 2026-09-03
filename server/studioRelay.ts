@@ -260,6 +260,7 @@ studioRelayRouter.post('/claim', async (req: Request, res: Response) => {
       workspace_id: resolved.instance.workspace_id,
       project_id: resolved.instance.project_id,
       agent_instance_id: resolved.instance.agent_instance_id,
+      task_id: req.body?.task_id ? String(req.body.task_id) : undefined,
       allow_legacy: resolved.instance.workspace_id === resolved.fallbackWorkspace.workspace_id,
     });
     const prepared = prepareTaskForStudio(claim.task);

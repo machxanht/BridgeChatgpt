@@ -1,6 +1,7 @@
 package com.bridge.wake;
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -23,6 +24,15 @@ public class BridgeAccessibilityService extends AccessibilityService {
     private static final long RECOVERY_WINDOW_MS = 3 * 60_000L;
     private static final long RECOVERY_REFRESH_GAP_MS = 10_000L;
     private static final int MAX_HARD_REFRESHES = 2;
+
+    private static final String STATE_IDLE = "IDLE";
+    private static final String STATE_OPENING = "OPENING";
+    private static final String STATE_DISMISS_MODAL = "DISMISS_MODAL";
+    private static final String STATE_FILLING = "FILLING";
+    private static final String STATE_SENDING = "SENDING";
+    private static final String STATE_WAITING_RESULT = "WAITING_RESULT";
+    private static final String STATE_RECOVER_REFRESH = "RECOVER_REFRESH";
+    private static final String STATE_BLOCKED = "BLOCKED";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastAttemptAt = 0L;
@@ -58,6 +68,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
 
         try {
             JSONObject pending = new JSONObject(raw);
+            setAutomationState(STATE_OPENING, pending.optString("task_id", ""));
             String prompt = pending.optString("prompt", "").trim();
             if (prompt.isEmpty()) {
                 clearPending("prompt-missing");
@@ -71,6 +82,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
 
     private void processPending(AccessibilityNodeInfo root, JSONObject pending, String prompt) {
         if (dismissKnownBlockingModal(root)) {
+            setAutomationState(STATE_DISMISS_MODAL, pending.optString("task_id", ""));
             sending = true;
             WakeState.log(this, "🧹 Đã đóng popup đang chặn Wake");
             handler.postDelayed(() -> {
@@ -95,6 +107,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
             return;
         }
 
+        setAutomationState(STATE_FILLING, pending.optString("task_id", ""));
         Bundle args = new Bundle();
         args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, prompt);
         boolean textSet = composer.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
@@ -103,6 +116,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
             return;
         }
 
+        setAutomationState(STATE_SENDING, pending.optString("task_id", ""));
         sending = true;
         handler.postDelayed(() -> finishSend(pending), 650L);
     }
@@ -125,6 +139,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
     }
 
     private void finishSend(JSONObject pending) {
+        setAutomationState(STATE_SENDING, pending.optString("task_id", ""));
         try {
             AccessibilityNodeInfo root = getRootInActiveWindow();
             if (root == null) {
@@ -232,6 +247,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
         if (!eventId.isEmpty()) editor.putLong("delivered_" + eventId, now);
         editor.apply();
 
+        setAutomationState(STATE_WAITING_RESULT, pending.optString("task_id", ""));
         WakeState.log(this, "✅ Đã xác nhận Send " + pending.optString("provider") + " · " + pending.optString("task_id"));
     }
 
@@ -257,20 +273,17 @@ public class BridgeAccessibilityService extends AccessibilityService {
         if (refreshes >= MAX_HARD_REFRESHES) {
             String taskId = "";
             try { taskId = new JSONObject(raw).optString("task_id", ""); } catch (Exception ignored) { }
-            WakeState.log(this, "⛔ Studio vẫn lỗi sau " + MAX_HARD_REFRESHES + " reload · dừng recovery" + (taskId.isEmpty() ? "" : " · " + taskId));
+            setAutomationState(STATE_BLOCKED, taskId);
+            requestRecoveryBlocked(raw, refreshes, "studio-internal-error-circuit-breaker");
+            WakeState.log(this, "⛔ Studio vẫn lỗi sau " + MAX_HARD_REFRESHES + " reload · mark blocked" + (taskId.isEmpty() ? "" : " · " + taskId));
             clearRecovery("circuit-breaker");
             return;
         }
         if (now - lastRefreshAt < RECOVERY_REFRESH_GAP_MS) return;
 
-        AccessibilityNodeInfo refresh = findChromeRefreshButton(root);
-        if (refresh == null) {
-            WakeState.log(this, "⚠ Studio lỗi nhưng chưa tìm thấy nút Reload của Chrome");
-            return;
-        }
-
+        JSONObject pending;
         try {
-            JSONObject pending = new JSONObject(raw);
+            pending = new JSONObject(raw);
             prefs.edit()
                 .putString("pending_event", pending.toString())
                 .putLong("pending_opened_at", now)
@@ -282,11 +295,21 @@ public class BridgeAccessibilityService extends AccessibilityService {
             return;
         }
 
-        if (refresh.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            WakeState.log(this, "🔄 Studio internal error · Reload Chrome " + (refreshes + 1) + "/" + MAX_HARD_REFRESHES + " rồi tiếp tục đúng task");
+        setAutomationState(STATE_RECOVER_REFRESH, pending.optString("task_id", ""));
+        AccessibilityNodeInfo refresh = findChromeRefreshButton(root);
+        boolean reloaded = refresh != null && refresh.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        if (!reloaded) {
+            reloaded = requestExactTargetReload(pending);
+        }
+
+        if (reloaded) {
+            WakeState.log(this, "🔄 Studio internal error · reload exact target " + (refreshes + 1) + "/" + MAX_HARD_REFRESHES + " · giữ nguyên task");
         } else {
             prefs.edit().remove("pending_event").remove("pending_opened_at").apply();
-            WakeState.log(this, "⚠ Không bấm được Reload của Chrome");
+            setAutomationState(STATE_BLOCKED, pending.optString("task_id", ""));
+            requestRecoveryBlocked(raw, refreshes + 1, "reload-action-unavailable");
+            clearRecovery("reload-action-unavailable");
+            WakeState.log(this, "⛔ Không reload được exact target · mark blocked");
         }
     }
 
@@ -475,12 +498,51 @@ public class BridgeAccessibilityService extends AccessibilityService {
         return out.toString().trim();
     }
 
+    private void setAutomationState(String state, String taskId) {
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+            .edit()
+            .putString("automation_state", state)
+            .putString("automation_task_id", taskId == null ? "" : taskId)
+            .apply();
+    }
+
+    private boolean requestExactTargetReload(JSONObject pending) {
+        String url = pending.optString("resource_url", "").trim();
+        if (url.isEmpty()) return false;
+        try {
+            Intent intent = new Intent(this, WakeService.class);
+            intent.setAction(WakeService.ACTION_RELOAD_TARGET);
+            intent.putExtra("resource_url", url);
+            startService(intent);
+            return true;
+        } catch (Exception error) {
+            WakeState.log(this, "⚠ Exact target reload lỗi: " + error.getMessage());
+            return false;
+        }
+    }
+
+    private void requestRecoveryBlocked(String eventJson, int attempts, String reason) {
+        try {
+            Intent intent = new Intent(this, WakeService.class);
+            intent.setAction(WakeService.ACTION_REPORT_BLOCKED);
+            intent.putExtra("event_json", eventJson);
+            intent.putExtra("attempts", attempts);
+            intent.putExtra("reason", reason);
+            startService(intent);
+        } catch (Exception error) {
+            WakeState.log(this, "⚠ Không gửi được blocked report: " + error.getMessage());
+        }
+    }
+
     private void clearPending(String reason) {
         getSharedPreferences(PREFS, MODE_PRIVATE)
             .edit()
             .remove("pending_event")
             .remove("pending_opened_at")
             .apply();
+        if (getSharedPreferences(PREFS, MODE_PRIVATE).getString("recovery_event", "").isEmpty()) {
+            setAutomationState(STATE_IDLE, "");
+        }
         WakeState.log(this, "🧹 Xóa wake pending: " + reason);
     }
 

@@ -20,9 +20,13 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -32,9 +36,12 @@ public class WakeService extends Service {
     public static final int NOTIFICATION_ID = 4107;
     public static final String ACTION_WAKE_NOW = "com.bridge.wake.WAKE_NOW";
     public static final String ACTION_STOP = "com.bridge.wake.STOP";
+    public static final String ACTION_RELOAD_TARGET = "com.bridge.wake.RELOAD_TARGET";
+    public static final String ACTION_REPORT_BLOCKED = "com.bridge.wake.REPORT_BLOCKED";
 
     private static final String BRIDGE_QUEUE_URL = "https://bridge-ai-mission-control.ai.studio/api/android-wake/queue";
-    private static final String WAKE_LOGIC_VERSION = "0.4.9-single-flight-reload-v1";
+    private static final String BRIDGE_RECOVERY_URL = "https://bridge-ai-mission-control.ai.studio/api/android-wake/recovery-report";
+    private static final String WAKE_LOGIC_VERSION = "0.5.0-exact-lane-recovery-v2";
     private static final long POLL_MS = 45_000L;
     private static final long STALE_PENDING_MS = 4 * 60_000L;
 
@@ -62,6 +69,19 @@ public class WakeService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_RELOAD_TARGET.equals(intent.getAction())) {
+            String url = intent.getStringExtra("resource_url");
+            boolean opened = openChrome(url);
+            WakeState.log(this, opened ? "🔄 Recovery · reopen exact target" : "⚠ Recovery · reopen exact target failed");
+            return START_STICKY;
+        }
+        if (intent != null && ACTION_REPORT_BLOCKED.equals(intent.getAction())) {
+            String eventJson = intent.getStringExtra("event_json");
+            String reason = intent.getStringExtra("reason");
+            int attempts = intent.getIntExtra("attempts", 0);
+            reportBlockedAsync(eventJson, reason, attempts);
+            return START_STICKY;
+        }
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             WakeState.log(this, "⏹ Wake service OFF");
             stopSelf();
@@ -104,6 +124,7 @@ public class WakeService extends Service {
             .remove("recovery_last_action_at")
             .remove("recovery_refresh_count")
             .remove("recovery_last_refresh_at")
+            .putString("automation_state", "IDLE")
             .apply();
         WakeState.log(this, "🧹 Wake v0.4.9 · đã xóa automation/recovery cũ sau khi nâng cấp");
     }
@@ -133,9 +154,15 @@ public class WakeService extends Service {
                 }
 
                 JSONArray events = packet.optJSONArray("events");
+                reconcileWakeGates(prefs, events);
                 if (events == null || events.length() == 0) {
-                    clearOrphanPending(prefs, "queue-empty");
-                    updateNotification("Bridge Wake · idle · không có task");
+                    String pendingRaw = prefs.getString("pending_event", "");
+                    if (!isRecoveryOwnedPending(prefs, pendingRaw)) {
+                        clearOrphanPending(prefs, "queue-empty");
+                    }
+                    updateNotification(isRecoveryOwnedPending(prefs, pendingRaw)
+                        ? "Bridge Wake · recovering current task"
+                        : "Bridge Wake · idle · không có task");
                     return;
                 }
 
@@ -150,8 +177,9 @@ public class WakeService extends Service {
 
                     boolean stillQueued = !pendingGate.isEmpty() && queueContainsGate(events, pendingGate);
                     boolean stillFresh = pendingAt > 0 && now - pendingAt < STALE_PENDING_MS;
-                    if (stillQueued && stillFresh) {
-                        // Accessibility owns this live prompt. Never open another task/tab.
+                    boolean recoveryOwned = isRecoveryOwnedPending(prefs, pendingRaw);
+                    if ((stillQueued || recoveryOwned) && stillFresh) {
+                        // Accessibility owns this live prompt/recovery. Never open another task/tab.
                         return;
                     }
 
@@ -186,6 +214,7 @@ public class WakeService extends Service {
                     .putString("pending_event", selected.toString())
                     .putLong("pending_opened_at", now)
                     .putLong(selectedGate, now)
+                    .putString("automation_state", "OPENING")
                     .apply();
 
                 String provider = selected.optString("provider", "");
@@ -229,6 +258,102 @@ public class WakeService extends Service {
         if (raw == null || raw.isEmpty()) return;
         prefs.edit().remove("pending_event").remove("pending_opened_at").apply();
         WakeState.log(this, "🧹 Không còn task cần Wake · bỏ prompt cũ (" + reason + ")");
+    }
+
+    private void reconcileWakeGates(SharedPreferences prefs, JSONArray events) {
+        Set<String> active = new HashSet<>();
+        if (events != null) {
+            for (int i = 0; i < Math.min(events.length(), 100); i++) {
+                JSONObject event = events.optJSONObject(i);
+                if (event == null) continue;
+                String gate = wakeGateKey(event);
+                if (!gate.isEmpty()) active.add(gate);
+            }
+        }
+        SharedPreferences.Editor editor = prefs.edit();
+        boolean changed = false;
+        for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+            String key = entry.getKey();
+            if (key.startsWith("wake_gate:") && !active.contains(key)) {
+                editor.remove(key);
+                changed = true;
+            }
+        }
+        if (changed) editor.apply();
+    }
+
+    private boolean isRecoveryOwnedPending(SharedPreferences prefs, String pendingRaw) {
+        if (pendingRaw == null || pendingRaw.isEmpty()) return false;
+        String recoveryRaw = prefs.getString("recovery_event", "");
+        if (recoveryRaw == null || recoveryRaw.isEmpty()) return false;
+        try {
+            JSONObject pending = new JSONObject(pendingRaw);
+            JSONObject recovery = new JSONObject(recoveryRaw);
+            String pendingTask = pending.optString("task_id", "");
+            return !pendingTask.isEmpty() && pendingTask.equals(recovery.optString("task_id", ""));
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private void reportBlockedAsync(String eventJson, String reason, int attempts) {
+        if (eventJson == null || eventJson.trim().isEmpty()) return;
+        executor.execute(() -> {
+            try {
+                SharedPreferences prefs = getSharedPreferences(WakeState.PREFS, MODE_PRIVATE);
+                String token = prefs.getString("wake_token", "");
+                if (token == null || token.isEmpty()) {
+                    WakeState.log(this, "⚠ Không report blocked được · wake token trống");
+                    return;
+                }
+                JSONObject event = new JSONObject(eventJson);
+                JSONObject body = new JSONObject();
+                body.put("event_id", event.optString("event_id", ""));
+                body.put("task_id", event.optString("task_id", ""));
+                body.put("target_id", event.optString("target_id", ""));
+                body.put("provider", event.optString("provider", ""));
+                body.put("reason", reason == null ? "bounded-recovery-exhausted" : reason);
+                body.put("attempts", attempts);
+                JSONObject response = postRecoveryReport(token, body);
+                if (response.optBoolean("ok", false)) {
+                    WakeState.log(this, "🧱 Đã report Bridge blocked · " + event.optString("task_id", ""));
+                } else {
+                    WakeState.log(this, "⚠ Report blocked lỗi: " + response.optString("error", "unknown"));
+                }
+            } catch (Exception error) {
+                WakeState.log(this, "⚠ Report blocked lỗi: " + error.getMessage());
+            }
+        });
+    }
+
+    private JSONObject postRecoveryReport(String token, JSONObject body) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(BRIDGE_RECOVERY_URL).openConnection();
+        connection.setRequestMethod("POST");
+        connection.setConnectTimeout(12_000);
+        connection.setReadTimeout(15_000);
+        connection.setUseCaches(false);
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        connection.setRequestProperty("Authorization", "Bearer " + token);
+        byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(bytes);
+        }
+        int status = connection.getResponseCode();
+        InputStream stream = status >= 200 && status < 400 ? connection.getInputStream() : connection.getErrorStream();
+        String responseBody = readAll(stream);
+        connection.disconnect();
+        JSONObject parsed;
+        try {
+            parsed = responseBody == null || responseBody.isEmpty() ? new JSONObject() : new JSONObject(responseBody);
+        } catch (Exception ignored) {
+            parsed = new JSONObject();
+            parsed.put("error", "Invalid JSON from Bridge recovery report");
+        }
+        parsed.put("status", status);
+        if (!parsed.has("ok")) parsed.put("ok", status >= 200 && status < 300);
+        return parsed;
     }
 
     private JSONObject fetchQueue(String token) throws Exception {
