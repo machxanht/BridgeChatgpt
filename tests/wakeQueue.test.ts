@@ -7,6 +7,7 @@ import type { Task } from '../src/types.js';
 const now = new Date().toISOString();
 
 const snapshot: ResourceRegistrySnapshot = {
+  instance_id: '11111111-1111-4111-8111-111111111111',
   server_time: now,
   workspaces: [{
     workspace_id: 'workspace-demo',
