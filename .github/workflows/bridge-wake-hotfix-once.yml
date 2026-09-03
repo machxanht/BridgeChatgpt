@@ -99,9 +99,9 @@ jobs:
 
       - name: Remove one-shot machinery
         run: |
-          git rm .github/scripts/apply-single-flight-recovery-hotfix.mjs
-          git rm .github/scripts/fix-hotfix-generator.mjs
-          git rm .github/workflows/bridge-wake-hotfix-once.yml
+          git rm -f .github/scripts/apply-single-flight-recovery-hotfix.mjs
+          git rm -f .github/scripts/fix-hotfix-generator.mjs
+          git rm -f .github/workflows/bridge-wake-hotfix-once.yml
 
       - name: Commit verified hotfix
         run: |
