@@ -1,4 +1,4 @@
-name: Bridge Wake Android APK
+name: Bridge Android APK
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: bridge-wake-android-${{ github.ref }}
+  group: bridge-android-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -38,12 +38,12 @@ jobs:
         run: gradle -p android/bridge-wake-app :app:assembleDebug --stacktrace
 
       - name: Rename APK
-        run: cp android/bridge-wake-app/app/build/outputs/apk/debug/app-debug.apk bridge-wake.apk
+        run: cp android/bridge-wake-app/app/build/outputs/apk/debug/app-debug.apk bridge.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: bridge-wake-apk
-          path: bridge-wake.apk
+          name: bridge-android-apk
+          path: bridge.apk
           if-no-files-found: error
           retention-days: 30
