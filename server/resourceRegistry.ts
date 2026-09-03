@@ -80,7 +80,7 @@ function writeStore(store: ResourceRegistryStore) {
 async function withWriteLock<T>(fn: () => Promise<T> | T): Promise<T> {
   let release!: () => void;
   const previous = writeTail;
-  writeTail = new Promise<void>(resolve => { release = resolve(); });
+  writeTail = new Promise<void>(resolve => { release = resolve; });
   await previous;
   try {
     return await fn();
