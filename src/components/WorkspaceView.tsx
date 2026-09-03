@@ -44,7 +44,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 }) => {
   if (state.mission_control) {
     return (
-      <div className="-m-4 flex min-h-[calc(100dvh-3rem)] flex-col overflow-hidden border-y border-border bg-background lg:-m-6">
+      <div className="flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-background">
         <ProjectRouterV2 />
         <BridgeMiniStatus state={state} />
         <BridgeChatPanel />
@@ -76,7 +76,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   }
 
   return (
-    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 p-12 text-center text-sm text-muted-foreground">
+    <div className="flex h-dvh min-h-0 flex-col items-center justify-center gap-3 bg-background p-12 text-center text-sm text-muted-foreground">
       <div className="size-6 animate-spin rounded-full border-2 border-studio border-t-transparent" />
       <p>Loading Bridge workspace…</p>
     </div>
