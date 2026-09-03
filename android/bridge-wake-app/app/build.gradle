@@ -2,6 +2,19 @@ plugins {
     id 'com.android.application'
 }
 
+import java.util.Base64
+
+// Stable development signing for sideloaded Bridge APKs.
+// The private key is intentionally a project dev key (not a Play/production key) so
+// every GitHub Actions runner produces APKs Android can update in place.
+def bridgeKeystoreFile = rootProject.file('bridge-dev.keystore')
+def bridgeKeystoreB64 = rootProject.file('bridge-dev.keystore.b64')
+if (!bridgeKeystoreFile.exists() && bridgeKeystoreB64.exists()) {
+    bridgeKeystoreFile.bytes = Base64.decoder.decode(bridgeKeystoreB64.text.trim())
+}
+
+def bridgeSigningPassword = 'bridge-dev-2026'
+
 android {
     namespace 'com.bridge.wake'
     compileSdk 35
@@ -18,8 +31,22 @@ android {
         buildConfig true
     }
 
+    signingConfigs {
+        bridgeStable {
+            storeFile bridgeKeystoreFile
+            storePassword bridgeSigningPassword
+            keyAlias 'bridge'
+            keyPassword bridgeSigningPassword
+            storeType 'pkcs12'
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.bridgeStable
+        }
         release {
+            signingConfig signingConfigs.bridgeStable
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
@@ -31,4 +58,4 @@ android {
     }
 }
 
-// Build stamp: v0.5.2 paced Retry x3 -> single locked Refresh -> same-task restore/resend + no-cache WebView.
+// Build stamp: v0.5.2 stable-signed + paced Retry x3 -> single locked Refresh -> same-task restore/resend + no-cache WebView.
