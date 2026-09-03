@@ -1,4 +1,4 @@
-name: Bridge Android Stable APK
+name: Bridge Android APKs
 
 on:
   workflow_dispatch:
@@ -12,11 +12,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: bridge-android-stable-apk
+  group: bridge-android-apks
   cancel-in-progress: true
 
 jobs:
-  build-stable-apk:
+  build-apks:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -45,6 +45,14 @@ jobs:
             -alias bridge | tee /tmp/bridge-key.txt
           grep -q '79:39:C7:1A:1A:9D:50:73:4D:EF:44:9B:A5:07:16:DE:3E:8B:22:0C:6C:78:34:EF:19:37:17:E7:D5:1A:56:BB' /tmp/bridge-key.txt
 
+      - name: Build normal debug APK
+        run: |
+          set -euo pipefail
+          gradle -p android/bridge-wake-app :app:assembleDebug --stacktrace
+          cp android/bridge-wake-app/app/build/outputs/apk/debug/app-debug.apk bridge-v0.5.2-normal-debug.apk
+          test -s bridge-v0.5.2-normal-debug.apk
+          keytool -printcert -jarfile bridge-v0.5.2-normal-debug.apk | sed -n '1,20p'
+
       - name: Build stable signed APK
         run: |
           set -euo pipefail
@@ -52,13 +60,21 @@ jobs:
           cp android/bridge-wake-app/app/build/outputs/apk/release/app-release.apk bridge-v0.5.2-stable.apk
           test -s bridge-v0.5.2-stable.apk
 
-      - name: Verify APK certificate
+      - name: Verify stable APK certificate
         run: |
           set -euo pipefail
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n1)"
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs bridge-v0.5.2-stable.apk | tee /tmp/apk-cert.txt
           grep -qi '7939c71a1a9d50734def449ba50716de3e8b220c6c7834ef193717e7d51a56bb' /tmp/apk-cert.txt
+
+      - name: Upload normal debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-android-normal-debug-v0.5.2
+          path: bridge-v0.5.2-normal-debug.apk
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload stable APK
         uses: actions/upload-artifact@v4
