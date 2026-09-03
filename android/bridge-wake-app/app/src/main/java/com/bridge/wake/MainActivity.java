@@ -251,8 +251,7 @@ public class MainActivity extends Activity {
                 connection.setRequestProperty("X-Bridge-UI", "browser-dashboard");
                 connection.setRequestProperty("Origin", "https://bridge-ai-mission-control.ai.studio");
                 connection.setRequestProperty("Referer", BRIDGE_URL);
-                String userAgent = dashboardWeb == null ? "Mozilla/5.0 Chrome Android Bridge" : dashboardWeb.getSettings().getUserAgentString();
-                connection.setRequestProperty("User-Agent", userAgent);
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36 Bridge/" + BuildConfig.VERSION_NAME);
 
                 int status = connection.getResponseCode();
                 InputStream input = status >= 200 && status < 400 ? connection.getInputStream() : connection.getErrorStream();
