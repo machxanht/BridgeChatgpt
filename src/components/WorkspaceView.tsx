@@ -11,6 +11,8 @@ import {
 import { MissionControlView } from './MissionControlView.js';
 import { ProjectRouterV2 } from './ProjectRouterV2.js';
 import { BridgeChatPanel } from './BridgeChatPanel.js';
+import { BridgeMiniStatus } from './BridgeMiniStatus.js';
+import { Settings2, ChevronUp } from 'lucide-react';
 
 interface WorkspaceViewProps {
   state: WorkspaceState;
@@ -44,17 +46,19 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 }) => {
   if (state.mission_control) {
     return (
-      <div className="space-y-4">
+      <div className="flex min-h-[calc(100dvh-5rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-panel">
         <ProjectRouterV2 />
+        <BridgeMiniStatus state={state} />
         <BridgeChatPanel />
 
-        <details className="group overflow-hidden rounded-2xl border border-white/10 bg-slate-950/55">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-bold text-slate-300 hover:bg-white/5">
-            <span>⚙ Chi tiết hệ thống · task · agent · log</span>
-            <span className="text-[10px] text-slate-600 group-open:hidden">Mở khi cần</span>
-            <span className="hidden text-[10px] text-slate-500 group-open:inline">Thu gọn</span>
+        <details className="group shrink-0 border-t border-border bg-surface/50">
+          <summary className="flex h-10 cursor-pointer list-none items-center gap-2 px-3 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground sm:px-4">
+            <Settings2 className="size-4" />
+            System Details
+            <span className="ml-1 hidden text-[10px] text-muted-foreground/70 sm:inline">tasks · agents · logs · diagnostics</span>
+            <ChevronUp className="ml-auto size-4 transition-transform duration-200 group-open:rotate-180" />
           </summary>
-          <div className="border-t border-white/10 p-3 sm:p-4">
+          <div className="thin-scrollbar max-h-[46vh] overflow-y-auto border-t border-border p-3 sm:p-4">
             <MissionControlView
               state={state}
               missionControl={state.mission_control}
@@ -74,9 +78,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   }
 
   return (
-    <div className="flex flex-col items-center justify-center p-12 text-center text-slate-400 font-mono text-sm space-y-3">
-      <div className="h-6 w-6 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin"></div>
-      <p>Đang tải Bridge workspace...</p>
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 p-12 text-center text-sm text-muted-foreground">
+      <div className="size-6 animate-spin rounded-full border-2 border-studio border-t-transparent" />
+      <p>Loading Bridge workspace…</p>
     </div>
   );
 };
