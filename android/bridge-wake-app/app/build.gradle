@@ -10,8 +10,8 @@ android {
         applicationId 'com.bridge.wake'
         minSdk 26
         targetSdk 35
-        versionCode 12
-        versionName '0.4.8'
+        versionCode 13
+        versionName '0.4.9'
     }
 
     buildFeatures {
@@ -31,4 +31,4 @@ android {
     }
 }
 
-// Build stamp: v0.4.8 idle gate + stale prompt cleanup + one wake per logical task.
+// Build stamp: v0.4.9 single-flight queue + verified send + bounded Chrome reload recovery.
