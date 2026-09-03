@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -52,6 +53,26 @@ public class MainActivity extends Activity {
         }
     };
 
+    private final Runnable pairRetryLoop = new Runnable() {
+        @Override
+        public void run() {
+            if (preferences != null && preferences.getString("wake_token", "").isEmpty()) {
+                String url = dashboardWeb == null ? null : dashboardWeb.getUrl();
+                if (url != null && url.startsWith(BRIDGE_URL)) requestPairToken();
+            }
+            handler.postDelayed(this, 8000L);
+        }
+    };
+
+    private final Runnable registryBackupLoop = new Runnable() {
+        @Override
+        public void run() {
+            String url = dashboardWeb == null ? null : dashboardWeb.getUrl();
+            if (url != null && url.startsWith(BRIDGE_URL)) syncResourceRegistryBackup();
+            handler.postDelayed(this, 20_000L);
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -70,6 +91,8 @@ public class MainActivity extends Activity {
 
         dashboardWeb.loadUrl(BRIDGE_URL);
         handler.post(refreshUiLoop);
+        handler.postDelayed(pairRetryLoop, 3000L);
+        handler.postDelayed(registryBackupLoop, 6000L);
     }
 
     @Override
@@ -117,7 +140,10 @@ public class MainActivity extends Activity {
         header.addView(titleWrap, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         pairBadge = pill("● CONNECT", Color.rgb(124, 58, 237));
-        pairBadge.setOnClickListener(v -> dashboardWeb.reload());
+        pairBadge.setOnClickListener(v -> {
+            requestPairToken();
+            syncResourceRegistryBackup();
+        });
         header.addView(pairBadge);
 
         wakeBadge = pill("⚡ WAKE ON", Color.rgb(5, 150, 105));
@@ -194,6 +220,7 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 if (url != null && url.startsWith(BRIDGE_URL)) {
+                    syncResourceRegistryBackup();
                     requestPairToken();
                 }
             }
@@ -206,6 +233,66 @@ public class MainActivity extends Activity {
             "const d=await r.json().catch(()=>({}));" +
             "BridgePairNative.onPairResult(JSON.stringify({ok:r.ok,status:r.status,token:d.token||'',error:d.error||''}));" +
             "}catch(e){BridgePairNative.onPairResult(JSON.stringify({ok:false,status:0,error:String(e)}));}})();";
+        dashboardWeb.evaluateJavascript(script, null);
+    }
+
+    private void syncResourceRegistryBackup() {
+        String script = """
+            (async()=>{
+              const KEY='bridge.android.resourceRegistryBackup.v1';
+              const targetCount=(snap)=>(snap?.workspaces||[]).reduce((n,w)=>n+(w.studio_targets||[]).length+(w.chatgpt_targets||[]).length,0);
+              try {
+                let response=await fetch('/api/resource-registry',{credentials:'same-origin',cache:'no-store'});
+                if(!response.ok) return;
+                let current=await response.json();
+                let backup=null;
+                try { backup=JSON.parse(localStorage.getItem(KEY)||'null'); } catch (_) {}
+
+                const currentWorkspaces=current?.workspaces||[];
+                const backupWorkspaces=backup?.workspaces||[];
+                const currentTargets=targetCount(current);
+                const backupTargets=targetCount(backup);
+                const instanceChanged=Boolean(backup?.instance_id && current?.instance_id && backup.instance_id!==current.instance_id);
+                const lostState=instanceChanged && backupWorkspaces.length>0 && (
+                  currentWorkspaces.length<backupWorkspaces.length || currentTargets<backupTargets
+                );
+
+                if(lostState){
+                  for(const workspace of backupWorkspaces){
+                    const projectResponse=await fetch('/api/resource-registry/projects',{
+                      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+                      body:JSON.stringify({
+                        workspace_id:workspace.workspace_id,
+                        project_id:workspace.project_id,
+                        project_name:workspace.project_name,
+                        repository_url:workspace.repository_url,
+                        branch:workspace.branch||'main'
+                      })
+                    });
+                    if(!projectResponse.ok) continue;
+                    for(const target of [...(workspace.studio_targets||[]),...(workspace.chatgpt_targets||[])]){
+                      await fetch('/api/resource-registry/targets',{
+                        method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify({
+                          workspace_id:workspace.workspace_id,
+                          resource_url:target.resource_url,
+                          label:target.label
+                        })
+                      });
+                    }
+                  }
+                  response=await fetch('/api/resource-registry',{credentials:'same-origin',cache:'no-store'});
+                  if(response.ok) current=await response.json();
+                }
+
+                localStorage.setItem(KEY,JSON.stringify({
+                  instance_id:current?.instance_id||'',
+                  workspaces:current?.workspaces||[],
+                  saved_at:new Date().toISOString()
+                }));
+              } catch (_) {}
+            })();
+            """;
         dashboardWeb.evaluateJavascript(script, null);
     }
 
@@ -264,10 +351,28 @@ public class MainActivity extends Activity {
                 (android.view.accessibility.AccessibilityManager) getSystemService(Context.ACCESSIBILITY_SERVICE);
             if (manager == null) return false;
             List<AccessibilityServiceInfo> enabled = manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
-            ComponentName expected = new ComponentName(this, BridgeAccessibilityService.class);
-            String expectedId = expected.flattenToString();
+            String expectedPackage = getPackageName();
+            String expectedClass = BridgeAccessibilityService.class.getName();
+
             for (AccessibilityServiceInfo info : enabled) {
-                if (info.getId() != null && info.getId().equals(expectedId)) return true;
+                try {
+                    if (info.getResolveInfo() != null) {
+                        ServiceInfo serviceInfo = info.getResolveInfo().serviceInfo;
+                        if (serviceInfo != null && expectedPackage.equals(serviceInfo.packageName) && expectedClass.equals(serviceInfo.name)) {
+                            return true;
+                        }
+                    }
+                } catch (Exception ignored) {}
+
+                String id = info.getId();
+                if (id == null) continue;
+                ComponentName component = ComponentName.unflattenFromString(id);
+                if (component != null && expectedPackage.equals(component.getPackageName()) && expectedClass.equals(component.getClassName())) {
+                    return true;
+                }
+                if (id.startsWith(expectedPackage + "/") && (id.endsWith("/.BridgeAccessibilityService") || id.endsWith("/" + expectedClass))) {
+                    return true;
+                }
             }
         } catch (Exception ignored) {}
         return false;
