@@ -12,6 +12,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.provider.Browser;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -145,7 +146,7 @@ public class WakeService extends Service {
 
                 String provider = selected.optString("provider", "");
                 String taskId = selected.optString("task_id", "");
-                WakeState.log(this, "📨 " + taskId + " → " + provider + " · mở Chrome");
+                WakeState.log(this, "📨 " + taskId + " → " + provider + " · mở/reuse Chrome automation tab");
                 updateNotification("Wake " + taskId + " → " + provider);
                 openChrome(selected.optString("resource_url", ""));
             } catch (Exception error) {
@@ -195,14 +196,25 @@ public class WakeService extends Service {
             WakeState.log(this, "⚠ Wake thiếu target URL");
             return;
         }
+
         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         intent.setPackage("com.android.chrome");
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        // Browser.EXTRA_APPLICATION_ID tells Chrome that all Bridge wakes belong to
+        // the same caller/session. Together with the task flags this strongly nudges
+        // Chrome to reuse the Bridge automation tab instead of spawning one tab per task.
+        intent.putExtra(Browser.EXTRA_APPLICATION_ID, getPackageName());
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+        );
         try {
             startActivity(intent);
         } catch (Exception chromeMissing) {
             Intent fallback = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-            fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            fallback.putExtra(Browser.EXTRA_APPLICATION_ID, getPackageName());
+            fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             try {
                 startActivity(fallback);
             } catch (Exception error) {
