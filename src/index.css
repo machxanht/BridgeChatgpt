@@ -1,79 +1,152 @@
 @import "tailwindcss";
 
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-gpt: var(--gpt);
+  --color-studio: var(--studio);
+  --color-human: var(--human);
+  --color-warn: var(--warn);
+  --shadow-panel: var(--shadow-panel);
+  --shadow-float: var(--shadow-float);
+  --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
+  --animate-rise: rise 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-fade: fade 180ms ease-out;
+}
+
+:root {
+  --background: oklch(0.19 0.021 264);
+  --foreground: oklch(0.965 0.005 250);
+  --surface: oklch(0.235 0.021 264);
+  --surface-2: oklch(0.275 0.022 264);
+  --card: oklch(0.235 0.021 264);
+  --card-foreground: oklch(0.965 0.005 250);
+  --primary: oklch(0.78 0.16 162);
+  --primary-foreground: oklch(0.2 0.03 165);
+  --secondary: oklch(0.3 0.022 264);
+  --secondary-foreground: oklch(0.95 0.005 250);
+  --muted: oklch(0.29 0.02 264);
+  --muted-foreground: oklch(0.68 0.02 258);
+  --accent: oklch(0.32 0.025 264);
+  --accent-foreground: oklch(0.96 0.005 250);
+  --destructive: oklch(0.65 0.2 22);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.78 0.16 162 / 55%);
+  --gpt: oklch(0.79 0.16 162);
+  --studio: oklch(0.79 0.13 220);
+  --human: oklch(0.74 0.15 300);
+  --warn: oklch(0.82 0.15 78);
+  --shadow-panel: 0 1px 0 0 oklch(1 0 0 / 4%) inset, 0 8px 24px -16px oklch(0 0 0 / 80%);
+  --shadow-float: 0 18px 50px -24px oklch(0 0 0 / 90%);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+@utility thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-2) transparent;
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body, #root { min-height: 100%; }
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    -webkit-tap-highlight-color: transparent;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+}
+
 @layer utilities {
   .glass-card {
-    background: rgba(255, 255, 255, 0.03);
+    background: color-mix(in oklab, var(--surface) 80%, transparent);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border);
   }
 
   .glass-card-hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: color-mix(in oklab, var(--surface) 80%, transparent);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .glass-card-hover:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(6, 182, 212, 0.3);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    background: var(--surface-2);
+    border-color: color-mix(in oklab, var(--studio) 30%, transparent);
   }
 
   .glass-accent {
-    background: rgba(6, 182, 212, 0.1);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(6, 182, 212, 0.25);
+    background: color-mix(in oklab, var(--studio) 10%, transparent);
+    border: 1px solid color-mix(in oklab, var(--studio) 25%, transparent);
   }
 
   .glass-panel-deep {
-    background: rgba(2, 6, 23, 0.7);
+    background: color-mix(in oklab, var(--background) 82%, transparent);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border);
   }
 
   .mesh-gradient {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
     pointer-events: none;
     z-index: 0;
-    background-image: 
-      radial-gradient(at 0% 0%, hsla(253, 20%, 9%, 1) 0, transparent 55%),
-      radial-gradient(at 50% 10%, hsla(225, 45%, 20%, 0.9) 0, transparent 60%),
-      radial-gradient(at 100% 0%, hsla(180, 100%, 12%, 0.85) 0, transparent 50%),
-      radial-gradient(at 80% 80%, hsla(215, 60%, 14%, 0.9) 0, transparent 60%),
-      radial-gradient(at 10% 90%, hsla(190, 80%, 10%, 0.8) 0, transparent 50%);
+    opacity: 0.4;
+    background-image:
+      radial-gradient(at 0% 0%, color-mix(in oklab, var(--human) 9%, transparent) 0, transparent 38%),
+      radial-gradient(at 100% 0%, color-mix(in oklab, var(--studio) 8%, transparent) 0, transparent 42%),
+      radial-gradient(at 50% 100%, color-mix(in oklab, var(--gpt) 6%, transparent) 0, transparent 42%);
   }
 
   .status-dot {
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: 999px;
     display: inline-block;
   }
 }
 
-/* Custom frosted scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(6, 182, 212, 0.4);
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--surface-2) 86%, transparent); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, var(--studio) 35%, var(--surface-2)); }
