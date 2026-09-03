@@ -5,11 +5,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Activity,
   AgentOperationalStatus,
   Finding,
   FindingStatus,
-  MessageType,
   ProjectConfig,
   TargetAgentType,
   Task,
@@ -33,22 +31,16 @@ export default function App() {
   const [isPolling, setIsPolling] = useState<boolean>(false);
   const [isAutoReviewing, setIsAutoReviewing] = useState<boolean>(false);
 
-  // Modals state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-
   const [isFindingModalOpen, setIsFindingModalOpen] = useState(false);
   const [editingFinding, setEditingFinding] = useState<Finding | null>(null);
 
-  // Fetch workspace state
   const fetchWorkspace = useCallback(async () => {
     try {
       setIsPolling(true);
       const res = await fetch('/api/workspace');
-      if (res.ok) {
-        const data = await res.json();
-        setWorkspaceState(data);
-      }
+      if (res.ok) setWorkspaceState(await res.json());
     } catch (err) {
       console.error('Failed to fetch workspace state:', err);
     } finally {
@@ -63,7 +55,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [fetchWorkspace]);
 
-  // Actions
   const handleUpdateGoal = async (newGoal: string) => {
     try {
       const res = await fetch('/api/project', {
@@ -342,40 +333,44 @@ export default function App() {
 
   if (isLoading || !workspaceState) {
     return (
-      <div className="min-h-screen bg-[#020617] relative flex items-center justify-center text-slate-300 font-mono text-sm overflow-hidden">
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#020617] font-mono text-sm text-slate-300">
         <div className="mesh-gradient"></div>
-        <div className="relative z-10 glass-card rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl border border-white/10">
-          <div className="h-10 w-10 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center">
-            <div className="h-5 w-5 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin"></div>
+        <div className="glass-card relative z-10 flex flex-col items-center gap-4 rounded-2xl border border-white/10 p-8 shadow-2xl">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-500/30 bg-cyan-500/20">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent"></div>
           </div>
           <div className="flex flex-col items-center gap-1 text-center">
-            <span className="text-slate-100 font-semibold tracking-tight">BRIDGE / AI MISSION CONTROL</span>
-            <span className="text-xs text-slate-400">Đang kết nối tới môi trường cộng tác AI...</span>
+            <span className="font-semibold tracking-tight text-slate-100">BRIDGE</span>
+            <span className="text-xs text-slate-400">Đang kết nối Bridge workspace…</span>
           </div>
         </div>
       </div>
     );
   }
 
+  const workspaceMode = activeTab === 'workspace';
+
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-100 flex flex-col font-sans antialiased selection:bg-cyan-500 selection:text-slate-950 relative overflow-x-hidden">
-      {/* Background Mesh Gradient */}
+    <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-[#020617] font-sans text-slate-100 antialiased selection:bg-cyan-500 selection:text-slate-950">
       <div className="mesh-gradient"></div>
 
-      {/* Top Navigation & App Header */}
-      <Header
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        project={workspaceState.project}
-        autoReview={workspaceState.project.auto_review}
-        onToggleAutoReview={handleToggleAutoReview}
-        isPolling={isPolling}
-        onRefresh={fetchWorkspace}
-      />
+      {!workspaceMode && (
+        <Header
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          project={workspaceState.project}
+          autoReview={workspaceState.project.auto_review}
+          onToggleAutoReview={handleToggleAutoReview}
+          isPolling={isPolling}
+          onRefresh={fetchWorkspace}
+        />
+      )}
 
-      {/* Main Content Area */}
-      <main className="relative z-10 flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6">
-        {activeTab === 'workspace' && (
+      <main className={workspaceMode
+        ? 'relative z-10 flex min-h-0 flex-1 w-full'
+        : 'relative z-10 mx-auto w-full max-w-7xl flex-1 p-4 lg:p-6'}
+      >
+        {workspaceMode && (
           <WorkspaceView
             state={workspaceState}
             onUpdateGoal={handleUpdateGoal}
@@ -388,12 +383,8 @@ export default function App() {
               setEditingFinding(finding || null);
               setIsFindingModalOpen(true);
             }}
-            onSelectTask={(task) => {
-              setActiveTab('tasks');
-            }}
-            onSelectFinding={(finding) => {
-              setActiveTab('findings');
-            }}
+            onSelectTask={() => setActiveTab('tasks')}
+            onSelectFinding={() => setActiveTab('findings')}
             onSendCommand={handleSendCommand}
             onTriggerAutoReviewCycle={handleTriggerAutoReviewCycle}
             isAutoReviewing={isAutoReviewing}
@@ -434,10 +425,7 @@ export default function App() {
         )}
 
         {activeTab === 'messages' && (
-          <MessagesView
-            messages={workspaceState.messages}
-            onSendMessage={handleSendMessage}
-          />
+          <MessagesView messages={workspaceState.messages} onSendMessage={handleSendMessage} />
         )}
 
         {activeTab === 'git' && <GitCodeView />}
@@ -451,7 +439,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Modals */}
       <TaskModal
         isOpen={isTaskModalOpen}
         onClose={() => {
