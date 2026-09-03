@@ -229,7 +229,7 @@ public class MainActivity extends Activity {
 
     private void requestPairToken() {
         String script = "(async()=>{try{" +
-            "const r=await fetch('/api/android-wake/pair-token',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});" +
+            "const r=await fetch('/api/android-wake/pair-token',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json','X-Bridge-UI':'browser-dashboard'}});" +
             "const d=await r.json().catch(()=>({}));" +
             "BridgePairNative.onPairResult(JSON.stringify({ok:r.ok,status:r.status,token:d.token||'',error:d.error||''}));" +
             "}catch(e){BridgePairNative.onPairResult(JSON.stringify({ok:false,status:0,error:String(e)}));}})();";
