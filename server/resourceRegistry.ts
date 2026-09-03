@@ -31,6 +31,7 @@ export interface ResourceTargetView extends ResourceTargetRecord {
 }
 
 export interface ResourceRegistrySnapshot {
+  instance_id: string;
   workspaces: Array<{
     workspace_id: string;
     project_id: string;
@@ -45,6 +46,7 @@ export interface ResourceRegistrySnapshot {
 
 const RESOURCE_ID = /^[a-zA-Z0-9._-]{4,100}$/;
 const MAX_LABEL = 160;
+const RESOURCE_REGISTRY_INSTANCE_ID = crypto.randomUUID();
 let writeTail: Promise<void> = Promise.resolve();
 
 function registryPath() {
@@ -78,7 +80,7 @@ function writeStore(store: ResourceRegistryStore) {
 async function withWriteLock<T>(fn: () => Promise<T> | T): Promise<T> {
   let release!: () => void;
   const previous = writeTail;
-  writeTail = new Promise<void>(resolve => { release = resolve; });
+  writeTail = new Promise<void>(resolve => { release = resolve(); });
   await previous;
   try {
     return await fn();
@@ -241,5 +243,9 @@ export async function getResourceRegistry(project: ProjectConfig): Promise<Resou
     };
   });
 
-  return { workspaces, server_time: new Date().toISOString() };
+  return {
+    instance_id: RESOURCE_REGISTRY_INSTANCE_ID,
+    workspaces,
+    server_time: new Date().toISOString(),
+  };
 }
