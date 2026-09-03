@@ -1,9 +1,8 @@
 import React from 'react';
-import {
-  Activity,
+import { ChevronUp, Settings2 } from 'lucide-react';
+import type {
   AgentOperationalStatus,
   Finding,
-  ProjectConfig,
   TargetAgentType,
   Task,
   WorkspaceState,
@@ -12,7 +11,6 @@ import { MissionControlView } from './MissionControlView.js';
 import { ProjectRouterV2 } from './ProjectRouterV2.js';
 import { BridgeChatPanel } from './BridgeChatPanel.js';
 import { BridgeMiniStatus } from './BridgeMiniStatus.js';
-import { Settings2, ChevronUp } from 'lucide-react';
 
 interface WorkspaceViewProps {
   state: WorkspaceState;
@@ -46,7 +44,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 }) => {
   if (state.mission_control) {
     return (
-      <div className="flex min-h-[calc(100dvh-5rem)] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-panel">
+      <div className="-m-4 flex min-h-[calc(100dvh-3rem)] flex-col overflow-hidden border-y border-border bg-background lg:-m-6">
         <ProjectRouterV2 />
         <BridgeMiniStatus state={state} />
         <BridgeChatPanel />
