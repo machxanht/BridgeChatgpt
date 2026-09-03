@@ -186,16 +186,27 @@ public class WakeService extends Service {
                 }
 
                 selected.put("wake_gate_key", selectedGate);
+                // Mark the logical task before launching Chrome. This prevents metadata
+                // churn or a still-pending task from opening the browser again every poll.
+                // If Chrome cannot actually be launched we immediately remove the gate.
                 prefs.edit()
                     .putString("pending_event", selected.toString())
                     .putLong("pending_opened_at", now)
+                    .putLong(selectedGate, now)
                     .apply();
 
                 String provider = selected.optString("provider", "");
                 String taskId = selected.optString("task_id", "");
                 WakeState.log(this, "📨 " + taskId + " → " + provider + " · mở/reuse Chrome automation tab");
                 updateNotification("Wake " + taskId + " → " + provider);
-                openChrome(selected.optString("resource_url", ""));
+                boolean opened = openChrome(selected.optString("resource_url", ""));
+                if (!opened) {
+                    prefs.edit()
+                        .remove(selectedGate)
+                        .remove("pending_event")
+                        .remove("pending_opened_at")
+                        .apply();
+                }
             } catch (Exception error) {
                 WakeState.log(this, "⚠ Poll lỗi: " + error.getMessage());
             } finally {
@@ -209,9 +220,8 @@ public class WakeService extends Service {
         String reason = event.optString("reason", "").trim();
         String targetId = event.optString("target_id", "").trim();
         if (taskId.isEmpty() || reason.isEmpty() || targetId.isEmpty()) return "";
-        // task_id/reason/target_id are Bridge-generated identifiers and safe as a
-        // SharedPreferences key. Deliberately exclude task.updated_at/status so metadata
-        // churn cannot resurrect the same wake instruction.
+        // Deliberately exclude task.updated_at/status so metadata churn cannot resurrect
+        // the same logical wake instruction.
         return "wake_gate:" + reason + ":" + targetId + ":" + taskId;
     }
 
@@ -264,10 +274,10 @@ public class WakeService extends Service {
         }
     }
 
-    private void openChrome(String url) {
+    private boolean openChrome(String url) {
         if (url == null || url.trim().isEmpty()) {
             WakeState.log(this, "⚠ Wake thiếu target URL");
-            return;
+            return false;
         }
 
         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
@@ -281,14 +291,17 @@ public class WakeService extends Service {
         );
         try {
             startActivity(intent);
+            return true;
         } catch (Exception chromeMissing) {
             Intent fallback = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
             fallback.putExtra(Browser.EXTRA_APPLICATION_ID, getPackageName());
             fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             try {
                 startActivity(fallback);
+                return true;
             } catch (Exception error) {
                 WakeState.log(this, "⚠ Không mở được browser: " + error.getMessage());
+                return false;
             }
         }
     }
