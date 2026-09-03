@@ -78,5 +78,10 @@ const replacement = [
 ].join('\n');
 
 source = source.slice(0, start) + replacement + source.slice(end);
+// The generator itself uses template literals to emit TypeScript/Java. The first
+// version over-escaped intended target-code interpolations as `\\${...}`, which
+// makes Node evaluate them in the generator. Collapse exactly that pattern to
+// `\${...}` so the interpolation is emitted literally into the target file.
+source = source.replaceAll('\\\\${', '\\${');
 fs.writeFileSync(path, source, 'utf8');
-console.log('hotfix generator quoting repaired');
+console.log('hotfix generator quoting/interpolation repaired');
