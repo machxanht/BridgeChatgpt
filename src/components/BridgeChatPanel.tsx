@@ -1,14 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowUp,
+  Boxes,
   Brain,
-  CheckCircle2,
+  Check,
+  ChevronDown,
+  ChevronRight,
   Clock3,
-  Cpu,
   Loader2,
-  MessageCircleMore,
-  Send,
+  Play,
   Sparkles,
+  TriangleAlert,
   User,
   Zap,
 } from 'lucide-react';
@@ -52,7 +55,11 @@ function parseBinding(description: string) {
   const end = source.indexOf(BINDING_END, start + BINDING_START.length);
   if (start < 0 || end < 0) return null;
   try {
-    return JSON.parse(source.slice(start + BINDING_START.length, end).trim()) as { workspace_id?: string; project_id?: string; agent_instance_id?: string | null };
+    return JSON.parse(source.slice(start + BINDING_START.length, end).trim()) as {
+      workspace_id?: string;
+      project_id?: string;
+      agent_instance_id?: string | null;
+    };
   } catch {
     return null;
   }
@@ -64,23 +71,70 @@ function displayTarget(target: ResourceTarget) {
 
 function taskStatus(status: Task['status']) {
   const labels: Record<Task['status'], string> = {
-    pending: 'CHỜ', assigned: 'ĐÃ GIAO', working: 'ĐANG LÀM', blocked: 'BỊ CHẶN', review: 'CHỜ DUYỆT', completed: 'XONG', cancelled: 'ĐÃ HỦY',
+    pending: 'queued',
+    assigned: 'assigned',
+    working: 'working',
+    blocked: 'blocked',
+    review: 'review',
+    completed: 'done',
+    cancelled: 'cancelled',
   };
   return labels[status];
 }
 
-function avatar(agent: string) {
-  if (agent === 'human') return <User className="h-4 w-4" />;
-  if (agent === 'chatgpt') return <Brain className="h-4 w-4" />;
-  if (agent === 'gemini') return <Cpu className="h-4 w-4" />;
-  return <Sparkles className="h-4 w-4" />;
+function timeLabel(value: string) {
+  try { return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
 }
 
-function agentName(agent: string) {
-  if (agent === 'human') return 'Mày';
-  if (agent === 'chatgpt') return 'ChatGPT';
-  if (agent === 'gemini') return 'AI Studio';
-  return 'Bridge';
+function MessageRow({ message }: { message: Message }) {
+  const mine = message.from === 'human';
+  const studio = message.from === 'gemini';
+  const gpt = message.from === 'chatgpt';
+  const Icon = mine ? User : studio ? Boxes : Brain;
+  const name = mine ? 'You' : studio ? 'AI Studio' : gpt ? 'ChatGPT' : 'Bridge';
+  const accent = mine ? 'text-human' : studio ? 'text-studio' : gpt ? 'text-gpt' : 'text-muted-foreground';
+  const bubble = mine
+    ? 'border-human/25 bg-human/10'
+    : studio
+      ? 'border-studio/20 bg-studio/8'
+      : gpt
+        ? 'border-gpt/20 bg-gpt/8'
+        : 'border-border bg-surface';
+
+  return (
+    <div className={`flex animate-rise gap-2.5 ${mine ? 'flex-row-reverse' : ''}`}>
+      <span className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg border border-border bg-surface ${accent}`}>
+        <Icon className="size-3.5" />
+      </span>
+      <div className={`min-w-0 max-w-[min(46rem,88%)] ${mine ? 'items-end text-right' : ''}`}>
+        <div className={`mb-1 flex items-center gap-2 text-[11px] ${mine ? 'justify-end' : ''}`}>
+          <span className={`font-semibold ${accent}`}>{name}</span>
+          {message.task_id && <span className="text-[10px] text-muted-foreground">{message.task_id}</span>}
+          <span className="text-muted-foreground">{timeLabel(message.created_at)}</span>
+        </div>
+        <div className={`rounded-xl border px-3 py-2 text-left text-[13.5px] leading-relaxed ${bubble}`}>
+          <div className="whitespace-pre-wrap">{message.content}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultEvent({ task }: { task: Task }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex animate-rise justify-center">
+      <button onClick={() => setOpen(value => !value)} className="w-full max-w-[min(46rem,92%)] rounded-lg border border-gpt/20 bg-gpt/8 px-3 py-1.5 text-left text-gpt transition-colors">
+        <span className="flex items-center gap-2 text-[12px] font-medium">
+          <Check className="size-3.5 shrink-0" />
+          <span className="truncate">{task.id} completed</span>
+          <span className="ml-auto shrink-0 text-[10px] opacity-70">{timeLabel(task.updated_at)}</span>
+          <ChevronRight className={`size-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+        </span>
+        {open && <p className="mt-1.5 whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">{task.result}</p>}
+      </button>
+    </div>
+  );
 }
 
 export const BridgeChatPanel: React.FC = () => {
@@ -90,8 +144,10 @@ export const BridgeChatPanel: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
   const [targetId, setTargetId] = useState('auto');
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [deliveryState, setDeliveryState] = useState<'idle' | 'sending' | 'delivered'>('idle');
   const feedRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -99,6 +155,7 @@ export const BridgeChatPanel: React.FC = () => {
       const detail = (event as CustomEvent).detail || {};
       setActiveWorkspaceId(detail.workspace_id || readActiveWorkspace());
       setTargetId('auto');
+      setPickerOpen(false);
     };
     window.addEventListener('bridge:active-project-changed', handle as EventListener);
     return () => window.removeEventListener('bridge:active-project-changed', handle as EventListener);
@@ -121,7 +178,7 @@ export const BridgeChatPanel: React.FC = () => {
       if (taskResponse.ok) setTasks(await taskResponse.json());
       if (messageResponse.ok) setMessages(await messageResponse.json());
     } catch {
-      // Keep previous feed visible while polling retries.
+      // Keep the previous chat visible while polling retries.
     }
   };
 
@@ -152,7 +209,7 @@ export const BridgeChatPanel: React.FC = () => {
 
     return [...relevantMessages, ...resultEntries]
       .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
-      .slice(-80);
+      .slice(-100);
   }, [messages, projectTasks, projectTaskIds]);
 
   useEffect(() => {
@@ -169,10 +226,15 @@ export const BridgeChatPanel: React.FC = () => {
     return newestChat || workspace.studio_targets[0] || null;
   };
 
-  const send = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const targetLabel = () => {
+    if (targetId === 'auto') return 'Auto';
+    const target = targets.find(item => item.target_id === targetId);
+    return target ? displayTarget(target) : 'Auto';
+  };
+
+  const send = async () => {
     const content = text.trim();
-    if (!content || !workspace) return;
+    if (!content || !workspace || busy) return;
     const target = chooseTarget();
     if (!target) {
       setFeedback('Project này chưa có ChatGPT/Studio session để giao việc.');
@@ -180,6 +242,7 @@ export const BridgeChatPanel: React.FC = () => {
     }
 
     setBusy(true);
+    setDeliveryState('sending');
     setFeedback('');
     try {
       const firstLine = content.split('\n').map(line => line.trim()).find(Boolean) || content;
@@ -213,63 +276,108 @@ export const BridgeChatPanel: React.FC = () => {
       });
       if (!messageResponse.ok) {
         const data = await messageResponse.json().catch(() => ({}));
-        throw new Error(data.error || 'Task đã tạo nhưng không ghi được vào chat feed');
+        throw new Error(data.error || 'Task đã tạo nhưng không ghi được chat feed');
       }
 
       setText('');
-      setFeedback(`Đã giao ${taskData.task.id} → ${displayTarget(target)}`);
+      setDeliveryState('delivered');
+      setFeedback(`${taskData.task.id} → ${displayTarget(target)}`);
       await load();
+      window.setTimeout(() => setDeliveryState('idle'), 1400);
     } catch (error: any) {
+      setDeliveryState('idle');
       setFeedback(`Lỗi: ${error?.message || 'không gửi được'}`);
     } finally {
       setBusy(false);
     }
   };
 
-  const activeTasks = projectTasks.filter(task => !['completed', 'cancelled'].includes(task.status)).slice(0, 6);
+  const activeTasks = projectTasks.filter(task => !['completed', 'cancelled'].includes(task.status));
+  const currentTask = [...activeTasks].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))[0] || null;
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-cyan-400/15 bg-slate-950/80 shadow-2xl shadow-cyan-950/10">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3 sm:px-5">
-        <div className="flex items-center gap-3">
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl border border-cyan-400/25 bg-cyan-500/10">
-            <MessageCircleMore className="h-5 w-5 text-cyan-200" />
-            <span className="absolute -right-1 -top-1 h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
+    <section className="flex min-h-[360px] flex-1 flex-col overflow-hidden bg-background/35">
+      {currentTask && (
+        <div className="flex shrink-0 justify-center border-b border-border px-3 py-1.5 sm:px-4">
+          <div className={`flex w-full max-w-4xl items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] font-medium ${currentTask.status === 'blocked' ? 'border-warn/25 bg-warn/8 text-warn' : currentTask.status === 'working' ? 'border-studio/20 bg-studio/8 text-studio' : 'border-border bg-surface text-muted-foreground'}`}>
+            {currentTask.status === 'working' ? <Loader2 className="size-3.5 animate-spin" /> : currentTask.status === 'blocked' ? <TriangleAlert className="size-3.5" /> : currentTask.status === 'review' ? <AlertTriangle className="size-3.5" /> : <Clock3 className="size-3.5" />}
+            <span className="font-semibold text-foreground">{currentTask.id}</span>
+            <span>· {taskStatus(currentTask.status)}</span>
+            {activeTasks.length > 1 && <span className="ml-auto text-[10px] text-muted-foreground">+{activeTasks.length - 1} queued</span>}
           </div>
-          <div><div className="text-sm font-black text-white">BRIDGE CHAT</div><div className="text-[11px] text-slate-500">{workspace ? `${workspace.project_name} · task + handoff + result trong một feed` : 'Chọn project để bắt đầu'}</div></div>
-        </div>
-        <div className="flex items-center gap-1.5 rounded-full border border-emerald-400/15 bg-emerald-400/5 px-2.5 py-1 text-[9px] font-bold text-emerald-300"><Zap className="h-3 w-3" /> AUTO ROUTE</div>
-      </div>
-
-      {activeTasks.length > 0 && (
-        <div className="flex gap-1.5 overflow-x-auto border-b border-white/8 px-4 py-2 sm:px-5">
-          {activeTasks.map(task => <div key={task.id} className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-[9px] ${task.status === 'blocked' ? 'border-rose-400/20 bg-rose-500/8 text-rose-200' : task.status === 'review' ? 'border-violet-400/20 bg-violet-500/8 text-violet-200' : 'border-white/10 bg-white/5 text-slate-300'}`}>{task.status === 'working' ? <Loader2 className="h-3 w-3 animate-spin" /> : task.status === 'blocked' ? <AlertTriangle className="h-3 w-3" /> : <Clock3 className="h-3 w-3" />}<b>{task.id}</b><span>{taskStatus(task.status)}</span></div>)}
         </div>
       )}
 
-      <div ref={feedRef} className="max-h-[460px] min-h-[240px] space-y-3 overflow-y-auto px-4 py-4 sm:px-5">
-        {!workspace ? <div className="py-14 text-center text-xs text-slate-500">Chưa có project active.</div> : feed.length === 0 ? <div className="py-14 text-center"><Sparkles className="mx-auto h-7 w-7 text-cyan-400/50" /><div className="mt-2 text-xs font-bold text-slate-300">Chat của {workspace.project_name} đang trống</div><div className="mt-1 text-[10px] text-slate-600">Nhập việc bên dưới. Câu của mày sẽ hiện lại ở đây, agent trả lời cũng hiện ở đây.</div></div> : feed.map((entry, index) => {
-          if (entry.kind === 'result') {
-            return <div key={`result-${entry.task.id}-${index}`} className="mx-auto max-w-[92%] rounded-2xl border border-emerald-400/15 bg-emerald-500/7 p-3 text-xs text-emerald-100"><div className="mb-1 flex items-center gap-1.5 text-[10px] font-black text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" /> RESULT · {entry.task.id}</div><div className="whitespace-pre-wrap leading-relaxed">{entry.task.result}</div></div>;
-          }
-          const message = entry.message;
-          const mine = message.from === 'human';
-          const agentClass = message.from === 'chatgpt' ? 'border-violet-400/20 bg-violet-500/8' : message.from === 'gemini' ? 'border-cyan-400/20 bg-cyan-500/8' : mine ? 'border-emerald-400/20 bg-emerald-500/8' : 'border-white/10 bg-white/5';
-          return <div key={message.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[92%] rounded-2xl border px-3 py-2.5 ${agentClass}`}><div className="mb-1 flex items-center gap-1.5 text-[10px] font-black text-slate-300">{avatar(message.from)}<span>{agentName(message.from)}</span>{message.task_id && <span className="font-mono font-normal text-slate-600">· {message.task_id}</span>}</div><div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-100">{message.content}</div><div className="mt-1 text-right text-[8px] text-slate-600">{new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div></div></div>;
-        })}
+      <div ref={feedRef} className="thin-scrollbar flex-1 overflow-y-auto px-3 pb-2 sm:px-4">
+        <div className="mx-auto flex max-w-4xl flex-col gap-3 py-3">
+          {!workspace ? (
+            <div className="py-16 text-center text-[13px] text-muted-foreground">Choose a project to start.</div>
+          ) : feed.length === 0 ? (
+            <div className="py-16 text-center">
+              <Sparkles className="mx-auto size-7 text-gpt/50" />
+              <div className="mt-2 text-[13px] font-medium text-foreground">{workspace.project_name} is ready</div>
+              <div className="mt-1 text-[11px] text-muted-foreground">Type below. Your instruction and agent responses will stay in this feed.</div>
+            </div>
+          ) : (
+            feed.map((entry, index) => entry.kind === 'message'
+              ? <MessageRow key={entry.message.id} message={entry.message} />
+              : <ResultEvent key={`result-${entry.task.id}-${index}`} task={entry.task} />)
+          )}
+        </div>
       </div>
 
-      <form onSubmit={send} className="border-t border-white/10 bg-black/15 p-3 sm:p-4">
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <select value={targetId} onChange={e => setTargetId(e.target.value)} className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2.5 text-[10px] font-bold text-slate-200 sm:max-w-[220px]">
-            <option value="auto">✨ Auto · ưu tiên ChatGPT lead</option>
-            {targets.map(target => <option key={target.target_id} value={target.target_id}>{target.provider === 'chatgpt' ? '🧠' : '🔵'} {displayTarget(target)}</option>)}
-          </select>
-          <textarea value={text} onChange={e => setText(e.target.value)} rows={2} placeholder={workspace ? `Nhắn hoặc giao việc cho ${workspace.project_name}...` : 'Chọn project trước'} disabled={!workspace} className="min-w-0 flex-1 resize-none rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2.5 text-xs text-white outline-none focus:border-cyan-400/40 disabled:opacity-40" />
-          <button type="submit" disabled={!text.trim() || busy || !workspace} className="inline-flex min-w-[92px] items-center justify-center gap-1.5 rounded-xl bg-cyan-400 px-4 py-2.5 text-xs font-black text-slate-950 disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Gửi</button>
+      <div className="sticky bottom-0 shrink-0 border-t border-border bg-background/90 px-3 py-2.5 backdrop-blur sm:px-4">
+        <div className="mx-auto max-w-4xl">
+          {pickerOpen && (
+            <div className="mb-2 flex animate-rise flex-wrap gap-1.5">
+              <button onClick={() => { setTargetId('auto'); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] ${targetId === 'auto' ? 'border-gpt/40 bg-gpt/10 text-gpt' : 'border-border bg-surface text-muted-foreground'}`}>
+                <Sparkles className="size-3.5" /> Auto
+              </button>
+              {targets.map(target => (
+                <button key={target.target_id} onClick={() => { setTargetId(target.target_id); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] ${targetId === target.target_id ? 'border-gpt/40 bg-gpt/10 text-gpt' : 'border-border bg-surface text-muted-foreground hover:text-foreground'}`}>
+                  {target.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
+                  {displayTarget(target)}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface p-2 shadow-panel focus-within:ring-2 focus-within:ring-ring/60">
+            <button onClick={() => setPickerOpen(value => !value)} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-surface-2 px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground">
+              {targetId === 'auto' ? <Sparkles className="size-3.5" /> : chooseTarget()?.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
+              <span className="hidden max-w-36 truncate sm:inline">{targetLabel()}</span>
+              <ChevronDown className={`size-3 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            <textarea
+              value={text}
+              rows={1}
+              onChange={event => setText(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  send();
+                }
+              }}
+              placeholder={workspace ? `Message ${workspace.project_name}...` : 'Choose a project first'}
+              disabled={!workspace}
+              className="max-h-40 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[14px] leading-snug text-foreground outline-none placeholder:text-muted-foreground/70 disabled:opacity-40"
+            />
+
+            <button onClick={send} disabled={!text.trim() || busy || !workspace} aria-label="Send" className={`grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground transition-all duration-200 hover:opacity-90 disabled:opacity-30 ${deliveryState === 'sending' ? 'scale-95' : ''}`}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+            </button>
+          </div>
+
+          <div className="flex h-5 items-center justify-between pt-1 text-[10.5px] text-muted-foreground">
+            <span className={feedback.startsWith('Lỗi:') ? 'text-destructive' : ''}>{feedback}</span>
+            <span>
+              {deliveryState === 'sending' && <span className="animate-fade">Sending…</span>}
+              {deliveryState === 'delivered' && <span className="animate-fade text-gpt">Delivered</span>}
+            </span>
+          </div>
         </div>
-        {feedback && <div className={`mt-2 text-[10px] ${feedback.startsWith('Lỗi:') ? 'text-rose-300' : 'text-emerald-300'}`}>{feedback}</div>}
-      </form>
+      </div>
     </section>
   );
 };
