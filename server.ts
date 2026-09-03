@@ -16,6 +16,7 @@ import { batchRouter } from './server/batchRoutes.js';
 import { startBatchOrchestrator } from './server/batchOrchestrator.js';
 import { projectBrainRouter } from './server/projectBrainRoutes.js';
 import { resourceRegistryRouter } from './server/resourceRoutes.js';
+import { androidWakeRouter } from './server/androidWake.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,6 +61,7 @@ async function startServer() {
         batch_orchestrator: 'ready',
         project_brain: 'ready',
         resource_registry: 'ready',
+        android_wake: 'ready',
         github_command_bus: process.env.GITHUB_COMMAND_BUS_ENABLED === 'false' ? 'disabled' : 'ready',
         service: 'Bridge — Shared AI Workspace',
         time: new Date().toISOString(),
@@ -76,6 +78,7 @@ async function startServer() {
         batch_orchestrator: 'degraded',
         project_brain: 'degraded',
         resource_registry: 'degraded',
+        android_wake: 'degraded',
         github_command_bus: 'degraded',
       });
     }
@@ -83,6 +86,10 @@ async function startServer() {
 
   app.get('/health', healthHandler);
   app.get('/api/health', healthHandler);
+
+  // Android companion pairing + read-only wake queue. Pair tokens are scoped,
+  // signed, and never expose the main Bridge MCP token to the APK.
+  app.use('/api/android-wake', androidWakeRouter);
 
   // External Google AI Studio Build-mode relay. It never calls Gemini here;
   // it only exchanges task/state data with an authenticated Studio client.
@@ -126,6 +133,7 @@ async function startServer() {
     console.log(`[Bridge Server] Running on http://0.0.0.0:${PORT}`);
     console.log(`[Bridge MCP] Streamable HTTP endpoint: http://0.0.0.0:${PORT}/mcp`);
     console.log(`[Bridge Studio Relay] REST endpoint: http://0.0.0.0:${PORT}/api/studio-relay`);
+    console.log('[Bridge Android Wake] REST endpoint: /api/android-wake');
     console.log('[Bridge Resource Registry] REST endpoint: /api/resource-registry');
     console.log('[Bridge Project Brain] REST endpoint: /api/project-brain');
     console.log('[Bridge Review Packets] REST endpoint: /api/review-packets');
