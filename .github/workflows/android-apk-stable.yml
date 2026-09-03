@@ -1,0 +1,69 @@
+name: Bridge Android Stable APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'android/bridge-wake-app/**'
+      - '.github/workflows/android-apk-stable.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bridge-android-stable-apk
+  cancel-in-progress: true
+
+jobs:
+  build-stable-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Verify stable signing key
+        run: |
+          set -euo pipefail
+          test -s android/bridge-wake-app/bridge-dev.keystore.b64
+          base64 -d android/bridge-wake-app/bridge-dev.keystore.b64 > android/bridge-wake-app/bridge-dev.keystore
+          keytool -list -v \
+            -keystore android/bridge-wake-app/bridge-dev.keystore \
+            -storepass bridge-dev-2026 \
+            -alias bridge | tee /tmp/bridge-key.txt
+          grep -q '79:39:C7:1A:1A:9D:50:73:4D:EF:44:9B:A5:07:16:DE:3E:8B:22:0C:6C:78:34:EF:19:37:17:E7:D5:1A:56:BB' /tmp/bridge-key.txt
+
+      - name: Build stable signed APK
+        run: |
+          set -euo pipefail
+          gradle -p android/bridge-wake-app :app:assembleRelease --stacktrace
+          cp android/bridge-wake-app/app/build/outputs/apk/release/app-release.apk bridge-v0.5.2-stable.apk
+          test -s bridge-v0.5.2-stable.apk
+
+      - name: Verify APK certificate
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs bridge-v0.5.2-stable.apk | tee /tmp/apk-cert.txt
+          grep -qi '7939c71a1a9d50734def449ba50716de3e8b220c6c7834ef193717e7d51a56bb' /tmp/apk-cert.txt
+
+      - name: Upload stable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-android-stable-apk-v0.5.2
+          path: bridge-v0.5.2-stable.apk
+          if-no-files-found: error
+          retention-days: 90
