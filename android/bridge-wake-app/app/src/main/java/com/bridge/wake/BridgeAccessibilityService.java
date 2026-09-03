@@ -18,6 +18,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
     private static final String PREFS = "bridge_wake";
     private static final long MIN_OPEN_AGE_MS = 900L;
     private static final long RETRY_GAP_MS = 1200L;
+    private static final long MODAL_RETRY_MS = 650L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastAttemptAt = 0L;
@@ -54,28 +55,64 @@ public class BridgeAccessibilityService extends AccessibilityService {
                 clearPending("prompt-missing");
                 return;
             }
-
-            AccessibilityNodeInfo composer = findComposer(root);
-            if (composer == null) return;
-
-            CharSequence existing = composer.getText();
-            if (existing != null && !existing.toString().trim().isEmpty()) {
-                WakeState.log(this, "⏸ Có nội dung đang gõ trong Chrome · không ghi đè");
-                return;
-            }
-
-            Bundle args = new Bundle();
-            args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, prompt);
-            boolean textSet = composer.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
-            if (!textSet) {
-                WakeState.log(this, "⚠ Không điền được prompt vào trang hiện tại");
-                return;
-            }
-
-            sending = true;
-            handler.postDelayed(() -> finishSend(pending), 650L);
+            processPending(root, pending, prompt);
         } catch (Exception error) {
             WakeState.log(this, "⚠ Accessibility parse lỗi: " + error.getMessage());
+        }
+    }
+
+    private void processPending(AccessibilityNodeInfo root, JSONObject pending, String prompt) {
+        if (dismissKnownBlockingModal(root)) {
+            sending = true;
+            WakeState.log(this, "🧹 Đã đóng popup AI Studio đang chặn nút Send");
+            handler.postDelayed(() -> {
+                sending = false;
+                retryPendingDirect();
+            }, MODAL_RETRY_MS);
+            return;
+        }
+
+        AccessibilityNodeInfo composer = findComposer(root);
+        if (composer == null) return;
+
+        CharSequence existing = composer.getText();
+        String existingText = existing == null ? "" : existing.toString().trim();
+        if (!existingText.isEmpty()) {
+            if (looksLikeOurPrompt(existingText, pending, prompt)) {
+                sending = true;
+                handler.postDelayed(() -> finishSend(pending), 250L);
+            } else {
+                WakeState.log(this, "⏸ Có nội dung đang gõ trong Chrome · không ghi đè");
+            }
+            return;
+        }
+
+        Bundle args = new Bundle();
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, prompt);
+        boolean textSet = composer.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+        if (!textSet) {
+            WakeState.log(this, "⚠ Không điền được prompt vào trang hiện tại");
+            return;
+        }
+
+        sending = true;
+        handler.postDelayed(() -> finishSend(pending), 650L);
+    }
+
+    private void retryPendingDirect() {
+        try {
+            String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString("pending_event", "");
+            if (raw == null || raw.isEmpty()) return;
+            JSONObject pending = new JSONObject(raw);
+            String prompt = pending.optString("prompt", "").trim();
+            if (prompt.isEmpty()) {
+                clearPending("prompt-missing");
+                return;
+            }
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root != null) processPending(root, pending, prompt);
+        } catch (Exception error) {
+            WakeState.log(this, "⚠ Retry wake lỗi: " + error.getMessage());
         }
     }
 
@@ -83,6 +120,16 @@ public class BridgeAccessibilityService extends AccessibilityService {
         try {
             AccessibilityNodeInfo root = getRootInActiveWindow();
             if (root == null) return;
+
+            if (dismissKnownBlockingModal(root)) {
+                WakeState.log(this, "🧹 Đóng popup AI Studio trước khi Send");
+                handler.postDelayed(() -> {
+                    sending = false;
+                    retryPendingDirect();
+                }, MODAL_RETRY_MS);
+                return;
+            }
+
             AccessibilityNodeInfo send = findSendButton(root);
             boolean sent = send != null && send.performAction(AccessibilityNodeInfo.ACTION_CLICK);
 
@@ -116,6 +163,79 @@ public class BridgeAccessibilityService extends AccessibilityService {
         }
     }
 
+    private boolean looksLikeOurPrompt(String existingText, JSONObject pending, String prompt) {
+        String normalizedExisting = existingText.replaceAll("\\s+", " ").trim();
+        String normalizedPrompt = prompt.replaceAll("\\s+", " ").trim();
+        if (normalizedExisting.equals(normalizedPrompt)) return true;
+        String taskId = pending.optString("task_id", "").trim();
+        return !taskId.isEmpty()
+            && normalizedExisting.toLowerCase(Locale.ROOT).contains("bridge wake")
+            && normalizedExisting.contains(taskId);
+    }
+
+    private boolean dismissKnownBlockingModal(AccessibilityNodeInfo root) {
+        boolean envModal = treeContains(root, "enter your environment variable to continue")
+            || (treeContains(root, "secret value") && treeContains(root, "apply"));
+        if (!envModal) return false;
+
+        AccessibilityNodeInfo close = findModalCloseButton(root);
+        if (close != null && close.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+
+        AccessibilityNodeInfo marker = findNodeContaining(root, "enter your environment variable to continue");
+        AccessibilityNodeInfo current = marker;
+        for (int depth = 0; current != null && depth < 6; depth++) {
+            if (current.performAction(AccessibilityNodeInfo.ACTION_DISMISS)) return true;
+            current = current.getParent();
+        }
+        return false;
+    }
+
+    private AccessibilityNodeInfo findModalCloseButton(AccessibilityNodeInfo root) {
+        Deque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
+        queue.add(root);
+        AccessibilityNodeInfo best = null;
+        int bestScore = Integer.MIN_VALUE;
+
+        while (!queue.isEmpty()) {
+            AccessibilityNodeInfo node = queue.removeFirst();
+            String descriptor = describe(node).toLowerCase(Locale.ROOT).trim();
+            if (node.isClickable() && node.isEnabled() && node.isVisibleToUser()) {
+                int score = 0;
+                if (descriptor.matches(".*(close|dismiss|đóng|close button|dismiss button).*")) score += 12;
+                if (descriptor.equals("x") || descriptor.endsWith(" x")) score += 9;
+                if (descriptor.matches(".*(apply|secret value|send|submit|share).*")) score -= 12;
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = node;
+                }
+            }
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) queue.addLast(child);
+            }
+        }
+        return bestScore >= 8 ? best : null;
+    }
+
+    private boolean treeContains(AccessibilityNodeInfo root, String needle) {
+        return findNodeContaining(root, needle) != null;
+    }
+
+    private AccessibilityNodeInfo findNodeContaining(AccessibilityNodeInfo root, String needle) {
+        String target = needle.toLowerCase(Locale.ROOT);
+        Deque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
+        queue.add(root);
+        while (!queue.isEmpty()) {
+            AccessibilityNodeInfo node = queue.removeFirst();
+            if (describe(node).toLowerCase(Locale.ROOT).contains(target)) return node;
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) queue.addLast(child);
+            }
+        }
+        return null;
+    }
+
     private AccessibilityNodeInfo findComposer(AccessibilityNodeInfo root) {
         Deque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
         queue.add(root);
@@ -128,9 +248,10 @@ public class BridgeAccessibilityService extends AccessibilityService {
             String className = node.getClassName() == null ? "" : node.getClassName().toString().toLowerCase(Locale.ROOT);
 
             boolean editable = node.isEditable() || className.contains("edittext");
-            if (editable && !looksLikeChromeAddressBar(descriptor)) {
+            boolean envField = descriptor.matches(".*(secret value|environment variable).*" );
+            if (editable && !envField && !looksLikeChromeAddressBar(descriptor)) {
                 int score = 0;
-                if (descriptor.matches(".*(message|ask anything|prompt|chatgpt|type something|enter a prompt|send a message|gửi tin nhắn).*")) score += 8;
+                if (descriptor.matches(".*(message|ask anything|ask for anything|make changes|prompt|chatgpt|type something|enter a prompt|send a message|gửi tin nhắn).*")) score += 8;
                 if (node.isFocused()) score += 2;
                 if (node.isVisibleToUser()) score += 2;
                 if (node.isEnabled()) score += 1;
@@ -159,8 +280,8 @@ public class BridgeAccessibilityService extends AccessibilityService {
             String descriptor = describe(node).toLowerCase(Locale.ROOT);
             if (node.isClickable() && node.isEnabled() && node.isVisibleToUser()) {
                 int score = 0;
-                if (descriptor.matches(".*(send message|send prompt|send|submit|gửi|arrow upward|arrow_upward).*")) score += 8;
-                if (descriptor.matches(".*(stop|cancel|share|copy).*")) score -= 10;
+                if (descriptor.matches(".*(send message|send prompt|send|submit|gửi|arrow upward|arrow_upward|arrow up|up arrow).*")) score += 8;
+                if (descriptor.matches(".*(stop|cancel|share|copy|apply).*")) score -= 10;
                 if (score > bestScore) {
                     bestScore = score;
                     best = node;
