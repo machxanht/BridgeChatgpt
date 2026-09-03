@@ -33,14 +33,14 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="User-controlled Bridge wake polling and Chrome routing for ChatGPT and AI Studio" />
+                android:value="User-controlled Bridge Wake Engine polling and Chrome routing for ChatGPT and AI Studio" />
         </service>
 
         <service
             android:name=".BridgeAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="false"
-            android:label="Bridge Wake — Chrome only">
+            android:label="Bridge — Chrome automation only">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
