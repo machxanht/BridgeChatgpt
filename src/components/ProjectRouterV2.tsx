@@ -1,19 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Brain,
   Check,
-  ChevronDown,
-  ChevronUp,
-  Cpu,
   ExternalLink,
-  FolderGit2,
   GitBranch,
-  Layers3,
+  Github,
+  Layers,
+  MoreHorizontal,
   Pencil,
   Plus,
-  Rocket,
-  Save,
-  Trash2,
+  TriangleAlert,
   X,
 } from 'lucide-react';
 
@@ -29,7 +24,6 @@ interface ResourceTarget {
   connection_status: 'registered' | 'active' | 'idle' | 'offline';
   last_seen_at: string | null;
   session_label?: string | null;
-  account_label?: string | null;
 }
 
 interface ResourceWorkspace {
@@ -61,10 +55,10 @@ function readActiveWorkspace() {
 }
 
 function writeActiveWorkspace(value: string) {
-  try { window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, value); } catch { /* optional local preference */ }
+  try { window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, value); } catch { /* local preference only */ }
 }
 
-function repoName(url: string) {
+function shortRepo(url: string) {
   try {
     const parsed = new URL(url);
     return parsed.pathname.replace(/^\//, '').replace(/\.git$/i, '') || url;
@@ -77,16 +71,55 @@ function targetName(target: ResourceTarget) {
   return target.session_label?.trim() || target.label?.trim() || `${target.provider === 'chatgpt' ? 'ChatGPT' : 'AI Studio'} ${target.resource_id.slice(0, 8)}`;
 }
 
-function statusText(target: ResourceTarget) {
-  if (target.provider === 'chatgpt') return target.connection_status === 'active' ? 'ACTIVE' : 'SAVED';
-  if (target.connection_status === 'active') return 'ACTIVE';
-  if (target.connection_status === 'idle') return 'IDLE';
-  if (target.connection_status === 'offline') return 'OFFLINE';
-  return 'SAVED';
-}
-
 function splitUrls(value: string) {
   return value.split(/[\n,]+/).map(item => item.trim()).filter(Boolean);
+}
+
+function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</span>
+      <input
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="h-10 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none transition-shadow placeholder:text-muted-foreground/60 focus:ring-2 focus:ring-ring"
+      />
+    </label>
+  );
+}
+
+function SessionChip({ target, tone }: { target: ResourceTarget; tone: 'gpt' | 'studio' }) {
+  const active = target.connection_status === 'active';
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-2/50 px-2.5 py-1.5">
+      <span className={`size-1.5 shrink-0 rounded-full ${active ? 'animate-pulse-dot' : ''} ${tone === 'gpt' ? 'bg-gpt' : 'bg-studio'}`} />
+      <div className="min-w-0">
+        <div className="truncate text-[12px] font-medium leading-tight">{targetName(target)}</div>
+        <div className="truncate text-[10px] leading-tight text-muted-foreground" title={target.resource_id}>
+          {tone === 'gpt' ? 'ChatGPT' : 'AI Studio'} · {active ? 'active' : target.connection_status}
+        </div>
+      </div>
+      <a
+        href={target.resource_url}
+        target="_blank"
+        rel="noreferrer"
+        className="ml-auto grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+        aria-label={`Open ${tone === 'gpt' ? 'ChatGPT' : 'AI Studio'}`}
+      >
+        <ExternalLink className="size-3.5" />
+      </a>
+    </div>
+  );
+}
+
+function Warn({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-warn/25 bg-warn/8 px-2.5 py-1.5 text-[12px] font-medium text-warn">
+      <TriangleAlert className="size-3.5 shrink-0" />
+      <span className="truncate">{children}</span>
+    </div>
+  );
 }
 
 export const ProjectRouterV2: React.FC = () => {
@@ -97,8 +130,8 @@ export const ProjectRouterV2: React.FC = () => {
   const [busy, setBusy] = useState('');
   const [feedback, setFeedback] = useState('');
 
-  const [newRepo, setNewRepo] = useState('');
   const [newName, setNewName] = useState('');
+  const [newRepo, setNewRepo] = useState('');
   const [newStudio, setNewStudio] = useState('');
   const [newChatgpt, setNewChatgpt] = useState('');
 
@@ -107,18 +140,32 @@ export const ProjectRouterV2: React.FC = () => {
   const [draftBranch, setDraftBranch] = useState('main');
   const [draftTargets, setDraftTargets] = useState<DraftTarget[]>([]);
 
+  const selectWorkspace = (workspaceId: string, projectId?: string, announce = true) => {
+    setActiveWorkspaceId(workspaceId);
+    writeActiveWorkspace(workspaceId);
+    setEditing(false);
+    setFeedback('');
+    if (announce) {
+      window.dispatchEvent(new CustomEvent('bridge:active-project-changed', { detail: { workspace_id: workspaceId, project_id: projectId || '' } }));
+    }
+  };
+
   const load = async () => {
     try {
       const response = await fetch('/api/resource-registry', { cache: 'no-store' });
       if (!response.ok) return;
       const data = await response.json();
-      const next: ResourceSnapshot = { workspaces: data.workspaces || [], server_time: data.server_time || new Date().toISOString() };
+      const next: ResourceSnapshot = {
+        workspaces: data.workspaces || [],
+        server_time: data.server_time || new Date().toISOString(),
+      };
       setSnapshot(next);
       const stored = readActiveWorkspace();
-      const valid = next.workspaces.some(item => item.workspace_id === (stored || activeWorkspaceId));
+      const wanted = stored || activeWorkspaceId;
+      const valid = next.workspaces.some(item => item.workspace_id === wanted);
       if (!valid && next.workspaces[0]) selectWorkspace(next.workspaces[0].workspace_id, next.workspaces[0].project_id, false);
     } catch {
-      // Mission Control stays usable while registry retries.
+      // Keep previous registry snapshot while polling retries.
     }
   };
 
@@ -132,16 +179,6 @@ export const ProjectRouterV2: React.FC = () => {
     const list = snapshot?.workspaces || [];
     return list.find(item => item.workspace_id === activeWorkspaceId) || list[0] || null;
   }, [snapshot, activeWorkspaceId]);
-
-  const selectWorkspace = (workspaceId: string, projectId?: string, announce = true) => {
-    setActiveWorkspaceId(workspaceId);
-    writeActiveWorkspace(workspaceId);
-    setEditing(false);
-    setFeedback('');
-    if (announce) {
-      window.dispatchEvent(new CustomEvent('bridge:active-project-changed', { detail: { workspace_id: workspaceId, project_id: projectId || '' } }));
-    }
-  };
 
   useEffect(() => {
     if (!current) return;
@@ -186,11 +223,9 @@ export const ProjectRouterV2: React.FC = () => {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'Không tạo được project');
       const workspace = data.workspace as ResourceWorkspace;
-      const studioUrls = splitUrls(newStudio);
-      const chatUrls = splitUrls(newChatgpt);
-      for (const url of studioUrls) await upsertTarget(workspace.workspace_id, url);
-      for (const url of chatUrls) await upsertTarget(workspace.workspace_id, url);
-      setNewRepo(''); setNewName(''); setNewStudio(''); setNewChatgpt('');
+      for (const url of splitUrls(newStudio)) await upsertTarget(workspace.workspace_id, url, 'AI Studio Main');
+      for (const url of splitUrls(newChatgpt)) await upsertTarget(workspace.workspace_id, url, 'ChatGPT Main');
+      setNewName(''); setNewRepo(''); setNewStudio(''); setNewChatgpt('');
       setShowCreate(false);
       selectWorkspace(workspace.workspace_id, workspace.project_id);
       await load();
@@ -222,21 +257,21 @@ export const ProjectRouterV2: React.FC = () => {
       if (!projectResponse.ok) throw new Error(projectData.error || 'Không lưu được project');
 
       const oldTargets = [...current.studio_targets, ...current.chatgpt_targets];
-      const keptOldIds = new Set<string>();
+      const preserved = new Set<string>();
       for (const draft of draftTargets.filter(item => item.resource_url.trim())) {
         const old = draft.target_id ? oldTargets.find(item => item.target_id === draft.target_id) : undefined;
         const created = await upsertTarget(current.workspace_id, draft.resource_url.trim(), draft.label.trim() || undefined);
-        if (old && old.resource_url === created.resource_url) keptOldIds.add(old.target_id);
+        if (old && old.resource_url === created.resource_url) preserved.add(old.target_id);
         if (old && old.target_id !== created.target_id) await removeTarget(old.target_id);
       }
       for (const old of oldTargets) {
         const stillPresent = draftTargets.some(draft => draft.target_id === old.target_id && draft.resource_url.trim());
-        if (!stillPresent && !keptOldIds.has(old.target_id)) await removeTarget(old.target_id);
+        if (!stillPresent && !preserved.has(old.target_id)) await removeTarget(old.target_id);
       }
 
       await load();
       setEditing(false);
-      setFeedback('✓ Đã lưu thông tin project + session');
+      setFeedback('✓ Đã lưu project + session');
     } catch (error: any) {
       setFeedback(`Lỗi: ${error?.message || 'không lưu được thay đổi'}`);
     } finally {
@@ -247,7 +282,7 @@ export const ProjectRouterV2: React.FC = () => {
   const openStack = () => {
     if (!current) return;
     const urls = [current.chatgpt_targets[0]?.resource_url, current.studio_targets[0]?.resource_url].filter(Boolean) as string[];
-    urls.forEach((url, index) => window.setTimeout(() => window.open(url, '_blank', 'noopener,noreferrer'), index * 250));
+    urls.forEach((url, index) => window.setTimeout(() => window.open(url, '_blank', 'noopener,noreferrer'), index * 220));
   };
 
   const addDraftTarget = (provider: DraftTarget['provider']) => {
@@ -258,78 +293,109 @@ export const ProjectRouterV2: React.FC = () => {
     setDraftTargets(items => items.map((item, i) => i === index ? { ...item, ...patch } : item));
   };
 
-  const projectComplete = (workspace: ResourceWorkspace) => Boolean(workspace.repository_url && (workspace.studio_targets.length || workspace.chatgpt_targets.length));
-
   return (
-    <section className="overflow-hidden rounded-3xl border border-white/10 bg-slate-950/75 shadow-2xl shadow-black/20">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3 sm:px-5">
-        <div className="flex items-center gap-3">
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl border border-violet-400/25 bg-violet-500/15">
-            <Layers3 className="h-5 w-5 text-violet-200" />
-            <span className="absolute -right-1 -top-1 h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/50" />
-          </div>
-          <div>
-            <div className="text-sm font-black tracking-wide text-white">PROJECT ROUTER</div>
-            <div className="text-[11px] text-slate-500">Chuyển project nhanh · giữ đúng repo + Studio + ChatGPT session</div>
-          </div>
-        </div>
-        <button onClick={() => setShowCreate(value => !value)} className="inline-flex items-center gap-1.5 rounded-xl border border-violet-400/20 bg-violet-500/10 px-3 py-2 text-[11px] font-bold text-violet-100 hover:bg-violet-500/20">
-          <Plus className="h-3.5 w-3.5" /> Thêm project {showCreate ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-        </button>
-      </div>
-
-      <div className="flex gap-2 overflow-x-auto px-4 py-3 sm:px-5">
+    <section className="shrink-0 border-b border-border bg-background/60">
+      <div className="no-scrollbar flex items-center gap-2 overflow-x-auto px-3 py-2 sm:px-4">
         {(snapshot?.workspaces || []).map(workspace => {
-          const selected = workspace.workspace_id === current?.workspace_id;
-          const ready = projectComplete(workspace);
+          const active = workspace.workspace_id === current?.workspace_id;
           return (
-            <button key={workspace.workspace_id} onClick={() => selectWorkspace(workspace.workspace_id, workspace.project_id)} className={`min-w-[190px] rounded-2xl border px-3 py-2.5 text-left transition-all ${selected ? 'border-emerald-400/45 bg-emerald-500/12 shadow-lg shadow-emerald-950/25' : 'border-white/8 bg-black/20 hover:border-white/20 hover:bg-white/5'}`}>
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-xs font-bold text-white">{workspace.project_name}</span>
-                {selected ? <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[9px] font-black text-emerald-300">● ACTIVE</span> : ready ? <span className="h-2 w-2 rounded-full bg-emerald-500/70" /> : <span className="h-2 w-2 rounded-full bg-amber-500/70" />}
-              </div>
-              <div className="mt-1 truncate text-[10px] text-slate-500">{repoName(workspace.repository_url)}</div>
-              <div className="mt-1.5 flex gap-1.5 text-[9px] text-slate-400"><span>◈ {workspace.studio_targets.length} Studio</span><span>● {workspace.chatgpt_targets.length} GPT</span></div>
+            <button
+              key={workspace.workspace_id}
+              onClick={() => selectWorkspace(workspace.workspace_id, workspace.project_id)}
+              className={`group inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3 text-[13px] font-medium transition-all duration-200 ${active ? 'border-gpt/40 bg-gpt/10 text-gpt ring-2 ring-gpt/15' : 'border-border bg-surface text-muted-foreground hover:bg-surface-2 hover:text-foreground'}`}
+            >
+              <span className={`size-1.5 rounded-full ${active ? 'animate-pulse-dot bg-gpt' : 'bg-muted-foreground/50'}`} />
+              <span className="max-w-40 truncate">{workspace.project_name}</span>
+              {active && <span className="rounded-full bg-gpt/15 px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.12em]">ACTIVE</span>}
             </button>
           );
         })}
+
+        <button
+          onClick={() => setShowCreate(value => !value)}
+          className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-dashed px-3 text-[13px] transition-colors ${showCreate ? 'border-human/50 bg-human/10 text-human' : 'border-border text-muted-foreground hover:bg-surface-2 hover:text-foreground'}`}
+        >
+          <Plus className={`size-4 transition-transform duration-200 ${showCreate ? 'rotate-45' : ''}`} />
+          <span className="hidden sm:inline">Add Project</span>
+        </button>
       </div>
 
       {showCreate && (
-        <div className="mx-4 mb-3 rounded-2xl border border-violet-400/20 bg-violet-950/15 p-3 sm:mx-5">
-          <div className="grid gap-2 lg:grid-cols-3">
-            <div className="space-y-2"><input value={newRepo} onChange={e => setNewRepo(e.target.value)} placeholder="1. Repo URL" className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-xs text-white outline-none focus:border-violet-400/40" /><input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Tên project (tự lấy từ repo nếu trống)" className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white outline-none" /></div>
-            <textarea value={newStudio} onChange={e => setNewStudio(e.target.value)} rows={3} placeholder={'2. AI Studio URL\nMỗi URL một dòng'} className="resize-none rounded-xl border border-cyan-400/15 bg-cyan-950/10 px-3 py-2.5 text-xs text-white outline-none focus:border-cyan-400/40" />
-            <textarea value={newChatgpt} onChange={e => setNewChatgpt(e.target.value)} rows={3} placeholder={'3. ChatGPT URL\nMỗi URL một dòng'} className="resize-none rounded-xl border border-emerald-400/15 bg-emerald-950/10 px-3 py-2.5 text-xs text-white outline-none focus:border-emerald-400/40" />
+        <div className="mx-3 mb-2 animate-rise rounded-xl border border-border bg-surface p-3 shadow-panel sm:mx-4">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Field label="Project name" value={newName} onChange={setNewName} />
+            <Field label="GitHub repo URL" value={newRepo} onChange={setNewRepo} />
+            <Field label="AI Studio URL" value={newStudio} onChange={setNewStudio} />
+            <Field label="ChatGPT conversation URL" value={newChatgpt} onChange={setNewChatgpt} />
           </div>
-          <div className="mt-2 flex justify-end"><button onClick={createProject} disabled={!newRepo.trim() || busy === 'create'} className="rounded-xl bg-violet-500 px-4 py-2 text-xs font-black text-white disabled:opacity-40">{busy === 'create' ? 'Đang lưu…' : 'Lưu project'}</button></div>
+          <div className="mt-3 flex justify-end gap-2">
+            <button onClick={() => setShowCreate(false)} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground">
+              <X className="size-3.5" /> Cancel
+            </button>
+            <button disabled={!newRepo.trim() || busy === 'create'} onClick={createProject} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-foreground disabled:opacity-40">
+              <Check className="size-3.5" /> Save
+            </button>
+          </div>
         </div>
       )}
 
       {current && (
-        <div className="border-t border-white/8 bg-black/10 px-4 py-4 sm:px-5">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div><div className="flex items-center gap-2 text-base font-black text-white"><FolderGit2 className="h-4 w-4 text-emerald-300" /> {current.project_name}<span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[9px] text-emerald-300">ACTIVE</span></div><div className="mt-0.5 text-[10px] text-slate-500">{current.project_id}</div></div>
-            <div className="flex gap-2"><button onClick={openStack} className="inline-flex items-center gap-1 rounded-lg border border-cyan-400/20 px-2.5 py-1.5 text-[10px] font-bold text-cyan-200"><Rocket className="h-3 w-3" /> Mở stack</button><button onClick={() => setEditing(value => !value)} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1.5 text-[10px] font-bold text-slate-200"><Pencil className="h-3 w-3" /> {editing ? 'Đóng sửa' : 'Edit'}</button></div>
-          </div>
+        <div className="px-3 pb-2 sm:px-4">
+          <div className="rounded-xl border border-border bg-surface p-2.5 shadow-panel">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-muted-foreground"><Github className="size-4" /></span>
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-semibold leading-tight">{current.project_name}</div>
+                  <div className="flex min-w-0 items-center gap-1 text-[11px] leading-tight text-muted-foreground">
+                    <GitBranch className="size-3 shrink-0" />
+                    <span className="shrink-0">{current.branch || 'main'}</span>
+                    <span className="truncate">· {shortRepo(current.repository_url)}</span>
+                  </div>
+                </div>
+              </div>
 
-          {!editing ? (
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/55">
-              <div className="grid grid-cols-[28px_72px_1fr_auto] items-center gap-2 border-b border-white/8 px-3 py-2.5"><FolderGit2 className="h-4 w-4 text-violet-300" /><span className="text-[10px] font-black text-slate-400">REPO</span><div className="min-w-0"><div className="truncate text-xs font-bold text-white">{repoName(current.repository_url)}</div><div className="flex items-center gap-1 text-[9px] text-slate-500"><GitBranch className="h-3 w-3" />{current.branch}</div></div><a href={current.repository_url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/10 p-1.5 text-slate-300"><ExternalLink className="h-3.5 w-3.5" /></a></div>
-              <div className="grid grid-cols-[28px_72px_1fr] items-start gap-2 border-b border-white/8 px-3 py-2.5"><Cpu className="mt-1 h-4 w-4 text-cyan-300" /><span className="mt-1 text-[10px] font-black text-cyan-200">STUDIO</span><div className="flex min-w-0 flex-wrap gap-1.5">{current.studio_targets.length ? current.studio_targets.map(target => <a key={target.target_id} href={target.resource_url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 rounded-lg border border-cyan-400/15 bg-cyan-400/5 px-2 py-1 text-[10px] text-cyan-100"><span className={`h-1.5 w-1.5 rounded-full ${target.connection_status === 'active' ? 'animate-pulse bg-emerald-400' : 'bg-slate-500'}`} /><span className="max-w-[180px] truncate">{targetName(target)}</span><span className="text-[8px] text-cyan-400/60">{statusText(target)}</span></a>) : <span className="text-[10px] text-slate-600">Chưa gắn</span>}</div></div>
-              <div className="grid grid-cols-[28px_72px_1fr] items-start gap-2 px-3 py-2.5"><Brain className="mt-1 h-4 w-4 text-emerald-300" /><span className="mt-1 text-[10px] font-black text-emerald-200">CHATGPT</span><div className="flex min-w-0 flex-wrap gap-1.5">{current.chatgpt_targets.length ? current.chatgpt_targets.map(target => <a key={target.target_id} href={target.resource_url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 rounded-lg border border-emerald-400/15 bg-emerald-400/5 px-2 py-1 text-[10px] text-emerald-100"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400/80" /><span className="max-w-[180px] truncate">{targetName(target)}</span></a>) : <span className="text-[10px] text-slate-600">Chưa gắn</span>}</div></div>
+              <div className="col-span-2 grid gap-2 sm:grid-cols-2 lg:col-span-2 lg:contents">
+                {current.studio_targets[0] ? <SessionChip target={current.studio_targets[0]} tone="studio" /> : <Warn>Bind AI Studio workspace</Warn>}
+                {current.chatgpt_targets[0] ? <SessionChip target={current.chatgpt_targets[0]} tone="gpt" /> : <Warn>Bind ChatGPT conversation</Warn>}
+              </div>
+
+              <div className="flex items-center justify-end gap-1">
+                <button onClick={() => setEditing(value => !value)} title="Edit" className={`grid size-9 place-items-center rounded-lg transition-colors ${editing ? 'bg-surface-2 text-foreground' : 'text-muted-foreground hover:bg-surface-2 hover:text-foreground'}`}><Pencil className="size-4" /></button>
+                <button onClick={openStack} title="Open stack" className="grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"><Layers className="size-4" /></button>
+                <button title="More" className="grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"><MoreHorizontal className="size-4" /></button>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-3 rounded-2xl border border-white/10 bg-slate-950/55 p-3">
-              <div className="grid gap-2 md:grid-cols-3"><input value={draftName} onChange={e => setDraftName(e.target.value)} placeholder="Tên project" className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white" /><input value={draftRepo} onChange={e => setDraftRepo(e.target.value)} placeholder="Repo URL" className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white" /><input value={draftBranch} onChange={e => setDraftBranch(e.target.value)} placeholder="Branch" className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white" /></div>
-              <div className="space-y-2">{draftTargets.map((target, index) => <div key={`${target.target_id || 'new'}-${index}`} className="grid gap-2 rounded-xl border border-white/8 bg-black/20 p-2 md:grid-cols-[100px_180px_1fr_34px]"><div className={`flex items-center gap-1 text-[10px] font-black ${target.provider === 'chatgpt' ? 'text-emerald-300' : 'text-cyan-300'}`}>{target.provider === 'chatgpt' ? <Brain className="h-3.5 w-3.5" /> : <Cpu className="h-3.5 w-3.5" />}{target.provider === 'chatgpt' ? 'CHATGPT' : 'STUDIO'}</div><input value={target.label} onChange={e => updateDraftTarget(index, { label: e.target.value })} placeholder="Tên session" className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[10px] text-white" /><input value={target.resource_url} onChange={e => updateDraftTarget(index, { resource_url: e.target.value })} placeholder="Session/App URL" className="min-w-0 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[10px] text-white" /><button onClick={() => setDraftTargets(items => items.filter((_, i) => i !== index))} className="flex items-center justify-center rounded-lg border border-rose-400/15 text-rose-300"><Trash2 className="h-3.5 w-3.5" /></button></div>)}</div>
-              <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex gap-2"><button onClick={() => addDraftTarget('google-ai-studio')} className="rounded-lg border border-cyan-400/20 px-2 py-1 text-[10px] text-cyan-200">+ Studio</button><button onClick={() => addDraftTarget('chatgpt')} className="rounded-lg border border-emerald-400/20 px-2 py-1 text-[10px] text-emerald-200">+ ChatGPT</button></div><div className="flex gap-2"><button onClick={() => setEditing(false)} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-3 py-1.5 text-[10px] text-slate-300"><X className="h-3 w-3" /> Hủy</button><button onClick={saveProject} disabled={busy === 'save'} className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-[10px] font-black text-slate-950 disabled:opacity-40"><Save className="h-3 w-3" /> {busy === 'save' ? 'Đang lưu…' : 'Save'}</button></div></div>
-            </div>
-          )}
+
+            {editing && (
+              <div className="mt-2.5 animate-rise border-t border-border pt-2.5">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  <Field label="Project name" value={draftName} onChange={setDraftName} />
+                  <Field label="Repo URL" value={draftRepo} onChange={setDraftRepo} />
+                  <Field label="Branch" value={draftBranch} onChange={setDraftBranch} />
+                  {draftTargets.map((target, index) => (
+                    <React.Fragment key={`${target.target_id || 'new'}-${index}`}>
+                      <Field label={`${target.provider === 'chatgpt' ? 'ChatGPT' : 'Studio'} label`} value={target.label} onChange={value => updateDraftTarget(index, { label: value })} />
+                      <Field label={`${target.provider === 'chatgpt' ? 'ChatGPT' : 'Studio'} URL`} value={target.resource_url} onChange={value => updateDraftTarget(index, { resource_url: value })} />
+                    </React.Fragment>
+                  ))}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button onClick={() => addDraftTarget('google-ai-studio')} className="rounded-lg border border-border bg-surface-2/50 px-2.5 py-1.5 text-[11px] text-studio">+ Studio session</button>
+                  <button onClick={() => addDraftTarget('chatgpt')} className="rounded-lg border border-border bg-surface-2/50 px-2.5 py-1.5 text-[11px] text-gpt">+ ChatGPT session</button>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                  {feedback && <span className={`mr-auto text-[11px] ${feedback.startsWith('Lỗi:') ? 'text-destructive' : 'text-gpt'}`}>{feedback}</span>}
+                  <button onClick={() => setEditing(false)} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground"><X className="size-3.5" /> Cancel</button>
+                  <button disabled={busy === 'save'} onClick={saveProject} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-foreground disabled:opacity-40"><Check className="size-3.5" /> Save</button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {feedback && <div className={`mx-4 mb-3 flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[10px] sm:mx-5 ${feedback.startsWith('Lỗi:') ? 'border-rose-400/20 bg-rose-500/10 text-rose-200' : 'border-emerald-400/20 bg-emerald-500/10 text-emerald-200'}`}>{feedback.startsWith('Lỗi:') ? <X className="h-3 w-3" /> : <Check className="h-3 w-3" />}{feedback}</div>}
+      {!editing && feedback && <div className={`px-4 pb-2 text-[11px] ${feedback.startsWith('Lỗi:') ? 'text-destructive' : 'text-gpt'}`}>{feedback}</div>}
     </section>
   );
 };
