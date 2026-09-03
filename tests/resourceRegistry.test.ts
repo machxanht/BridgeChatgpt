@@ -67,6 +67,7 @@ try {
   assert.strictEqual(chatTarget.agent_instance_id, 'chatgpt-12345678-abcd-4def-9123-123456789abc');
 
   const snapshot = await getResourceRegistry(project);
+  assert.match(snapshot.instance_id, /^[0-9a-f-]{36}$/i);
   const ouk = snapshot.workspaces.find(item => item.workspace_id === 'workspace-ouk');
   assert.ok(ouk);
   assert.strictEqual(ouk!.studio_targets.length, 1);
@@ -82,6 +83,7 @@ try {
   assert.strictEqual(moved.label, 'Bridge Chat');
 
   const afterMove = await getResourceRegistry(project);
+  assert.strictEqual(afterMove.instance_id, snapshot.instance_id);
   const oukAfterMove = afterMove.workspaces.find(item => item.workspace_id === 'workspace-ouk');
   const bridge = afterMove.workspaces.find(item => item.workspace_id === 'workspace-proj-default');
   assert.strictEqual(oukAfterMove!.chatgpt_targets.length, 0);
