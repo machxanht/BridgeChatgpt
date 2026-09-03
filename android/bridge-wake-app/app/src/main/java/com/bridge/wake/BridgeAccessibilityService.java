@@ -19,9 +19,10 @@ public class BridgeAccessibilityService extends AccessibilityService {
     private static final long MIN_OPEN_AGE_MS = 900L;
     private static final long RETRY_GAP_MS = 1200L;
     private static final long MODAL_RETRY_MS = 650L;
-    private static final long RECOVERY_WINDOW_MS = 2 * 60_000L;
-    private static final long RECOVERY_RETRY_GAP_MS = 8_000L;
-    private static final int MAX_INTERNAL_ERROR_RETRIES = 2;
+    private static final long SEND_VERIFY_MS = 1100L;
+    private static final long RECOVERY_WINDOW_MS = 3 * 60_000L;
+    private static final long RECOVERY_REFRESH_GAP_MS = 10_000L;
+    private static final int MAX_HARD_REFRESHES = 2;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastAttemptAt = 0L;
@@ -71,7 +72,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
     private void processPending(AccessibilityNodeInfo root, JSONObject pending, String prompt) {
         if (dismissKnownBlockingModal(root)) {
             sending = true;
-            WakeState.log(this, "🧹 Đã đóng popup AI Studio đang chặn Wake");
+            WakeState.log(this, "🧹 Đã đóng popup đang chặn Wake");
             handler.postDelayed(() -> {
                 sending = false;
                 retryPendingDirect();
@@ -126,10 +127,13 @@ public class BridgeAccessibilityService extends AccessibilityService {
     private void finishSend(JSONObject pending) {
         try {
             AccessibilityNodeInfo root = getRootInActiveWindow();
-            if (root == null) return;
+            if (root == null) {
+                sending = false;
+                return;
+            }
 
             if (dismissKnownBlockingModal(root)) {
-                WakeState.log(this, "🧹 Đóng popup AI Studio trước khi Send");
+                WakeState.log(this, "🧹 Đóng popup trước khi Send");
                 handler.postDelayed(() -> {
                     sending = false;
                     retryPendingDirect();
@@ -138,37 +142,97 @@ public class BridgeAccessibilityService extends AccessibilityService {
             }
 
             AccessibilityNodeInfo send = findSendButton(root);
-            boolean sent = send != null && send.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            boolean clicked = send != null && send.performAction(AccessibilityNodeInfo.ACTION_CLICK);
 
-            if (!sent) {
+            if (!clicked) {
                 AccessibilityNodeInfo composer = findComposer(root);
                 if (composer != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    sent = composer.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.getId());
+                    clicked = composer.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.getId());
                 }
             }
 
-            if (sent) {
-                long now = System.currentTimeMillis();
-                String eventId = pending.optString("event_id", "");
-                android.content.SharedPreferences.Editor editor = getSharedPreferences(PREFS, MODE_PRIVATE)
-                    .edit()
-                    .putString("recovery_event", pending.toString())
-                    .putLong("recovery_until", now + RECOVERY_WINDOW_MS)
-                    .putInt("recovery_retry_count", 0)
-                    .putLong("recovery_last_action_at", 0L)
-                    .remove("pending_event")
-                    .remove("pending_opened_at");
-                if (!eventId.isEmpty()) editor.putLong("delivered_" + eventId, now);
-                editor.apply();
-                WakeState.log(this, "✅ Đã wake " + pending.optString("provider") + " · " + pending.optString("task_id") + " · theo dõi recovery 2 phút");
-            } else {
+            if (!clicked) {
                 WakeState.log(this, "⏳ Đã điền prompt nhưng chưa tìm thấy nút Send");
+                sending = false;
+                return;
             }
+
+            // ACTION_CLICK can return true even when a modal overlays the page. Do not mark
+            // the task delivered until the prompt actually leaves the composer.
+            handler.postDelayed(() -> verifySend(pending), SEND_VERIFY_MS);
         } catch (Exception error) {
             WakeState.log(this, "⚠ Send lỗi: " + error.getMessage());
+            sending = false;
+        }
+    }
+
+    private void verifySend(JSONObject pending) {
+        try {
+            AccessibilityNodeInfo root = getRootInActiveWindow();
+            if (root == null) {
+                sending = false;
+                return;
+            }
+
+            if (dismissKnownBlockingModal(root)) {
+                WakeState.log(this, "🧹 Send bị popup chặn · đóng popup rồi gửi lại");
+                handler.postDelayed(() -> {
+                    sending = false;
+                    retryPendingDirect();
+                }, MODAL_RETRY_MS);
+                return;
+            }
+
+            AccessibilityNodeInfo composer = findComposer(root);
+            String composerText = composer == null || composer.getText() == null
+                ? ""
+                : composer.getText().toString().trim();
+            String prompt = pending.optString("prompt", "").trim();
+
+            if (!composerText.isEmpty() && looksLikeOurPrompt(composerText, pending, prompt)) {
+                WakeState.log(this, "⏳ Click Send chưa được Studio nhận · giữ nguyên task và thử lại");
+                sending = false;
+                handler.postDelayed(this::retryPendingDirect, 900L);
+                return;
+            }
+
+            markDelivered(pending);
+        } catch (Exception error) {
+            WakeState.log(this, "⚠ Verify Send lỗi: " + error.getMessage());
         } finally {
             sending = false;
         }
+    }
+
+    private void markDelivered(JSONObject pending) {
+        long now = System.currentTimeMillis();
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+
+        int refreshCount = 0;
+        long lastRefreshAt = 0L;
+        String previousRecovery = prefs.getString("recovery_event", "");
+        if (previousRecovery != null && !previousRecovery.isEmpty()) {
+            try {
+                JSONObject previous = new JSONObject(previousRecovery);
+                if (previous.optString("task_id", "").equals(pending.optString("task_id", ""))) {
+                    refreshCount = prefs.getInt("recovery_refresh_count", 0);
+                    lastRefreshAt = prefs.getLong("recovery_last_refresh_at", 0L);
+                }
+            } catch (Exception ignored) { }
+        }
+
+        String eventId = pending.optString("event_id", "");
+        android.content.SharedPreferences.Editor editor = prefs.edit()
+            .putString("recovery_event", pending.toString())
+            .putLong("recovery_until", now + RECOVERY_WINDOW_MS)
+            .putInt("recovery_refresh_count", refreshCount)
+            .putLong("recovery_last_refresh_at", lastRefreshAt)
+            .remove("pending_event")
+            .remove("pending_opened_at");
+        if (!eventId.isEmpty()) editor.putLong("delivered_" + eventId, now);
+        editor.apply();
+
+        WakeState.log(this, "✅ Đã xác nhận Send " + pending.optString("provider") + " · " + pending.optString("task_id"));
     }
 
     private void processPostSendRecovery(AccessibilityNodeInfo root, long now) {
@@ -183,41 +247,63 @@ public class BridgeAccessibilityService extends AccessibilityService {
 
         boolean internalError = treeContains(root, "an internal error occurred")
             || treeContains(root, "internal error occurred")
+            || treeContains(root, "there was an unexpected error")
             || treeContains(root, "something went wrong");
         boolean cancelled = treeContains(root, "canceled") || treeContains(root, "cancelled");
         if (!internalError && !cancelled) return;
 
-        int retries = prefs.getInt("recovery_retry_count", 0);
-        long lastAction = prefs.getLong("recovery_last_action_at", 0L);
-        if (retries >= MAX_INTERNAL_ERROR_RETRIES || now - lastAction < RECOVERY_RETRY_GAP_MS) return;
-
-        AccessibilityNodeInfo retry = findButtonByText(root, "retry");
-        if (retry == null) return;
-        if (retry.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            prefs.edit()
-                .putInt("recovery_retry_count", retries + 1)
-                .putLong("recovery_last_action_at", now)
-                .apply();
+        int refreshes = prefs.getInt("recovery_refresh_count", 0);
+        long lastRefreshAt = prefs.getLong("recovery_last_refresh_at", 0L);
+        if (refreshes >= MAX_HARD_REFRESHES) {
             String taskId = "";
             try { taskId = new JSONObject(raw).optString("task_id", ""); } catch (Exception ignored) { }
-            WakeState.log(this, "♻ Studio internal error · tự bấm Retry " + (retries + 1) + "/" + MAX_INTERNAL_ERROR_RETRIES + (taskId.isEmpty() ? "" : " · " + taskId));
+            WakeState.log(this, "⛔ Studio vẫn lỗi sau " + MAX_HARD_REFRESHES + " reload · dừng recovery" + (taskId.isEmpty() ? "" : " · " + taskId));
+            clearRecovery("circuit-breaker");
+            return;
+        }
+        if (now - lastRefreshAt < RECOVERY_REFRESH_GAP_MS) return;
+
+        AccessibilityNodeInfo refresh = findChromeRefreshButton(root);
+        if (refresh == null) {
+            WakeState.log(this, "⚠ Studio lỗi nhưng chưa tìm thấy nút Reload của Chrome");
+            return;
+        }
+
+        try {
+            JSONObject pending = new JSONObject(raw);
+            prefs.edit()
+                .putString("pending_event", pending.toString())
+                .putLong("pending_opened_at", now)
+                .putInt("recovery_refresh_count", refreshes + 1)
+                .putLong("recovery_last_refresh_at", now)
+                .apply();
+        } catch (Exception error) {
+            WakeState.log(this, "⚠ Không khôi phục được task trước reload: " + error.getMessage());
+            return;
+        }
+
+        if (refresh.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            WakeState.log(this, "🔄 Studio internal error · Reload Chrome " + (refreshes + 1) + "/" + MAX_HARD_REFRESHES + " rồi tiếp tục đúng task");
+        } else {
+            prefs.edit().remove("pending_event").remove("pending_opened_at").apply();
+            WakeState.log(this, "⚠ Không bấm được Reload của Chrome");
         }
     }
 
-    private AccessibilityNodeInfo findButtonByText(AccessibilityNodeInfo root, String text) {
-        String wanted = text.toLowerCase(Locale.ROOT).trim();
+    private AccessibilityNodeInfo findChromeRefreshButton(AccessibilityNodeInfo root) {
         Deque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
         queue.add(root);
         AccessibilityNodeInfo best = null;
         int bestScore = Integer.MIN_VALUE;
+
         while (!queue.isEmpty()) {
             AccessibilityNodeInfo node = queue.removeFirst();
             String descriptor = describe(node).toLowerCase(Locale.ROOT).trim();
             if (node.isClickable() && node.isEnabled() && node.isVisibleToUser()) {
                 int score = 0;
-                if (descriptor.equals(wanted)) score += 20;
-                else if (descriptor.matches(".*\\b" + java.util.regex.Pattern.quote(wanted) + "\\b.*")) score += 10;
-                if (descriptor.matches(".*(publish|share|delete|remove|allow|authorize|permission|secret).*")) score -= 30;
+                if (descriptor.matches(".*(reload this page|reload page|reload|refresh page|refresh|tải lại trang|tải lại).*")) score += 20;
+                if (descriptor.matches(".*(retry|send|submit|publish|share|apply).*")) score -= 30;
+                if (descriptor.contains("com.android.chrome")) score += 3;
                 if (score > bestScore) {
                     bestScore = score;
                     best = node;
@@ -228,7 +314,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
                 if (child != null) queue.addLast(child);
             }
         }
-        return bestScore >= 10 ? best : null;
+        return bestScore >= 15 ? best : null;
     }
 
     private boolean looksLikeOurPrompt(String existingText, JSONObject pending, String prompt) {
@@ -269,8 +355,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
         }
 
         AccessibilityNodeInfo close = findModalCloseButton(root);
-        if (close != null && close.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
-        return false;
+        return close != null && close.performAction(AccessibilityNodeInfo.ACTION_CLICK);
     }
 
     private AccessibilityNodeInfo findModalCloseButton(AccessibilityNodeInfo root) {
@@ -364,7 +449,7 @@ public class BridgeAccessibilityService extends AccessibilityService {
             if (node.isClickable() && node.isEnabled() && node.isVisibleToUser()) {
                 int score = 0;
                 if (descriptor.matches(".*(send message|send prompt|send|submit|gửi|arrow upward|arrow_upward|arrow up|up arrow).*")) score += 8;
-                if (descriptor.matches(".*(stop|cancel|share|copy|apply|submit bug|feedback|report).*")) score -= 14;
+                if (descriptor.matches(".*(stop|cancel|share|copy|apply|submit bug|feedback|report|retry|reload|refresh).*")) score -= 14;
                 if (score > bestScore) {
                     bestScore = score;
                     best = node;
@@ -404,8 +489,8 @@ public class BridgeAccessibilityService extends AccessibilityService {
             .edit()
             .remove("recovery_event")
             .remove("recovery_until")
-            .remove("recovery_retry_count")
-            .remove("recovery_last_action_at")
+            .remove("recovery_refresh_count")
+            .remove("recovery_last_refresh_at")
             .apply();
         WakeState.log(this, "🧹 Recovery kết thúc: " + reason);
     }
