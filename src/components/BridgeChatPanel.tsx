@@ -9,11 +9,9 @@ import {
   ChevronRight,
   Clock3,
   Loader2,
-  Play,
   Sparkles,
   TriangleAlert,
   User,
-  Zap,
 } from 'lucide-react';
 import type { Message, Task } from '../types.js';
 
@@ -86,7 +84,7 @@ function timeLabel(value: string) {
   try { return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
 }
 
-function MessageRow({ message }: { message: Message }) {
+function MessageRow({ message }: { message: Message; key?: React.Key }) {
   const mine = message.from === 'human';
   const studio = message.from === 'gemini';
   const gpt = message.from === 'chatgpt';
@@ -120,7 +118,7 @@ function MessageRow({ message }: { message: Message }) {
   );
 }
 
-function ResultEvent({ task }: { task: Task }) {
+function ResultEvent({ task }: { task: Task; key?: React.Key }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="flex animate-rise justify-center">
