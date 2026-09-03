@@ -1,0 +1,19 @@
+{
+  "id": "deploy-compact-shell-e0cc",
+  "type": "task_create",
+  "created_by": "chatgpt",
+  "title": "Deploy verified compact Bridge shell to production",
+  "description": "DEPLOY ONLY. GitHub machxanht/BridgeChatgpt main is the source of truth. Sync latest main and ensure it includes verified UI commit e0cc486850c8c1121301389f5e9b9ccf9d319688 (plus later inbox housekeeping commits). This commit removes the legacy Header/Mission Control shell from the default workspace, makes the compact Project Router + project-scoped mini status + Bridge Chat + collapsed System Details fill the viewport, and scopes mini status to the active project's registered targets/tasks. CI run 33806023866 passed typecheck, tests, build, extension packaging, and production startup smoke. Do not redesign or replace backend semantics. Do not restore an older Studio workspace over GitHub. Sync exact current main, run npm run lint, npm test, npm run build, and production /health smoke. Then PUBLISH the exact AI Studio app/resource 15c1d80d-6265-47e1-bdf2-e30fb7bf430c so https://bridge-ai-mission-control.ai.studio serves this source. After publish, reload the public production URL (not only Studio preview) and verify the old large Mission Control dashboard/header is NOT the default screen. Expected default order: compact project chips/Add Project, compact project context, project-scoped ChatGPT/Studio status, Bridge Chat/composer as the dominant area, System Details collapsed. If a prior same-purpose deploy task is still nonterminal, do not interleave; finish/cancel that logical deploy first, then continue this exact task. If Studio hits internal error, allow the Android 0.5.1 paced Retry -> Reload recovery to operate; do not manually spam refresh. Do not create smoke tasks. Report the deployed source SHA and whether the PUBLIC production URL visually matches the compact shell. If publish is blocked, mark this task blocked with the exact reason instead of looping.",
+  "priority": "urgent",
+  "assignee": "gemini",
+  "workspace_id": "workspace-proj-default",
+  "project_id": "proj-default",
+  "agent_instance_id": "studio-15c1d80d-6265-47e1-bdf2-e30fb7bf430c",
+  "related_files": [
+    "src/App.tsx",
+    "src/components/WorkspaceView.tsx",
+    "src/components/ProjectRouterV2.tsx",
+    "src/components/BridgeMiniStatus.tsx",
+    "src/components/BridgeChatPanel.tsx"
+  ]
+}
