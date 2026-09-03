@@ -19,6 +19,9 @@ public class BridgeAccessibilityService extends AccessibilityService {
     private static final long MIN_OPEN_AGE_MS = 900L;
     private static final long RETRY_GAP_MS = 1200L;
     private static final long MODAL_RETRY_MS = 650L;
+    private static final long RECOVERY_WINDOW_MS = 2 * 60_000L;
+    private static final long RECOVERY_RETRY_GAP_MS = 8_000L;
+    private static final int MAX_INTERNAL_ERROR_RETRIES = 2;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastAttemptAt = 0L;
@@ -39,14 +42,18 @@ public class BridgeAccessibilityService extends AccessibilityService {
         long now = System.currentTimeMillis();
         if (now - lastAttemptAt < RETRY_GAP_MS) return;
 
-        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString("pending_event", "");
-        if (raw == null || raw.isEmpty()) return;
-        long openedAt = getSharedPreferences(PREFS, MODE_PRIVATE).getLong("pending_opened_at", 0L);
-        if (openedAt > 0 && now - openedAt < MIN_OPEN_AGE_MS) return;
-
-        lastAttemptAt = now;
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return;
+        lastAttemptAt = now;
+
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString("pending_event", "");
+        if (raw == null || raw.isEmpty()) {
+            processPostSendRecovery(root, now);
+            return;
+        }
+
+        long openedAt = getSharedPreferences(PREFS, MODE_PRIVATE).getLong("pending_opened_at", 0L);
+        if (openedAt > 0 && now - openedAt < MIN_OPEN_AGE_MS) return;
 
         try {
             JSONObject pending = new JSONObject(raw);
@@ -141,18 +148,19 @@ public class BridgeAccessibilityService extends AccessibilityService {
             }
 
             if (sent) {
+                long now = System.currentTimeMillis();
                 String eventId = pending.optString("event_id", "");
-                if (!eventId.isEmpty()) {
-                    getSharedPreferences(PREFS, MODE_PRIVATE)
-                        .edit()
-                        .putLong("delivered_" + eventId, System.currentTimeMillis())
-                        .remove("pending_event")
-                        .remove("pending_opened_at")
-                        .apply();
-                } else {
-                    clearPending("sent");
-                }
-                WakeState.log(this, "✅ Đã wake " + pending.optString("provider") + " · " + pending.optString("task_id"));
+                android.content.SharedPreferences.Editor editor = getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .edit()
+                    .putString("recovery_event", pending.toString())
+                    .putLong("recovery_until", now + RECOVERY_WINDOW_MS)
+                    .putInt("recovery_retry_count", 0)
+                    .putLong("recovery_last_action_at", 0L)
+                    .remove("pending_event")
+                    .remove("pending_opened_at");
+                if (!eventId.isEmpty()) editor.putLong("delivered_" + eventId, now);
+                editor.apply();
+                WakeState.log(this, "✅ Đã wake " + pending.optString("provider") + " · " + pending.optString("task_id") + " · theo dõi recovery 2 phút");
             } else {
                 WakeState.log(this, "⏳ Đã điền prompt nhưng chưa tìm thấy nút Send");
             }
@@ -161,6 +169,66 @@ public class BridgeAccessibilityService extends AccessibilityService {
         } finally {
             sending = false;
         }
+    }
+
+    private void processPostSendRecovery(AccessibilityNodeInfo root, long now) {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String raw = prefs.getString("recovery_event", "");
+        long until = prefs.getLong("recovery_until", 0L);
+        if (raw == null || raw.isEmpty()) return;
+        if (until <= 0L || now > until) {
+            clearRecovery("window-expired");
+            return;
+        }
+
+        boolean internalError = treeContains(root, "an internal error occurred")
+            || treeContains(root, "internal error occurred")
+            || treeContains(root, "something went wrong");
+        boolean cancelled = treeContains(root, "canceled") || treeContains(root, "cancelled");
+        if (!internalError && !cancelled) return;
+
+        int retries = prefs.getInt("recovery_retry_count", 0);
+        long lastAction = prefs.getLong("recovery_last_action_at", 0L);
+        if (retries >= MAX_INTERNAL_ERROR_RETRIES || now - lastAction < RECOVERY_RETRY_GAP_MS) return;
+
+        AccessibilityNodeInfo retry = findButtonByText(root, "retry");
+        if (retry == null) return;
+        if (retry.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            prefs.edit()
+                .putInt("recovery_retry_count", retries + 1)
+                .putLong("recovery_last_action_at", now)
+                .apply();
+            String taskId = "";
+            try { taskId = new JSONObject(raw).optString("task_id", ""); } catch (Exception ignored) { }
+            WakeState.log(this, "♻ Studio internal error · tự bấm Retry " + (retries + 1) + "/" + MAX_INTERNAL_ERROR_RETRIES + (taskId.isEmpty() ? "" : " · " + taskId));
+        }
+    }
+
+    private AccessibilityNodeInfo findButtonByText(AccessibilityNodeInfo root, String text) {
+        String wanted = text.toLowerCase(Locale.ROOT).trim();
+        Deque<AccessibilityNodeInfo> queue = new ArrayDeque<>();
+        queue.add(root);
+        AccessibilityNodeInfo best = null;
+        int bestScore = Integer.MIN_VALUE;
+        while (!queue.isEmpty()) {
+            AccessibilityNodeInfo node = queue.removeFirst();
+            String descriptor = describe(node).toLowerCase(Locale.ROOT).trim();
+            if (node.isClickable() && node.isEnabled() && node.isVisibleToUser()) {
+                int score = 0;
+                if (descriptor.equals(wanted)) score += 20;
+                else if (descriptor.matches(".*\\b" + java.util.regex.Pattern.quote(wanted) + "\\b.*")) score += 10;
+                if (descriptor.matches(".*(publish|share|delete|remove|allow|authorize|permission|secret).*")) score -= 30;
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = node;
+                }
+            }
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) queue.addLast(child);
+            }
+        }
+        return bestScore >= 10 ? best : null;
     }
 
     private boolean looksLikeOurPrompt(String existingText, JSONObject pending, String prompt) {
@@ -329,6 +397,17 @@ public class BridgeAccessibilityService extends AccessibilityService {
             .remove("pending_opened_at")
             .apply();
         WakeState.log(this, "🧹 Xóa wake pending: " + reason);
+    }
+
+    private void clearRecovery(String reason) {
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+            .edit()
+            .remove("recovery_event")
+            .remove("recovery_until")
+            .remove("recovery_retry_count")
+            .remove("recovery_last_action_at")
+            .apply();
+        WakeState.log(this, "🧹 Recovery kết thúc: " + reason);
     }
 
     @Override
