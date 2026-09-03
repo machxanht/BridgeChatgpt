@@ -34,7 +34,7 @@ public class WakeService extends Service {
     public static final String ACTION_STOP = "com.bridge.wake.STOP";
 
     private static final String BRIDGE_QUEUE_URL = "https://bridge-ai-mission-control.ai.studio/api/android-wake/queue";
-    private static final String WAKE_LOGIC_VERSION = "0.4.8-idle-gate-v1";
+    private static final String WAKE_LOGIC_VERSION = "0.4.9-single-flight-reload-v1";
     private static final long POLL_MS = 45_000L;
     private static final long STALE_PENDING_MS = 4 * 60_000L;
 
@@ -91,9 +91,9 @@ public class WakeService extends Service {
         String applied = prefs.getString("wake_logic_version", "");
         if (WAKE_LOGIC_VERSION.equals(applied)) return;
 
-        // APK upgrades preserve SharedPreferences. Old builds could therefore carry an
-        // already-obsolete prompt into a newer Accessibility service. Clear only the
-        // transient automation state; pairing and completed-task wake gates remain intact.
+        // APK upgrades preserve SharedPreferences. Clear only transient automation/recovery
+        // state so an old prompt or old Retry loop cannot leak into the new single-flight
+        // + reload recovery logic. Pairing and completed logical-task gates stay intact.
         prefs.edit()
             .putString("wake_logic_version", WAKE_LOGIC_VERSION)
             .remove("pending_event")
@@ -102,8 +102,10 @@ public class WakeService extends Service {
             .remove("recovery_until")
             .remove("recovery_retry_count")
             .remove("recovery_last_action_at")
+            .remove("recovery_refresh_count")
+            .remove("recovery_last_refresh_at")
             .apply();
-        WakeState.log(this, "🧹 Wake v0.4.8 · đã xóa prompt automation cũ sau khi nâng cấp");
+        WakeState.log(this, "🧹 Wake v0.4.9 · đã xóa automation/recovery cũ sau khi nâng cấp");
     }
 
     private void pollNow() {
@@ -117,9 +119,6 @@ public class WakeService extends Service {
                     return;
                 }
 
-                // Always ask Bridge first. Older builds returned early when a local pending
-                // prompt existed, which meant a task removed/claimed on the server could
-                // continue typing locally for several minutes.
                 JSONObject packet = fetchQueue(token);
                 if (!packet.optBoolean("ok", false)) {
                     int status = packet.optInt("status", 0);
@@ -152,7 +151,7 @@ public class WakeService extends Service {
                     boolean stillQueued = !pendingGate.isEmpty() && queueContainsGate(events, pendingGate);
                     boolean stillFresh = pendingAt > 0 && now - pendingAt < STALE_PENDING_MS;
                     if (stillQueued && stillFresh) {
-                        // Accessibility owns this live prompt. Do not reopen Chrome.
+                        // Accessibility owns this live prompt. Never open another task/tab.
                         return;
                     }
 
@@ -167,9 +166,6 @@ public class WakeService extends Service {
                     String eventId = event.optString("event_id", "");
                     if (eventId.isEmpty()) continue;
 
-                    // Gate by logical task+reason+target instead of event_id. event_id contains
-                    // updated_at and can change for the same task, which previously made the
-                    // same old task look new and wake Chrome again.
                     String gate = wakeGateKey(event);
                     if (gate.isEmpty()) continue;
                     if (prefs.getLong(gate, 0L) > 0L) continue;
@@ -186,9 +182,6 @@ public class WakeService extends Service {
                 }
 
                 selected.put("wake_gate_key", selectedGate);
-                // Mark the logical task before launching Chrome. This prevents metadata
-                // churn or a still-pending task from opening the browser again every poll.
-                // If Chrome cannot actually be launched we immediately remove the gate.
                 prefs.edit()
                     .putString("pending_event", selected.toString())
                     .putLong("pending_opened_at", now)
@@ -220,8 +213,6 @@ public class WakeService extends Service {
         String reason = event.optString("reason", "").trim();
         String targetId = event.optString("target_id", "").trim();
         if (taskId.isEmpty() || reason.isEmpty() || targetId.isEmpty()) return "";
-        // Deliberately exclude task.updated_at/status so metadata churn cannot resurrect
-        // the same logical wake instruction.
         return "wake_gate:" + reason + ":" + targetId + ":" + taskId;
     }
 
