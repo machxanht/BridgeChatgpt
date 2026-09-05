@@ -22,6 +22,7 @@ import { handleExecutorMcpRequest } from './server/executorMcp.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const APP_ROOT = path.resolve(process.cwd(), 'Apps', 'BridgeChatgpt');
 
 async function startServer() {
   const app = express();
@@ -94,43 +95,24 @@ async function startServer() {
   app.get('/health', healthHandler);
   app.get('/api/health', healthHandler);
 
-  // Android companion pairing + read-only wake queue. Pair tokens are scoped,
-  // signed, and never expose the main Bridge MCP token to the APK.
   app.use('/api/android-wake', androidWakeRouter);
-
-  // Bridge Local Executor: project-scoped PC workers poll outbound for jobs.
-  // Same-origin dashboard requests are allowed; remote workers use BRIDGE_EXECUTOR_TOKEN.
   app.use('/api/executors', executorRouter);
-
-  // External Google AI Studio Build-mode relay. It never calls Gemini here;
-  // it only exchanges task/state data with an authenticated Studio client.
-  // The pairing guard resolves a single registered Studio session automatically
-  // and blocks ambiguous multi-session claims unless agent_instance_id is explicit.
   app.use('/api/studio-relay', requireAuth, studioSessionPairingGuard, studioRelayRouter);
-
-  // User-facing URL registry. A Git repo is the project anchor; AI Studio app URLs
-  // and ChatGPT conversation URLs become stable routing targets without exposing
-  // workspace/agent IDs in the normal dashboard flow.
   app.use('/api/resource-registry', requireAuth, resourceRegistryRouter);
-
-  // Shared cross-session project memory. Thread/session scratch remains private;
-  // this service carries durable goals, decisions, architecture, blockers and handoffs.
   app.use('/api/project-brain', requireAuth, projectBrainRouter);
-
-  // Batch/epic orchestration: DAG scheduling, leases, retry/review limits and dashboard.
   app.use('/api/batches', requireAuth, batchRouter);
-
-  // Review-ready Studio results, including full conflict-safe artifacts.
   app.use('/api', requireAuth, reviewPacketsRouter);
   app.use('/api', apiRouter);
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
+      root: APP_ROOT,
+      configFile: path.join(APP_ROOT, 'vite.config.ts'),
       server: { middlewareMode: true, host: '0.0.0.0', port: PORT },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-    console.log('[Server] Vite middleware mounted in development mode');
+    console.log('[Server] Vite middleware mounted from', APP_ROOT);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
@@ -151,7 +133,7 @@ async function startServer() {
     console.log('[Bridge Project Brain] REST endpoint: /api/project-brain');
     console.log('[Bridge Review Packets] REST endpoint: /api/review-packets');
     console.log('[Bridge Batch] REST endpoint: /api/batches');
-    console.log('[Bridge GitHub Bus] Inbox: bridge-bus/inbox');
+    console.log('[Bridge GitHub Bus] Inbox: runtime/bridge-bus/inbox');
   });
 }
 
