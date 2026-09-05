@@ -1,6 +1,6 @@
 const DEFAULTS = {
   enabled: true,
-  bridgeUrl: 'https://bridge-ai-mission-control.ai.studio/',
+  bridgeUrl: 'https://bridgechatgpt-production.up.railway.app/',
   intervalMinutes: 1,
   redeliveryMinutes: 10,
   focusOnWake: false,
@@ -10,6 +10,7 @@ const DEFAULTS = {
   lastLog: [],
 };
 
+const LEGACY_BRIDGE_URL = 'https://bridge-ai-mission-control.ai.studio/';
 const $ = id => document.getElementById(id);
 
 function formatTime(value) {
@@ -21,6 +22,10 @@ function formatTime(value) {
 
 async function load() {
   const state = await chrome.storage.local.get(DEFAULTS);
+  if (!state.bridgeUrl || state.bridgeUrl === LEGACY_BRIDGE_URL) {
+    state.bridgeUrl = DEFAULTS.bridgeUrl;
+    await chrome.storage.local.set({ bridgeUrl: DEFAULTS.bridgeUrl });
+  }
   $('enabled').checked = Boolean(state.enabled);
   $('bridgeUrl').value = state.bridgeUrl || DEFAULTS.bridgeUrl;
   $('intervalMinutes').value = String(state.intervalMinutes ?? 1);
