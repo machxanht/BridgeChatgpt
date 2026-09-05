@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'android/bridge-wake-app/**'
+      - 'Apps/BridgeChatgpt/android-wake/**'
       - '.github/workflows/android-apk-stable.yml'
 
 permissions:
@@ -37,10 +37,10 @@ jobs:
       - name: Verify stable signing key
         run: |
           set -euo pipefail
-          test -s android/bridge-wake-app/bridge-dev.keystore.b64
-          base64 -d android/bridge-wake-app/bridge-dev.keystore.b64 > android/bridge-wake-app/bridge-dev.keystore
+          test -s Apps/BridgeChatgpt/android-wake/bridge-dev.keystore.b64
+          base64 -d Apps/BridgeChatgpt/android-wake/bridge-dev.keystore.b64 > Apps/BridgeChatgpt/android-wake/bridge-dev.keystore
           keytool -list -v \
-            -keystore android/bridge-wake-app/bridge-dev.keystore \
+            -keystore Apps/BridgeChatgpt/android-wake/bridge-dev.keystore \
             -storepass bridge-dev-2026 \
             -alias bridge | tee /tmp/bridge-key.txt
           grep -q '79:39:C7:1A:1A:9D:50:73:4D:EF:44:9B:A5:07:16:DE:3E:8B:22:0C:6C:78:34:EF:19:37:17:E7:D5:1A:56:BB' /tmp/bridge-key.txt
@@ -48,16 +48,16 @@ jobs:
       - name: Build normal debug APK
         run: |
           set -euo pipefail
-          gradle -p android/bridge-wake-app :app:assembleDebug --stacktrace
-          cp android/bridge-wake-app/app/build/outputs/apk/debug/app-debug.apk bridge-v0.5.2-normal-debug.apk
+          gradle -p Apps/BridgeChatgpt/android-wake :app:assembleDebug --stacktrace
+          cp Apps/BridgeChatgpt/android-wake/app/build/outputs/apk/debug/app-debug.apk bridge-v0.5.2-normal-debug.apk
           test -s bridge-v0.5.2-normal-debug.apk
           keytool -printcert -jarfile bridge-v0.5.2-normal-debug.apk | sed -n '1,20p'
 
       - name: Build stable signed APK
         run: |
           set -euo pipefail
-          gradle -p android/bridge-wake-app :app:assembleRelease --stacktrace
-          cp android/bridge-wake-app/app/build/outputs/apk/release/app-release.apk bridge-v0.5.2-stable.apk
+          gradle -p Apps/BridgeChatgpt/android-wake :app:assembleRelease --stacktrace
+          cp Apps/BridgeChatgpt/android-wake/app/build/outputs/apk/release/app-release.apk bridge-v0.5.2-stable.apk
           test -s bridge-v0.5.2-stable.apk
 
       - name: Verify stable APK certificate
