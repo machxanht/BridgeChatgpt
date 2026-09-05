@@ -1,7 +1,9 @@
 const ALARM_NAME = 'bridge-wake-cycle';
+const CURRENT_BRIDGE_URL = 'https://bridgechatgpt-production.up.railway.app/';
+const LEGACY_BRIDGE_URL = 'https://bridge-ai-mission-control.ai.studio/';
 const DEFAULTS = {
   enabled: true,
-  bridgeUrl: 'https://bridge-ai-mission-control.ai.studio/',
+  bridgeUrl: CURRENT_BRIDGE_URL,
   intervalMinutes: 1,
   redeliveryMinutes: 10,
   focusOnWake: false,
@@ -15,7 +17,12 @@ const DEFAULTS = {
 let running = false;
 
 async function settings() {
-  return chrome.storage.local.get(DEFAULTS);
+  const config = await chrome.storage.local.get(DEFAULTS);
+  if (!config.bridgeUrl || config.bridgeUrl === LEGACY_BRIDGE_URL) {
+    config.bridgeUrl = CURRENT_BRIDGE_URL;
+    await chrome.storage.local.set({ bridgeUrl: CURRENT_BRIDGE_URL });
+  }
+  return config;
 }
 
 async function appendLog(message) {
@@ -40,7 +47,7 @@ function normalizedOrigin(raw) {
     const url = new URL(raw);
     return url.origin;
   } catch {
-    return 'https://bridge-ai-mission-control.ai.studio';
+    return new URL(CURRENT_BRIDGE_URL).origin;
   }
 }
 
@@ -322,6 +329,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   for (const [key, value] of Object.entries(DEFAULTS)) {
     if (existing[key] === undefined) patch[key] = value;
   }
+  if (!existing.bridgeUrl || existing.bridgeUrl === LEGACY_BRIDGE_URL) patch.bridgeUrl = CURRENT_BRIDGE_URL;
   if (Object.keys(patch).length) await chrome.storage.local.set(patch);
   await resetAlarm();
 });
