@@ -49,11 +49,11 @@ function shortTime(value?: string | null) {
 }
 
 function statusIcon(status: ExecutorJob['status']) {
-  if (status === 'completed') return <CheckCircle2 className="size-3.5 text-gpt" />;
-  if (status === 'failed') return <XCircle className="size-3.5 text-destructive" />;
-  if (status === 'running') return <RefreshCw className="size-3.5 animate-spin text-studio" />;
-  if (status === 'cancelled') return <CircleOff className="size-3.5 text-muted-foreground" />;
-  return <Clock3 className="size-3.5 text-warn" />;
+  if (status === 'completed') return <CheckCircle2 className="size-4 text-gpt" />;
+  if (status === 'failed') return <XCircle className="size-4 text-destructive" />;
+  if (status === 'running') return <RefreshCw className="size-4 animate-spin text-studio" />;
+  if (status === 'cancelled') return <CircleOff className="size-4 text-muted-foreground" />;
+  return <Clock3 className="size-4 text-warn" />;
 }
 
 export const LocalExecutorPanel: React.FC = () => {
@@ -169,44 +169,44 @@ export const LocalExecutorPanel: React.FC = () => {
   };
 
   return (
-    <section className="mb-3 rounded-xl border border-border bg-surface p-3 shadow-panel">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="grid size-8 place-items-center rounded-lg bg-surface-2 text-human"><MonitorCog className="size-4" /></span>
+    <section className="mb-4 rounded-xl border border-border bg-surface p-3.5 shadow-panel sm:p-4">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span className="grid size-9 place-items-center rounded-lg bg-surface-2 text-human"><MonitorCog className="size-4.5" /></span>
         <div className="min-w-0">
-          <div className="text-[13px] font-semibold">Local Executor</div>
-          <div className="text-[10.5px] text-muted-foreground">PC worker for {workspace?.project_name || 'active project'} · {pcMode ? 'selected' : 'standby'}</div>
+          <div className="text-[14px] font-semibold">Local Executor</div>
+          <div className="text-[11.5px] text-muted-foreground">PC worker for {workspace?.project_name || 'active project'} · {pcMode ? 'selected' : 'standby'}</div>
         </div>
         {pcMode && (
-          <button onClick={createPairing} disabled={pairBusy} className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-lg border border-human/30 bg-human/8 px-2.5 text-[10.5px] font-medium text-human disabled:opacity-40">
-            {pairBusy ? <RefreshCw className="size-3 animate-spin" /> : <Link2 className="size-3" />} {onlineNode ? 'Pair another PC' : 'Connect PC'}
+          <button onClick={createPairing} disabled={pairBusy} className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-human/30 bg-human/8 px-3 text-[12px] font-medium text-human disabled:opacity-40">
+            {pairBusy ? <RefreshCw className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />} {onlineNode ? 'Pair another PC' : 'Connect PC'}
           </button>
         )}
-        <div className={`${pcMode ? '' : 'ml-auto'} inline-flex items-center gap-1.5 rounded-full border border-border bg-background/60 px-2.5 py-1 text-[10.5px] text-muted-foreground`}>
-          <span className={`size-1.5 rounded-full ${onlineNode ? 'animate-pulse-dot bg-gpt' : 'bg-muted-foreground'}`} />
+        <div className={`${pcMode ? '' : 'ml-auto'} inline-flex items-center gap-1.5 rounded-full border border-border bg-background/60 px-3 py-1.5 text-[12px] text-muted-foreground`}>
+          <span className={`size-2 rounded-full ${onlineNode ? 'animate-pulse-dot bg-gpt' : 'bg-muted-foreground'}`} />
           {onlineNode ? `${onlineNode.name} online` : nodes.length ? 'PC offline' : 'PC unbound'}
         </div>
       </div>
 
       {pairing && pcMode && (
-        <div className="mt-2 rounded-lg border border-human/25 bg-human/8 p-2.5">
+        <div className="mt-3 rounded-lg border border-human/25 bg-human/8 p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Pair code</span>
-            <code className="rounded-md bg-background/70 px-2 py-1 font-mono text-[14px] font-semibold tracking-[0.12em] text-human">{pairing.code}</code>
-            <button onClick={copySetupCommand} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-[11px] font-medium text-foreground"><Copy className="size-3.5" /> Copy PC setup</button>
+            <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Pair code</span>
+            <code className="rounded-md bg-background/70 px-2 py-1 font-mono text-[15px] font-semibold tracking-[0.12em] text-human">{pairing.code}</code>
+            <button onClick={copySetupCommand} className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-[12px] font-medium text-foreground"><Copy className="size-4" /> Copy PC setup</button>
           </div>
-          <div className="mt-1.5 text-[10.5px] leading-relaxed text-muted-foreground">On the Windows PC, open PowerShell and paste the copied command. It will ask you to choose the exact D:/F: folder and permissions. Code expires at {shortTime(pairing.expires_at)}.</div>
+          <div className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">On the Windows PC, open PowerShell and paste the copied command. It will ask you to choose the exact D:/F: folder and permissions. Code expires at {shortTime(pairing.expires_at)}.</div>
         </div>
       )}
 
       {onlineNode && (
-        <div className="mt-2 grid gap-2 sm:grid-cols-3">
-          <div className="rounded-lg border border-border bg-background/40 px-2.5 py-2 text-[11px]"><span className="text-muted-foreground">Node</span><div className="mt-0.5 truncate font-medium">{onlineNode.name}</div></div>
-          <div className="rounded-lg border border-border bg-background/40 px-2.5 py-2 text-[11px]"><span className="text-muted-foreground">Root</span><div className="mt-0.5 truncate font-medium">{onlineNode.root_label}</div></div>
-          <div className="rounded-lg border border-border bg-background/40 px-2.5 py-2 text-[11px]"><span className="text-muted-foreground">Last seen</span><div className="mt-0.5 font-medium">{shortTime(onlineNode.last_seen_at)}</div></div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <div className="rounded-lg border border-border bg-background/40 px-3 py-2.5 text-[12px]"><span className="text-muted-foreground">Node</span><div className="mt-0.5 truncate font-medium">{onlineNode.name}</div></div>
+          <div className="rounded-lg border border-border bg-background/40 px-3 py-2.5 text-[12px]"><span className="text-muted-foreground">Root</span><div className="mt-0.5 truncate font-medium">{onlineNode.root_label}</div></div>
+          <div className="rounded-lg border border-border bg-background/40 px-3 py-2.5 text-[12px]"><span className="text-muted-foreground">Last seen</span><div className="mt-0.5 font-medium">{shortTime(onlineNode.last_seen_at)}</div></div>
         </div>
       )}
 
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         {([
           ['git.status', 'Git status'],
           ['git.diff', 'Git diff'],
@@ -219,37 +219,37 @@ export const LocalExecutorPanel: React.FC = () => {
               key={action}
               disabled={!pcMode || !onlineNode || !supported || Boolean(busy)}
               onClick={() => queue(action)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface-2/50 px-2.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-surface-2/50 px-3 text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
               title={!pcMode ? 'Switch this project to PC execution first' : !onlineNode ? 'Connect a PC worker first' : !supported ? 'Enable this capability on the PC worker' : `Queue ${label}`}
             >
-              {busy === action ? <RefreshCw className="size-3 animate-spin" /> : <Play className="size-3" />}
+              {busy === action ? <RefreshCw className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
               {label}
             </button>
           );
         })}
       </div>
 
-      {error && <div className="mt-2 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive">{error}</div>}
+      {error && <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-[12px] text-destructive">{error}</div>}
 
-      <div className="mt-3 overflow-hidden rounded-lg border border-border">
-        <div className="flex items-center gap-2 border-b border-border bg-background/40 px-2.5 py-2 text-[10.5px] font-medium text-muted-foreground">
-          <Terminal className="size-3.5" /> Recent PC jobs
+      <div className="mt-4 overflow-hidden rounded-lg border border-border">
+        <div className="flex items-center gap-2 border-b border-border bg-background/40 px-3 py-2.5 text-[12px] font-medium text-muted-foreground">
+          <Terminal className="size-4" /> Recent PC jobs
         </div>
         {jobs.length === 0 ? (
-          <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">No Local Executor jobs yet.</div>
+          <div className="px-3 py-5 text-center text-[12px] text-muted-foreground">No Local Executor jobs yet.</div>
         ) : (
-          <div className="thin-scrollbar max-h-56 overflow-y-auto">
+          <div className="thin-scrollbar max-h-[52dvh] overflow-y-auto">
             {jobs.slice(0, 12).map(job => {
               const output = String(job.result?.stdout || job.result?.stderr || job.error || '').trim();
               return (
-                <div key={job.job_id} className="border-b border-border/70 px-2.5 py-2 last:border-0">
-                  <div className="flex min-w-0 items-center gap-2 text-[11px]">
+                <div key={job.job_id} className="border-b border-border/70 px-3 py-3 last:border-0">
+                  <div className="flex min-w-0 items-center gap-2 text-[12.5px]">
                     {statusIcon(job.status)}
                     <span className="font-medium text-foreground">{job.action}</span>
                     <span className="truncate text-muted-foreground">{job.job_id}</span>
-                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{shortTime(job.completed_at || job.started_at || job.created_at)}</span>
+                    <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{shortTime(job.completed_at || job.started_at || job.created_at)}</span>
                   </div>
-                  {output && <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded-md bg-background/70 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">{output.slice(-5000)}</pre>}
+                  {output && <pre className="mt-2 max-h-[36dvh] overflow-auto whitespace-pre-wrap rounded-md bg-background/70 p-3 font-mono text-[12px] leading-5 text-muted-foreground">{output.slice(-10000)}</pre>}
                 </div>
               );
             })}
