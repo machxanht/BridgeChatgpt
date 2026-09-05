@@ -51,13 +51,13 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         <BridgeChatPanel />
 
         <details className="group shrink-0 border-t border-border bg-surface/50">
-          <summary className="flex h-10 cursor-pointer list-none items-center gap-2 px-3 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground sm:px-4">
-            <Settings2 className="size-4" />
+          <summary className="flex h-11 cursor-pointer list-none items-center gap-2 px-3 text-[13.5px] font-medium text-muted-foreground transition-colors hover:text-foreground sm:px-4">
+            <Settings2 className="size-4.5" />
             System Details
             <span className="ml-1 hidden text-[10px] text-muted-foreground/70 sm:inline">executor · tasks · agents · logs · diagnostics</span>
-            <ChevronUp className="ml-auto size-4 transition-transform duration-200 group-open:rotate-180" />
+            <ChevronUp className="ml-auto size-4.5 transition-transform duration-200 group-open:rotate-180" />
           </summary>
-          <div className="thin-scrollbar max-h-[58vh] overflow-y-auto border-t border-border p-3 sm:p-4">
+          <div className="thin-scrollbar h-[78dvh] max-h-[78dvh] overflow-y-auto border-t border-border p-3 sm:h-[76dvh] sm:max-h-[76dvh] sm:p-4 lg:h-auto lg:max-h-[68vh]">
             <LocalExecutorPanel />
             <MissionControlView
               state={state}
