@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings2, X } from 'lucide-react';
+import { MonitorCog, X } from 'lucide-react';
 import type {
   AgentOperationalStatus,
   Finding,
@@ -32,7 +32,7 @@ interface WorkspaceViewProps {
 }
 
 export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ state }) => {
-  const [systemOpen, setSystemOpen] = React.useState(false);
+  const [pcControlOpen, setPcControlOpen] = React.useState(false);
 
   if (state.mission_control) {
     return (
@@ -43,30 +43,30 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ state }) => {
 
         <button
           type="button"
-          onClick={() => setSystemOpen(true)}
+          onClick={() => setPcControlOpen(true)}
           className="flex h-12 shrink-0 items-center gap-2 border-t border-border bg-surface/60 px-4 text-[14px] font-semibold text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
         >
-          <Settings2 className="size-4.5" />
-          <span>System Details</span>
+          <MonitorCog className="size-4.5" />
+          <span>PC Control</span>
           <span className="ml-1 hidden text-[10px] font-normal text-muted-foreground/70 sm:inline">executor · git · test/build · job history</span>
           <span className="ml-auto rounded-full border border-border bg-background/60 px-2 py-1 text-[10px] font-medium text-muted-foreground">OPEN</span>
         </button>
 
-        {systemOpen && (
+        {pcControlOpen && (
           <div className="fixed inset-0 z-50 flex h-dvh w-screen flex-col bg-background">
             <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-4 shadow-panel sm:px-5">
               <span className="grid size-9 place-items-center rounded-lg bg-surface-2 text-human">
-                <Settings2 className="size-4.5" />
+                <MonitorCog className="size-4.5" />
               </span>
               <div className="min-w-0">
-                <div className="text-[15px] font-semibold leading-tight text-foreground">System Details</div>
+                <div className="text-[15px] font-semibold leading-tight text-foreground">PC Control</div>
                 <div className="truncate text-[10.5px] text-muted-foreground">PC executor · Git · test/build · recent jobs</div>
               </div>
               <button
                 type="button"
-                onClick={() => setSystemOpen(false)}
+                onClick={() => setPcControlOpen(false)}
                 className="ml-auto grid size-10 place-items-center rounded-xl border border-border bg-background/60 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
-                aria-label="Close System Details"
+                aria-label="Close PC Control"
               >
                 <X className="size-5" />
               </button>
