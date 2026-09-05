@@ -49,7 +49,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ state }) => {
           <MonitorCog className="size-4.5" />
           <span>PC Control</span>
           <span className="ml-1 hidden text-[10px] font-normal text-muted-foreground/70 sm:inline">executor · git · test/build · job history</span>
-          <span className="ml-auto rounded-full border border-border bg-background/60 px-2 py-1 text-[10px] font-medium text-muted-foreground">OPEN</span>
+          <span className="ml-auto rounded-full border border-border bg-background/60 px-2 py-1 text-[10px] font-medium text-muted-foreground">OPEN PC</span>
         </button>
 
         {pcControlOpen && (
