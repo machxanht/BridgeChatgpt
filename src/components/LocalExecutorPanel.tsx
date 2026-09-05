@@ -141,9 +141,13 @@ export const LocalExecutorPanel: React.FC = () => {
     }
   };
 
-  const queue = async (action: 'git.status' | 'git.diff' | 'npm.test' | 'npm.build') => {
+  const queue = async (
+    action: 'git.status' | 'git.diff' | 'npm.test' | 'npm.build' | 'command.run',
+    payload: Record<string, unknown> = {},
+    busyKey = action,
+  ) => {
     if (!workspace) return;
-    setBusy(action);
+    setBusy(busyKey);
     setError('');
     try {
       const response = await fetch('/api/executors/jobs', {
@@ -154,7 +158,7 @@ export const LocalExecutorPanel: React.FC = () => {
           project_id: workspace.project_id,
           node_id: onlineNode?.node_id || undefined,
           action,
-          payload: {},
+          payload,
           created_by: 'human',
         }),
       });
@@ -167,6 +171,8 @@ export const LocalExecutorPanel: React.FC = () => {
       setBusy('');
     }
   };
+
+  const syncSupported = onlineNode?.capabilities.includes('command.run') ?? false;
 
   return (
     <section className="mb-4 rounded-xl border border-border bg-surface p-3.5 shadow-panel sm:p-4">
@@ -207,6 +213,16 @@ export const LocalExecutorPanel: React.FC = () => {
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          disabled={!pcMode || !onlineNode || !syncSupported || Boolean(busy)}
+          onClick={() => queue('command.run', { argv: ['git', 'pull', '--ff-only'] }, 'git.pull')}
+          className="inline-flex h-10 items-center gap-2 rounded-lg border border-gpt/30 bg-gpt/8 px-3 text-[12.5px] font-medium text-gpt transition-colors hover:bg-gpt/12 disabled:cursor-not-allowed disabled:opacity-35"
+          title={!pcMode ? 'Switch this project to PC execution first' : !onlineNode ? 'Connect a PC worker first' : !syncSupported ? 'Enable command.run on the PC worker' : 'Fast-forward this approved project root to origin/main'}
+        >
+          <RefreshCw className={`size-3.5 ${busy === 'git.pull' ? 'animate-spin' : ''}`} />
+          Sync repo
+        </button>
+
         {([
           ['git.status', 'Git status'],
           ['git.diff', 'Git diff'],
