@@ -12,7 +12,7 @@
     "executor": "tsx pc-executor/index.ts",
     "executor:dev": "tsx pc-executor/index.ts",
     "lint": "tsc --noEmit",
-    "test": "tsx tests/bridge.test.ts && tsx tests/reviewPackets.test.ts && tsx tests/executionPayload.test.ts && tsx tests/batchOrchestrator.test.ts && tsx tests/workspaceRegistry.test.ts && tsx tests/projectBrain.test.ts && tsx tests/resourceRegistry.test.ts && tsx tests/singleFlight.test.ts && tsx tests/wakeQueue.test.ts && tsx tests/executorStore.test.ts && tsx tests/executorCore.test.ts && node --check chrome-extension/bridge-wake/service-worker.js && node --check chrome-extension/bridge-wake/popup.js"
+    "test": "tsx tests/bridge.test.ts && tsx tests/reviewPackets.test.ts && tsx tests/executionPayload.test.ts && tsx tests/batchOrchestrator.test.ts && tsx tests/workspaceRegistry.test.ts && tsx tests/projectBrain.test.ts && tsx tests/resourceRegistry.test.ts && tsx tests/singleFlight.test.ts && tsx tests/wakeQueue.test.ts && tsx tests/executorStore.test.ts && tsx tests/executorCore.test.ts && tsx tests/executorPairing.test.ts && node --check chrome-extension/bridge-wake/service-worker.js && node --check chrome-extension/bridge-wake/popup.js"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

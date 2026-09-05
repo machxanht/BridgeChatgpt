@@ -35,6 +35,7 @@ const CONFIG_PATH = process.env.BRIDGE_EXECUTOR_CONFIG || path.join(HOME_DIR, 'c
 const AUDIT_PATH = path.join(HOME_DIR, 'audit.jsonl');
 const PORT = Number(process.env.BRIDGE_EXECUTOR_PORT || 4588);
 const HOST = process.env.BRIDGE_EXECUTOR_HOST || '127.0.0.1';
+const PAIR_CODE = String(process.env.BRIDGE_PAIR_CODE || '').trim();
 
 function defaultConfig(): LocalConfig {
   return {
@@ -89,6 +90,19 @@ function makeNodeId(config: LocalConfig) {
 }
 
 let config = loadConfig();
+if (PAIR_CODE) {
+  const envRoot = String(process.env.BRIDGE_PROJECT_ROOT || config.projectRoot).trim();
+  config = {
+    ...config,
+    bridgeUrl: String(process.env.BRIDGE_URL || config.bridgeUrl).replace(/\/+$/, ''),
+    token: '',
+    workspaceId: '',
+    projectId: '',
+    projectRoot: path.resolve(envRoot),
+    allowWrites: process.env.BRIDGE_EXECUTOR_ALLOW_WRITES ? process.env.BRIDGE_EXECUTOR_ALLOW_WRITES === 'true' : config.allowWrites,
+    allowCommands: process.env.BRIDGE_EXECUTOR_ALLOW_COMMANDS ? process.env.BRIDGE_EXECUTOR_ALLOW_COMMANDS === 'true' : config.allowCommands,
+  };
+}
 let nodeId = makeNodeId(config);
 let connection: 'online' | 'offline' | 'setup_needed' = 'setup_needed';
 let lastError = '';
@@ -138,6 +152,29 @@ async function bridgeFetch(endpoint: string, init: RequestInit = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `Bridge HTTP ${response.status}`);
   return data;
+}
+
+async function redeemPairCode() {
+  if (!PAIR_CODE) return;
+  if (!fs.existsSync(config.projectRoot) || !fs.statSync(config.projectRoot).isDirectory()) {
+    throw new Error(`Project root does not exist: ${config.projectRoot}`);
+  }
+  const response = await fetch(`${config.bridgeUrl}/api/executors/pair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: PAIR_CODE, node_id: nodeId }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Bridge pairing HTTP ${response.status}`);
+  config = {
+    ...config,
+    token: String(data.token || ''),
+    workspaceId: String(data.workspace_id || ''),
+    projectId: String(data.project_id || ''),
+  };
+  if (!config.token || !config.workspaceId || !config.projectId) throw new Error('Bridge pairing returned incomplete credentials');
+  saveConfig(config);
+  appendAudit({ time: new Date().toISOString(), type: 'pairing', ok: true, summary: `Paired ${nodeId} to ${config.workspaceId}/${config.projectId}` });
 }
 
 async function registerNode(force = false) {
@@ -318,4 +355,15 @@ server.listen(PORT, HOST, () => {
 
 process.on('SIGINT', () => { stopped = true; server.close(() => process.exit(0)); });
 process.on('SIGTERM', () => { stopped = true; server.close(() => process.exit(0)); });
-void workerLoop();
+async function startExecutor() {
+  try {
+    await redeemPairCode();
+  } catch (error: any) {
+    connection = 'offline';
+    lastError = error?.message || String(error);
+    console.error(`[Bridge Local Executor] Pairing failed: ${lastError}`);
+  }
+  void workerLoop();
+}
+
+void startExecutor();

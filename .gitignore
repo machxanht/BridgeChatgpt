@@ -17,3 +17,6 @@ data/resource-registry.json.*.tmp
 data/executors.json
 data/executors.json.*.tmp
 bridge-bus/outbox/
+
+data/executor-auth.json
+data/executor-auth.json.*.tmp

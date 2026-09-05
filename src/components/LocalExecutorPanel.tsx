@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, CircleOff, Clock3, MonitorCog, Play, RefreshCw, Terminal, XCircle } from 'lucide-react';
+import { CheckCircle2, CircleOff, Clock3, Copy, Link2, MonitorCog, Play, RefreshCw, Terminal, XCircle } from 'lucide-react';
 
 interface ExecutorNode {
   node_id: string;
@@ -63,6 +63,8 @@ export const LocalExecutorPanel: React.FC = () => {
   const [jobs, setJobs] = useState<ExecutorJob[]>([]);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [pairing, setPairing] = useState<{ code: string; expires_at: string } | null>(null);
+  const [pairBusy, setPairBusy] = useState(false);
 
   useEffect(() => {
     const handle = (event: Event) => {
@@ -108,6 +110,37 @@ export const LocalExecutorPanel: React.FC = () => {
   const onlineNode = useMemo(() => nodes.find(node => node.connection_status === 'online') || null, [nodes]);
   const pcMode = (workspace?.execution_target || 'studio') === 'pc';
 
+  const createPairing = async () => {
+    if (!workspace || !pcMode || pairBusy) return;
+    setPairBusy(true);
+    setError('');
+    try {
+      const response = await fetch('/api/executors/pairing-codes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Could not create PC pairing code');
+      setPairing({ code: data.code, expires_at: data.expires_at });
+    } catch (err: any) {
+      setError(err?.message || 'Could not create PC pairing code');
+    } finally {
+      setPairBusy(false);
+    }
+  };
+
+  const copySetupCommand = async () => {
+    if (!pairing) return;
+    const origin = window.location.origin.replace(/'/g, "''");
+    const command = `$env:BRIDGE_URL='${origin}'; $env:BRIDGE_PAIR_CODE='${pairing.code}'; irm 'https://raw.githubusercontent.com/machxanht/BridgeChatgpt/main/pc-executor/windows-bootstrap.ps1' | iex`;
+    try {
+      await navigator.clipboard.writeText(command);
+    } catch {
+      window.prompt('Copy this PowerShell command', command);
+    }
+  };
+
   const queue = async (action: 'git.status' | 'git.diff' | 'npm.test' | 'npm.build') => {
     if (!workspace) return;
     setBusy(action);
@@ -143,11 +176,27 @@ export const LocalExecutorPanel: React.FC = () => {
           <div className="text-[13px] font-semibold">Local Executor</div>
           <div className="text-[10.5px] text-muted-foreground">PC worker for {workspace?.project_name || 'active project'} · {pcMode ? 'selected' : 'standby'}</div>
         </div>
-        <div className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-background/60 px-2.5 py-1 text-[10.5px] text-muted-foreground">
+        {pcMode && (
+          <button onClick={createPairing} disabled={pairBusy} className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-lg border border-human/30 bg-human/8 px-2.5 text-[10.5px] font-medium text-human disabled:opacity-40">
+            {pairBusy ? <RefreshCw className="size-3 animate-spin" /> : <Link2 className="size-3" />} {onlineNode ? 'Pair another PC' : 'Connect PC'}
+          </button>
+        )}
+        <div className={`${pcMode ? '' : 'ml-auto'} inline-flex items-center gap-1.5 rounded-full border border-border bg-background/60 px-2.5 py-1 text-[10.5px] text-muted-foreground`}>
           <span className={`size-1.5 rounded-full ${onlineNode ? 'animate-pulse-dot bg-gpt' : 'bg-muted-foreground'}`} />
           {onlineNode ? `${onlineNode.name} online` : nodes.length ? 'PC offline' : 'PC unbound'}
         </div>
       </div>
+
+      {pairing && pcMode && (
+        <div className="mt-2 rounded-lg border border-human/25 bg-human/8 p-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Pair code</span>
+            <code className="rounded-md bg-background/70 px-2 py-1 font-mono text-[14px] font-semibold tracking-[0.12em] text-human">{pairing.code}</code>
+            <button onClick={copySetupCommand} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-[11px] font-medium text-foreground"><Copy className="size-3.5" /> Copy PC setup</button>
+          </div>
+          <div className="mt-1.5 text-[10.5px] leading-relaxed text-muted-foreground">On the Windows PC, open PowerShell and paste the copied command. It will ask you to choose the exact D:/F: folder and permissions. Code expires at {shortTime(pairing.expires_at)}.</div>
+        </div>
+      )}
 
       {onlineNode && (
         <div className="mt-2 grid gap-2 sm:grid-cols-3">

@@ -1,5 +1,17 @@
 # Bridge Local Executor (PC)
 
+## Recommended: pair from the Bridge web app
+
+1. Open the normal Bridge web URL on PC or tablet.
+2. Select **PC** for the project.
+3. In **System Details → Local Executor**, press **Connect PC**.
+4. Copy the generated PowerShell setup command and run it on the Windows PC.
+5. Choose the exact project root folder (for example `D:\\AIProjects\\MyApp` or `F:\\Work\\ProjectA`).
+6. Choose whether that PC worker may write files and/or run allowlisted commands.
+
+The pairing code is single-use and expires. The resulting PC credential is scoped to one Bridge workspace/project and the worker itself is locked to the chosen local root folder. The normal UI remains the single Bridge web app; the local process is only the background executor.
+
+
 Bridge Local Executor turns a Windows/macOS/Linux computer into a project-scoped worker for Bridge.
 
 The worker makes **outbound HTTPS polling requests** to Bridge. You do not need to expose a port, configure router port-forwarding, or run a public tunnel. The local web app only binds to `127.0.0.1` by default.

@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { isSameOriginBrowserRequest, verifyToken } from './auth.js';
+import { issueExecutorPairing, redeemExecutorPairing, verifyPairedExecutorToken, type PairedExecutorAuth } from './executorPairing.js';
 import {
   cancelExecutorJob,
   claimExecutorJob,
@@ -13,6 +14,10 @@ import {
 
 export const executorRouter = Router();
 
+type ExecutorRequestAuth =
+  | { kind: 'browser' | 'main' | 'legacy' | 'open' }
+  | { kind: 'paired'; pairing: PairedExecutorAuth };
+
 function readPresentedExecutorToken(req: Request) {
   const explicit = req.headers['x-bridge-executor-token'];
   if (typeof explicit === 'string' && explicit.trim()) return explicit.trim();
@@ -22,35 +27,100 @@ function readPresentedExecutorToken(req: Request) {
   return '';
 }
 
-function requireExecutorAccess(req: Request, res: Response, next: NextFunction) {
-  const executorToken = String(process.env.BRIDGE_EXECUTOR_TOKEN || '').trim();
+function requestAuth(req: Request): ExecutorRequestAuth | undefined {
+  return (req as any).executorAuth as ExecutorRequestAuth | undefined;
+}
+
+function requirePairingIssuer(req: Request, res: Response, next: NextFunction) {
   const mainToken = String(process.env.BRIDGE_MCP_TOKEN || '').trim();
   if (isSameOriginBrowserRequest(req) || (mainToken && verifyToken(req))) {
     next();
     return;
   }
-  if (!executorToken && !mainToken) {
+  res.status(401).json({ ok: false, error: 'Pairing codes can only be created from the Bridge UI or an authenticated Bridge agent.' });
+}
+
+executorRouter.post('/pairing-codes', requirePairingIssuer, async (req: Request, res: Response) => {
+  try {
+    const pairing = await issueExecutorPairing({
+      workspace_id: req.body?.workspace_id,
+      project_id: req.body?.project_id,
+      ttl_ms: req.body?.ttl_ms,
+    });
+    res.status(201).json({ ok: true, ...pairing });
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+executorRouter.post('/pair', async (req: Request, res: Response) => {
+  try {
+    const paired = await redeemExecutorPairing({ code: req.body?.code, node_id: req.body?.node_id });
+    res.json({ ok: true, ...paired });
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+function requireExecutorAccess(req: Request, res: Response, next: NextFunction) {
+  const executorToken = String(process.env.BRIDGE_EXECUTOR_TOKEN || '').trim();
+  const mainToken = String(process.env.BRIDGE_MCP_TOKEN || '').trim();
+  if (isSameOriginBrowserRequest(req)) {
+    (req as any).executorAuth = { kind: 'browser' } satisfies ExecutorRequestAuth;
     next();
     return;
   }
-  if (executorToken && readPresentedExecutorToken(req) === executorToken) {
+  if (mainToken && verifyToken(req)) {
+    (req as any).executorAuth = { kind: 'main' } satisfies ExecutorRequestAuth;
+    next();
+    return;
+  }
+  const presented = readPresentedExecutorToken(req);
+  if (executorToken && presented === executorToken) {
+    (req as any).executorAuth = { kind: 'legacy' } satisfies ExecutorRequestAuth;
+    next();
+    return;
+  }
+  const pairing = presented ? verifyPairedExecutorToken(presented) : null;
+  if (pairing) {
+    (req as any).executorAuth = { kind: 'paired', pairing } satisfies ExecutorRequestAuth;
+    next();
+    return;
+  }
+  if (!executorToken && !mainToken) {
+    (req as any).executorAuth = { kind: 'open' } satisfies ExecutorRequestAuth;
     next();
     return;
   }
   res.status(401).json({
     ok: false,
-    error: 'Unauthorized executor client. Provide x-bridge-executor-token or a valid Bridge token.',
+    error: 'Unauthorized executor client. Pair this PC from Bridge or provide a valid executor token.',
   });
+}
+
+function enforcePairedScope(req: Request, input: { node_id?: unknown; workspace_id?: unknown; project_id?: unknown }) {
+  const auth = requestAuth(req);
+  if (!auth || auth.kind !== 'paired') return;
+  if (input.node_id != null && String(input.node_id) !== auth.pairing.node_id) throw new Error('Paired token belongs to another PC node');
+  if (input.workspace_id != null && String(input.workspace_id) !== auth.pairing.workspace_id) throw new Error('Paired token belongs to another workspace');
+  if (input.project_id != null && String(input.project_id) !== auth.pairing.project_id) throw new Error('Paired token belongs to another project');
+}
+
+function requireController(req: Request) {
+  const auth = requestAuth(req);
+  if (auth?.kind === 'paired') throw new Error('PC worker tokens cannot queue or cancel jobs');
 }
 
 executorRouter.use(requireExecutorAccess);
 
 executorRouter.get('/snapshot', async (req: Request, res: Response) => {
   try {
+    const auth = requestAuth(req);
+    const paired = auth?.kind === 'paired' ? auth.pairing : null;
     const snapshot = await getExecutorSnapshot({
-      workspace_id: req.query.workspace_id ? String(req.query.workspace_id) : undefined,
-      project_id: req.query.project_id ? String(req.query.project_id) : undefined,
-      node_id: req.query.node_id ? String(req.query.node_id) : undefined,
+      workspace_id: paired?.workspace_id || (req.query.workspace_id ? String(req.query.workspace_id) : undefined),
+      project_id: paired?.project_id || (req.query.project_id ? String(req.query.project_id) : undefined),
+      node_id: paired?.node_id || (req.query.node_id ? String(req.query.node_id) : undefined),
       limit: req.query.limit ? Number(req.query.limit) : undefined,
     });
     res.json({ ok: true, ...snapshot });
@@ -66,6 +136,7 @@ executorRouter.get('/jobs/:job_id', async (req: Request, res: Response) => {
       res.status(404).json({ ok: false, error: `Executor job ${req.params.job_id} not found` });
       return;
     }
+    enforcePairedScope(req, { node_id: job.node_id || undefined, workspace_id: job.workspace_id, project_id: job.project_id });
     res.json({ ok: true, job });
   } catch (err: any) {
     res.status(400).json({ ok: false, error: err.message });
@@ -74,6 +145,7 @@ executorRouter.get('/jobs/:job_id', async (req: Request, res: Response) => {
 
 executorRouter.post('/nodes/register', async (req: Request, res: Response) => {
   try {
+    enforcePairedScope(req, { node_id: req.body?.node_id, workspace_id: req.body?.workspace_id, project_id: req.body?.project_id });
     const node = await registerExecutorNode({
       node_id: req.body?.node_id,
       name: req.body?.name,
@@ -91,6 +163,7 @@ executorRouter.post('/nodes/register', async (req: Request, res: Response) => {
 
 executorRouter.post('/nodes/:node_id/heartbeat', async (req: Request, res: Response) => {
   try {
+    enforcePairedScope(req, { node_id: req.params.node_id });
     const node = await heartbeatExecutorNode(req.params.node_id);
     res.json({ ok: true, node });
   } catch (err: any) {
@@ -100,6 +173,7 @@ executorRouter.post('/nodes/:node_id/heartbeat', async (req: Request, res: Respo
 
 executorRouter.post('/jobs', async (req: Request, res: Response) => {
   try {
+    requireController(req);
     const job = await createExecutorJob({
       workspace_id: req.body?.workspace_id,
       project_id: req.body?.project_id,
@@ -117,6 +191,7 @@ executorRouter.post('/jobs', async (req: Request, res: Response) => {
 
 executorRouter.post('/jobs/claim', async (req: Request, res: Response) => {
   try {
+    enforcePairedScope(req, { node_id: req.body?.node_id, workspace_id: req.body?.workspace_id, project_id: req.body?.project_id });
     const job = await claimExecutorJob({
       node_id: req.body?.node_id,
       workspace_id: req.body?.workspace_id,
@@ -130,6 +205,7 @@ executorRouter.post('/jobs/claim', async (req: Request, res: Response) => {
 
 executorRouter.post('/jobs/:job_id/result', async (req: Request, res: Response) => {
   try {
+    enforcePairedScope(req, { node_id: req.body?.node_id });
     const job = await completeExecutorJob({
       node_id: req.body?.node_id,
       job_id: req.params.job_id,
@@ -137,6 +213,7 @@ executorRouter.post('/jobs/:job_id/result', async (req: Request, res: Response) 
       result: req.body?.result,
       error: req.body?.error,
     });
+    enforcePairedScope(req, { node_id: job.node_id || undefined, workspace_id: job.workspace_id, project_id: job.project_id });
     res.json({ ok: true, job });
   } catch (err: any) {
     res.status(400).json({ ok: false, error: err.message });
@@ -145,6 +222,7 @@ executorRouter.post('/jobs/:job_id/result', async (req: Request, res: Response) 
 
 executorRouter.post('/jobs/:job_id/cancel', async (req: Request, res: Response) => {
   try {
+    requireController(req);
     const job = await cancelExecutorJob(req.params.job_id);
     res.json({ ok: true, job });
   } catch (err: any) {
