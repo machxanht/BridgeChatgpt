@@ -12,6 +12,7 @@ export interface WorkspaceRecord {
   project_name: string;
   repository_url: string;
   branch: string;
+  local_path: string;
   execution_target: WorkspaceExecutionTarget;
   created_at: string;
   updated_at: string;
@@ -104,14 +105,27 @@ function normalizeExecutionTarget(value: unknown, fallback: WorkspaceExecutionTa
   return fallback;
 }
 
+export function projectLocalPath(projectName: unknown, fallback = 'Project') {
+  const clean = String(projectName || fallback)
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/[. ]+$/g, '')
+    .slice(0, 100)
+    .trim();
+  return `Apps/${clean || fallback}`;
+}
+
 function defaultWorkspace(project: ProjectConfig): WorkspaceRecord {
   const now = new Date().toISOString();
+  const projectName = project.project_name || 'BridgeChatgpt';
   return {
     workspace_id: `workspace-${project.id || 'default'}`,
     project_id: project.id || 'proj-default',
-    project_name: project.project_name || 'BridgeChatgpt',
+    project_name: projectName,
     repository_url: project.repository_url || '',
     branch: project.default_branch || 'main',
+    local_path: projectLocalPath(projectName, 'BridgeChatgpt'),
     execution_target: 'studio',
     created_at: now,
     updated_at: now,
@@ -132,6 +146,7 @@ export async function getWorkspaceRegistry(project: ProjectConfig): Promise<Work
 
     const workspaces = store.workspaces.map(workspace => ({
       ...workspace,
+      local_path: workspace.local_path || projectLocalPath(workspace.project_name, workspace.project_id),
       execution_target: normalizeExecutionTarget(workspace.execution_target),
       chatgpt_instances: store.instances.filter(instance => instance.workspace_id === workspace.workspace_id && instance.provider === 'chatgpt'),
       studio_instances: store.instances.filter(instance => instance.workspace_id === workspace.workspace_id && instance.provider === 'google-ai-studio'),
@@ -153,16 +168,19 @@ export async function upsertWorkspace(project: ProjectConfig, input: Partial<Wor
     const projectId = input.project_id ? requireId('project_id', input.project_id) : workspaceId.replace(/^workspace-/, 'project-');
     const now = new Date().toISOString();
     const existing = store.workspaces.find(item => item.workspace_id === workspaceId);
+    const projectName = cleanLabel(input.project_name, existing?.project_name || project.project_name || projectId);
     const next: WorkspaceRecord = {
       workspace_id: workspaceId,
       project_id: projectId,
-      project_name: cleanLabel(input.project_name, existing?.project_name || project.project_name || projectId),
+      project_name: projectName,
       repository_url: cleanLabel(input.repository_url, existing?.repository_url || project.repository_url),
       branch: cleanLabel(input.branch, existing?.branch || project.default_branch || 'main'),
+      local_path: cleanLabel(input.local_path, existing?.local_path || projectLocalPath(projectName, projectId)),
       execution_target: normalizeExecutionTarget(input.execution_target, normalizeExecutionTarget(existing?.execution_target)),
       created_at: existing?.created_at || now,
       updated_at: now,
     };
+    if (!next.local_path.startsWith('Apps/')) throw new Error('local_path must stay under Apps/');
     if (existing) Object.assign(existing, next);
     else store.workspaces.push(next);
     writeStore(store);

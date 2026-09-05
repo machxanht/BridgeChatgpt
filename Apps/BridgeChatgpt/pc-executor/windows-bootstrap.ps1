@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$BridgeUrl = if ($env:BRIDGE_URL) { $env:BRIDGE_URL.TrimEnd('/') } else { 'https://bridge-production-f27a.up.railway.app' }
+$BridgeUrl = if ($env:BRIDGE_URL) { $env:BRIDGE_URL.TrimEnd('/') } else { 'https://bridgechatgpt-production.up.railway.app' }
 $PairCode = if ($env:BRIDGE_PAIR_CODE) { $env:BRIDGE_PAIR_CODE.Trim() } else { Read-Host 'Bridge pairing code' }
 
 Write-Host ''

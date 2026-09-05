@@ -38,6 +38,7 @@ export interface ResourceRegistrySnapshot {
     project_name: string;
     repository_url: string;
     branch: string;
+    local_path: string;
     execution_target?: 'pc' | 'studio';
     studio_targets: ResourceTargetView[];
     chatgpt_targets: ResourceTargetView[];
@@ -239,6 +240,7 @@ export async function getResourceRegistry(project: ProjectConfig): Promise<Resou
       project_name: workspace.project_name,
       repository_url: workspace.repository_url,
       branch: workspace.branch,
+      local_path: workspace.local_path,
       execution_target: workspace.execution_target === 'pc' ? ('pc' as const) : ('studio' as const),
       studio_targets: targets.filter(target => target.provider === 'google-ai-studio'),
       chatgpt_targets: targets.filter(target => target.provider === 'chatgpt'),

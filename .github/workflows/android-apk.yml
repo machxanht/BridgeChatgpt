@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'android/bridge-wake-app/**'
+      - 'Apps/BridgeChatgpt/android-wake/**'
       - '.github/workflows/android-apk.yml'
   workflow_dispatch:
 
@@ -35,10 +35,10 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build debug APK
-        run: gradle -p android/bridge-wake-app :app:assembleDebug --stacktrace
+        run: gradle -p Apps/BridgeChatgpt/android-wake :app:assembleDebug --stacktrace
 
       - name: Rename APK
-        run: cp android/bridge-wake-app/app/build/outputs/apk/debug/app-debug.apk bridge.apk
+        run: cp Apps/BridgeChatgpt/android-wake/app/build/outputs/apk/debug/app-debug.apk bridge.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

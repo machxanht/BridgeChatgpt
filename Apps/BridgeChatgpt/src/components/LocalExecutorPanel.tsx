@@ -133,7 +133,7 @@ export const LocalExecutorPanel: React.FC = () => {
   const copySetupCommand = async () => {
     if (!pairing) return;
     const origin = window.location.origin.replace(/'/g, "''");
-    const command = `$env:BRIDGE_URL='${origin}'; $env:BRIDGE_PAIR_CODE='${pairing.code}'; irm 'https://raw.githubusercontent.com/machxanht/BridgeChatgpt/main/pc-executor/windows-bootstrap.ps1' | iex`;
+    const command = `$env:BRIDGE_URL='${origin}'; $env:BRIDGE_PAIR_CODE='${pairing.code}'; irm 'https://raw.githubusercontent.com/machxanht/BridgeChatgpt/main/Apps/BridgeChatgpt/pc-executor/windows-bootstrap.ps1' | iex`;
     try {
       await navigator.clipboard.writeText(command);
     } catch {
@@ -144,7 +144,7 @@ export const LocalExecutorPanel: React.FC = () => {
   const queue = async (
     action: 'git.status' | 'git.diff' | 'npm.test' | 'npm.build' | 'command.run',
     payload: Record<string, unknown> = {},
-    busyKey = action,
+    busyKey: string = action,
   ) => {
     if (!workspace) return;
     setBusy(busyKey);

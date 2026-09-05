@@ -7,6 +7,7 @@ coverage/
 .env*
 !.env.example
 
+# Bridge persisted runtime state
 data/*.sqlite
 data/batches.json
 data/batches.json.*.tmp
@@ -16,7 +17,15 @@ data/resource-registry.json
 data/resource-registry.json.*.tmp
 data/executors.json
 data/executors.json.*.tmp
-bridge-bus/outbox/
-
 data/executor-auth.json
 data/executor-auth.json.*.tmp
+runtime/bridge-bus/outbox/
+
+# Local browser profile used by Bridge Wake on the PC
+.bridge-browser-profile/
+
+# Android local/build caches
+Apps/BridgeChatgpt/android-wake/.gradle/
+Apps/BridgeChatgpt/android-wake/app/build/
+Apps/BridgeChatgpt/android-wake/build/
+Apps/BridgeChatgpt/android-wake/bridge-dev.keystore
