@@ -11,6 +11,7 @@ import { MissionControlView } from './MissionControlView.js';
 import { ProjectRouterV2 } from './ProjectRouterV2.js';
 import { BridgeChatPanel } from './BridgeChatPanel.js';
 import { BridgeMiniStatus } from './BridgeMiniStatus.js';
+import { LocalExecutorPanel } from './LocalExecutorPanel.js';
 
 interface WorkspaceViewProps {
   state: WorkspaceState;
@@ -53,10 +54,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
           <summary className="flex h-10 cursor-pointer list-none items-center gap-2 px-3 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground sm:px-4">
             <Settings2 className="size-4" />
             System Details
-            <span className="ml-1 hidden text-[10px] text-muted-foreground/70 sm:inline">tasks · agents · logs · diagnostics</span>
+            <span className="ml-1 hidden text-[10px] text-muted-foreground/70 sm:inline">executor · tasks · agents · logs · diagnostics</span>
             <ChevronUp className="ml-auto size-4 transition-transform duration-200 group-open:rotate-180" />
           </summary>
-          <div className="thin-scrollbar max-h-[46vh] overflow-y-auto border-t border-border p-3 sm:p-4">
+          <div className="thin-scrollbar max-h-[58vh] overflow-y-auto border-t border-border p-3 sm:p-4">
+            <LocalExecutorPanel />
             <MissionControlView
               state={state}
               missionControl={state.mission_control}
