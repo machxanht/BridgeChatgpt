@@ -1,0 +1,1 @@
+Force Railway source rebuild from current GitHub main HEAD after UI consolidation.
