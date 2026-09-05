@@ -32,6 +32,7 @@ try {
   const initial = await getWorkspaceRegistry(project);
   assert.strictEqual(initial.workspaces.length, 1);
   assert.strictEqual(initial.workspaces[0].project_id, 'proj-default');
+  assert.strictEqual(initial.workspaces[0].execution_target, 'studio');
 
   const legacySelection = resolveStudioSessionSelection(initial, {});
   assert.strictEqual(legacySelection.mode, 'legacy');
@@ -42,8 +43,10 @@ try {
     project_name: 'Khmer Learning App',
     repository_url: 'https://github.com/example/khmer-app',
     branch: 'main',
+    execution_target: 'pc',
   });
   assert.strictEqual(second.workspace_id, 'workspace-khmer');
+  assert.strictEqual(second.execution_target, 'pc');
 
   const chatgpt = await registerAgentInstance(project, {
     agent_instance_id: 'chatgpt-a-01',

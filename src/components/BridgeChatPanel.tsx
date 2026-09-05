@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Clock3,
   Loader2,
+  MonitorCog,
   Sparkles,
   TriangleAlert,
   User,
@@ -35,6 +36,7 @@ interface ResourceWorkspace {
   project_name: string;
   repository_url: string;
   branch: string;
+  execution_target?: 'pc' | 'studio';
   studio_targets: ResourceTarget[];
   chatgpt_targets: ResourceTarget[];
 }
@@ -221,11 +223,12 @@ export const BridgeChatPanel: React.FC = () => {
     if (!workspace) return null;
     if (targetId !== 'auto') return targets.find(target => target.target_id === targetId) || null;
     const newestChat = [...workspace.chatgpt_targets].reverse()[0];
-    return newestChat || workspace.studio_targets[0] || null;
+    if ((workspace.execution_target || 'studio') === 'pc') return newestChat || null;
+    return workspace.studio_targets[0] || newestChat || null;
   };
 
   const targetLabel = () => {
-    if (targetId === 'auto') return 'Auto';
+    if (targetId === 'auto') return `Auto · ${(workspace?.execution_target || 'studio') === 'pc' ? 'PC' : 'Studio'}`;
     const target = targets.find(item => item.target_id === targetId);
     return target ? displayTarget(target) : 'Auto';
   };
@@ -235,7 +238,9 @@ export const BridgeChatPanel: React.FC = () => {
     if (!content || !workspace || busy) return;
     const target = chooseTarget();
     if (!target) {
-      setFeedback('Project này chưa có ChatGPT/Studio session để giao việc.');
+      setFeedback((workspace.execution_target || 'studio') === 'pc'
+        ? 'PC mode cần bind ChatGPT conversation để xử lý lệnh tự nhiên. Local Executor vẫn dùng được trong System Details.'
+        : 'Project này chưa có AI Studio/ChatGPT session để giao việc.');
       return;
     }
 
@@ -329,7 +334,7 @@ export const BridgeChatPanel: React.FC = () => {
           {pickerOpen && (
             <div className="mb-2 flex animate-rise flex-wrap gap-1.5">
               <button onClick={() => { setTargetId('auto'); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] ${targetId === 'auto' ? 'border-gpt/40 bg-gpt/10 text-gpt' : 'border-border bg-surface text-muted-foreground'}`}>
-                <Sparkles className="size-3.5" /> Auto
+                {(workspace?.execution_target || 'studio') === 'pc' ? <MonitorCog className="size-3.5" /> : <Sparkles className="size-3.5" />} Auto · {(workspace?.execution_target || 'studio') === 'pc' ? 'PC' : 'Studio'}
               </button>
               {targets.map(target => (
                 <button key={target.target_id} onClick={() => { setTargetId(target.target_id); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] ${targetId === target.target_id ? 'border-gpt/40 bg-gpt/10 text-gpt' : 'border-border bg-surface text-muted-foreground hover:text-foreground'}`}>
@@ -342,7 +347,7 @@ export const BridgeChatPanel: React.FC = () => {
 
           <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface p-2 shadow-panel focus-within:ring-2 focus-within:ring-ring/60">
             <button onClick={() => setPickerOpen(value => !value)} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-surface-2 px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground">
-              {targetId === 'auto' ? <Sparkles className="size-3.5" /> : chooseTarget()?.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
+              {targetId === 'auto' ? ((workspace?.execution_target || 'studio') === 'pc' ? <MonitorCog className="size-3.5" /> : <Sparkles className="size-3.5" />) : chooseTarget()?.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
               <span className="hidden max-w-36 truncate sm:inline">{targetLabel()}</span>
               <ChevronDown className={`size-3 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
             </button>

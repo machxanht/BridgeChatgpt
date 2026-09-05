@@ -4,6 +4,7 @@ import type { ProjectConfig } from '../src/types.js';
 
 export type WorkspaceProvider = 'chatgpt' | 'google-ai-studio';
 export type WorkspaceInstanceStatus = 'active' | 'idle' | 'offline';
+export type WorkspaceExecutionTarget = 'pc' | 'studio';
 
 export interface WorkspaceRecord {
   workspace_id: string;
@@ -11,6 +12,7 @@ export interface WorkspaceRecord {
   project_name: string;
   repository_url: string;
   branch: string;
+  execution_target: WorkspaceExecutionTarget;
   created_at: string;
   updated_at: string;
 }
@@ -97,6 +99,11 @@ function requireId(name: string, value: unknown) {
   return id;
 }
 
+function normalizeExecutionTarget(value: unknown, fallback: WorkspaceExecutionTarget = 'studio'): WorkspaceExecutionTarget {
+  if (value === 'pc' || value === 'studio') return value;
+  return fallback;
+}
+
 function defaultWorkspace(project: ProjectConfig): WorkspaceRecord {
   const now = new Date().toISOString();
   return {
@@ -105,6 +112,7 @@ function defaultWorkspace(project: ProjectConfig): WorkspaceRecord {
     project_name: project.project_name || 'BridgeChatgpt',
     repository_url: project.repository_url || '',
     branch: project.default_branch || 'main',
+    execution_target: 'studio',
     created_at: now,
     updated_at: now,
   };
@@ -124,6 +132,7 @@ export async function getWorkspaceRegistry(project: ProjectConfig): Promise<Work
 
     const workspaces = store.workspaces.map(workspace => ({
       ...workspace,
+      execution_target: normalizeExecutionTarget(workspace.execution_target),
       chatgpt_instances: store.instances.filter(instance => instance.workspace_id === workspace.workspace_id && instance.provider === 'chatgpt'),
       studio_instances: store.instances.filter(instance => instance.workspace_id === workspace.workspace_id && instance.provider === 'google-ai-studio'),
     }));
@@ -150,6 +159,7 @@ export async function upsertWorkspace(project: ProjectConfig, input: Partial<Wor
       project_name: cleanLabel(input.project_name, existing?.project_name || project.project_name || projectId),
       repository_url: cleanLabel(input.repository_url, existing?.repository_url || project.repository_url),
       branch: cleanLabel(input.branch, existing?.branch || project.default_branch || 'main'),
+      execution_target: normalizeExecutionTarget(input.execution_target, normalizeExecutionTarget(existing?.execution_target)),
       created_at: existing?.created_at || now,
       updated_at: now,
     };

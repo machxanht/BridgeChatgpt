@@ -32,6 +32,7 @@ interface ResourceWorkspace {
   workspace_id: string;
   project_id: string;
   project_name: string;
+  execution_target?: 'pc' | 'studio';
 }
 
 const ACTIVE_WORKSPACE_KEY = 'bridge.resource.activeWorkspace';
@@ -105,6 +106,7 @@ export const LocalExecutorPanel: React.FC = () => {
   }, [load]);
 
   const onlineNode = useMemo(() => nodes.find(node => node.connection_status === 'online') || null, [nodes]);
+  const pcMode = (workspace?.execution_target || 'studio') === 'pc';
 
   const queue = async (action: 'git.status' | 'git.diff' | 'npm.test' | 'npm.build') => {
     if (!workspace) return;
@@ -139,7 +141,7 @@ export const LocalExecutorPanel: React.FC = () => {
         <span className="grid size-8 place-items-center rounded-lg bg-surface-2 text-human"><MonitorCog className="size-4" /></span>
         <div className="min-w-0">
           <div className="text-[13px] font-semibold">Local Executor</div>
-          <div className="text-[10.5px] text-muted-foreground">PC worker for {workspace?.project_name || 'active project'}</div>
+          <div className="text-[10.5px] text-muted-foreground">PC worker for {workspace?.project_name || 'active project'} · {pcMode ? 'selected' : 'standby'}</div>
         </div>
         <div className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border bg-background/60 px-2.5 py-1 text-[10.5px] text-muted-foreground">
           <span className={`size-1.5 rounded-full ${onlineNode ? 'animate-pulse-dot bg-gpt' : 'bg-muted-foreground'}`} />
@@ -166,10 +168,10 @@ export const LocalExecutorPanel: React.FC = () => {
           return (
             <button
               key={action}
-              disabled={!onlineNode || !supported || Boolean(busy)}
+              disabled={!pcMode || !onlineNode || !supported || Boolean(busy)}
               onClick={() => queue(action)}
               className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface-2/50 px-2.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
-              title={!onlineNode ? 'Connect a PC worker first' : !supported ? 'Enable this capability on the PC web app' : `Queue ${label}`}
+              title={!pcMode ? 'Switch this project to PC execution first' : !onlineNode ? 'Connect a PC worker first' : !supported ? 'Enable this capability on the PC worker' : `Queue ${label}`}
             >
               {busy === action ? <RefreshCw className="size-3 animate-spin" /> : <Play className="size-3" />}
               {label}

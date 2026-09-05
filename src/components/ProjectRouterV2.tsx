@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Boxes,
   Check,
   ExternalLink,
   GitBranch,
   Github,
   Layers,
+  MonitorCog,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -32,6 +34,7 @@ interface ResourceWorkspace {
   project_name: string;
   repository_url: string;
   branch: string;
+  execution_target?: 'pc' | 'studio';
   studio_targets: ResourceTarget[];
   chatgpt_targets: ResourceTarget[];
 }
@@ -134,6 +137,7 @@ export const ProjectRouterV2: React.FC = () => {
   const [newRepo, setNewRepo] = useState('');
   const [newStudio, setNewStudio] = useState('');
   const [newChatgpt, setNewChatgpt] = useState('');
+  const [newExecutionTarget, setNewExecutionTarget] = useState<'pc' | 'studio'>('pc');
 
   const [draftName, setDraftName] = useState('');
   const [draftRepo, setDraftRepo] = useState('');
@@ -218,14 +222,14 @@ export const ProjectRouterV2: React.FC = () => {
       const response = await fetch('/api/resource-registry/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repository_url: newRepo.trim(), project_name: newName.trim() || undefined }),
+        body: JSON.stringify({ repository_url: newRepo.trim(), project_name: newName.trim() || undefined, execution_target: newExecutionTarget }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'Không tạo được project');
       const workspace = data.workspace as ResourceWorkspace;
       for (const url of splitUrls(newStudio)) await upsertTarget(workspace.workspace_id, url, 'AI Studio Main');
       for (const url of splitUrls(newChatgpt)) await upsertTarget(workspace.workspace_id, url, 'ChatGPT Main');
-      setNewName(''); setNewRepo(''); setNewStudio(''); setNewChatgpt('');
+      setNewName(''); setNewRepo(''); setNewStudio(''); setNewChatgpt(''); setNewExecutionTarget('pc');
       setShowCreate(false);
       selectWorkspace(workspace.workspace_id, workspace.project_id);
       await load();
@@ -251,6 +255,7 @@ export const ProjectRouterV2: React.FC = () => {
           project_name: draftName.trim(),
           repository_url: draftRepo.trim(),
           branch: draftBranch.trim() || 'main',
+          execution_target: current.execution_target === 'pc' ? 'pc' : 'studio',
         }),
       });
       const projectData = await projectResponse.json().catch(() => ({}));
@@ -274,6 +279,34 @@ export const ProjectRouterV2: React.FC = () => {
       setFeedback('✓ Đã lưu project + session');
     } catch (error: any) {
       setFeedback(`Lỗi: ${error?.message || 'không lưu được thay đổi'}`);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const setExecutionTarget = async (executionTarget: 'pc' | 'studio') => {
+    if (!current || busy || (current.execution_target || 'studio') === executionTarget) return;
+    setBusy('execution-target');
+    setFeedback('');
+    try {
+      const response = await fetch('/api/resource-registry/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspace_id: current.workspace_id,
+          project_id: current.project_id,
+          project_name: current.project_name,
+          repository_url: current.repository_url,
+          branch: current.branch || 'main',
+          execution_target: executionTarget,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Không đổi được execution target');
+      await load();
+      setFeedback(`✓ Execution target → ${executionTarget === 'pc' ? 'PC Local' : 'AI Studio'}`);
+    } catch (error: any) {
+      setFeedback(`Lỗi: ${error?.message || 'không đổi được execution target'}`);
     } finally {
       setBusy('');
     }
@@ -328,6 +361,11 @@ export const ProjectRouterV2: React.FC = () => {
             <Field label="AI Studio URL" value={newStudio} onChange={setNewStudio} />
             <Field label="ChatGPT conversation URL" value={newChatgpt} onChange={setNewChatgpt} />
           </div>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Execution</span>
+            <button onClick={() => setNewExecutionTarget('pc')} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] ${newExecutionTarget === 'pc' ? 'border-human/40 bg-human/10 text-human' : 'border-border text-muted-foreground'}`}><MonitorCog className="size-3.5" /> PC Local</button>
+            <button onClick={() => setNewExecutionTarget('studio')} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] ${newExecutionTarget === 'studio' ? 'border-studio/40 bg-studio/10 text-studio' : 'border-border text-muted-foreground'}`}><Boxes className="size-3.5" /> AI Studio</button>
+          </div>
           <div className="mt-3 flex justify-end gap-2">
             <button onClick={() => setShowCreate(false)} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground">
               <X className="size-3.5" /> Cancel
@@ -352,12 +390,21 @@ export const ProjectRouterV2: React.FC = () => {
                     <span className="shrink-0">{current.branch || 'main'}</span>
                     <span className="truncate">· {shortRepo(current.repository_url)}</span>
                   </div>
+                  <div className="mt-1 flex items-center gap-1">
+                    <button disabled={busy === 'execution-target'} onClick={() => setExecutionTarget('pc')} className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[9.5px] font-medium transition-colors ${(current.execution_target || 'studio') === 'pc' ? 'border-human/40 bg-human/10 text-human' : 'border-border text-muted-foreground hover:text-foreground'}`}><MonitorCog className="size-3" /> PC</button>
+                    <button disabled={busy === 'execution-target'} onClick={() => setExecutionTarget('studio')} className={`inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[9.5px] font-medium transition-colors ${(current.execution_target || 'studio') === 'studio' ? 'border-studio/40 bg-studio/10 text-studio' : 'border-border text-muted-foreground hover:text-foreground'}`}><Boxes className="size-3" /> Studio</button>
+                  </div>
                 </div>
               </div>
 
               <div className="col-span-2 grid gap-2 sm:grid-cols-2 lg:col-span-2 lg:contents">
-                {current.studio_targets[0] ? <SessionChip target={current.studio_targets[0]} tone="studio" /> : <Warn>Bind AI Studio workspace</Warn>}
-                {current.chatgpt_targets[0] ? <SessionChip target={current.chatgpt_targets[0]} tone="gpt" /> : <Warn>Bind ChatGPT conversation</Warn>}
+                {(current.execution_target || 'studio') === 'pc' ? (
+                  <div className="flex min-w-0 items-center gap-2 rounded-lg border border-human/25 bg-human/8 px-2.5 py-1.5">
+                    <MonitorCog className="size-4 shrink-0 text-human" />
+                    <div className="min-w-0"><div className="truncate text-[12px] font-medium">PC Local Executor</div><div className="truncate text-[10px] text-muted-foreground">Studio optional · root chosen on PC</div></div>
+                  </div>
+                ) : current.studio_targets[0] ? <SessionChip target={current.studio_targets[0]} tone="studio" /> : <Warn>Bind AI Studio workspace</Warn>}
+                {current.chatgpt_targets[0] ? <SessionChip target={current.chatgpt_targets[0]} tone="gpt" /> : <Warn>{(current.execution_target || 'studio') === 'pc' ? 'Bind ChatGPT for natural-language PC tasks' : 'Bind ChatGPT conversation'}</Warn>}
               </div>
 
               <div className="flex items-center justify-end gap-1">

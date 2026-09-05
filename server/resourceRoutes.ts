@@ -79,6 +79,7 @@ resourceRegistryRouter.post('/projects', async (req: Request, res: Response) => 
       project_name: String(req.body?.project_name || '').trim() || deriveProjectName(repositoryUrl),
       repository_url: repositoryUrl,
       branch: String(req.body?.branch || '').trim() || 'main',
+      execution_target: req.body?.execution_target,
     });
     res.status(201).json({ ok: true, workspace });
   } catch (err: any) {
