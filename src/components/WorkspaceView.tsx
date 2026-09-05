@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronUp, Settings2 } from 'lucide-react';
+import { Settings2, X } from 'lucide-react';
 import type {
   AgentOperationalStatus,
   Finding,
@@ -43,6 +43,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onCancelTask,
   onOpenAdvancedTab,
 }) => {
+  const [systemOpen, setSystemOpen] = React.useState(false);
+
   if (state.mission_control) {
     return (
       <div className="flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-background">
@@ -50,29 +52,56 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         <BridgeMiniStatus state={state} />
         <BridgeChatPanel />
 
-        <details className="group shrink-0 border-t border-border bg-surface/50">
-          <summary className="flex h-11 cursor-pointer list-none items-center gap-2 px-3 text-[13.5px] font-medium text-muted-foreground transition-colors hover:text-foreground sm:px-4">
-            <Settings2 className="size-4.5" />
-            System Details
-            <span className="ml-1 hidden text-[10px] text-muted-foreground/70 sm:inline">executor · tasks · agents · logs · diagnostics</span>
-            <ChevronUp className="ml-auto size-4.5 transition-transform duration-200 group-open:rotate-180" />
-          </summary>
-          <div className="thin-scrollbar h-[78dvh] max-h-[78dvh] overflow-y-auto border-t border-border p-3 sm:h-[76dvh] sm:max-h-[76dvh] sm:p-4 lg:h-auto lg:max-h-[68vh]">
-            <LocalExecutorPanel />
-            <MissionControlView
-              state={state}
-              missionControl={state.mission_control}
-              onSendCommand={onSendCommand}
-              onPauseAll={onPauseAll}
-              onResumeAll={onResumeAll}
-              onStopAgent={onStopAgent}
-              onCancelTask={onCancelTask}
-              onTriggerAutoReviewCycle={onTriggerAutoReviewCycle}
-              isAutoReviewing={isAutoReviewing}
-              onOpenAdvancedTab={onOpenAdvancedTab}
-            />
+        <button
+          type="button"
+          onClick={() => setSystemOpen(true)}
+          className="flex h-12 shrink-0 items-center gap-2 border-t border-border bg-surface/60 px-4 text-[14px] font-semibold text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
+        >
+          <Settings2 className="size-4.5" />
+          <span>System Details</span>
+          <span className="ml-1 hidden text-[10px] font-normal text-muted-foreground/70 sm:inline">executor · tasks · agents · logs · diagnostics</span>
+          <span className="ml-auto rounded-full border border-border bg-background/60 px-2 py-1 text-[10px] font-medium text-muted-foreground">OPEN</span>
+        </button>
+
+        {systemOpen && (
+          <div className="fixed inset-0 z-50 flex h-dvh w-screen flex-col bg-background">
+            <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-4 shadow-panel sm:px-5">
+              <span className="grid size-9 place-items-center rounded-lg bg-surface-2 text-human">
+                <Settings2 className="size-4.5" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-[15px] font-semibold leading-tight text-foreground">System Details</div>
+                <div className="truncate text-[10.5px] text-muted-foreground">PC executor · jobs · logs · diagnostics</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSystemOpen(false)}
+                className="ml-auto grid size-10 place-items-center rounded-xl border border-border bg-background/60 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                aria-label="Close System Details"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto p-3 pb-8 sm:p-5 sm:pb-10">
+              <div className="mx-auto w-full max-w-6xl">
+                <LocalExecutorPanel />
+                <MissionControlView
+                  state={state}
+                  missionControl={state.mission_control}
+                  onSendCommand={onSendCommand}
+                  onPauseAll={onPauseAll}
+                  onResumeAll={onResumeAll}
+                  onStopAgent={onStopAgent}
+                  onCancelTask={onCancelTask}
+                  onTriggerAutoReviewCycle={onTriggerAutoReviewCycle}
+                  isAutoReviewing={isAutoReviewing}
+                  onOpenAdvancedTab={onOpenAdvancedTab}
+                />
+              </div>
+            </div>
           </div>
-        </details>
+        )}
       </div>
     );
   }
