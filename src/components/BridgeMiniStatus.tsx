@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Brain, Boxes } from 'lucide-react';
+import { Brain, Boxes, Terminal } from 'lucide-react';
 import type { Task, WorkspaceState } from '../types.js';
 
 interface ResourceTarget {
@@ -15,6 +15,13 @@ interface ResourceWorkspace {
   project_id: string;
   studio_targets: ResourceTarget[];
   chatgpt_targets: ResourceTarget[];
+}
+
+interface ExecutorNode {
+  node_id: string;
+  workspace_id: string;
+  project_id: string;
+  connection_status: 'online' | 'offline';
 }
 
 const ACTIVE_WORKSPACE_KEY = 'bridge.resource.activeWorkspace';
@@ -62,6 +69,7 @@ export const BridgeMiniStatus: React.FC<{ state: WorkspaceState }> = ({ state })
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(readActiveWorkspace);
   const [workspace, setWorkspace] = useState<ResourceWorkspace | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [executorNodes, setExecutorNodes] = useState<ExecutorNode[]>([]);
 
   useEffect(() => {
     const handle = (event: Event) => {
@@ -76,10 +84,7 @@ export const BridgeMiniStatus: React.FC<{ state: WorkspaceState }> = ({ state })
     let cancelled = false;
     const load = async () => {
       try {
-        const [registryResponse, taskResponse] = await Promise.all([
-          fetch('/api/resource-registry', { cache: 'no-store' }),
-          fetch('/api/tasks?limit=300', { cache: 'no-store' }),
-        ]);
+        const registryResponse = await fetch('/api/resource-registry', { cache: 'no-store' });
         if (cancelled || !registryResponse.ok) return;
         const registry = await registryResponse.json();
         const workspaces: ResourceWorkspace[] = registry.workspaces || [];
@@ -87,7 +92,20 @@ export const BridgeMiniStatus: React.FC<{ state: WorkspaceState }> = ({ state })
         const current = workspaces.find(item => item.workspace_id === wanted) || workspaces[0] || null;
         setWorkspace(current);
         if (current && current.workspace_id !== activeWorkspaceId) setActiveWorkspaceId(current.workspace_id);
+
+        const taskPromise = fetch('/api/tasks?limit=300', { cache: 'no-store' });
+        const executorPromise = current
+          ? fetch(`/api/executors/snapshot?workspace_id=${encodeURIComponent(current.workspace_id)}&project_id=${encodeURIComponent(current.project_id)}&limit=20`, { cache: 'no-store' })
+          : Promise.resolve(null);
+        const [taskResponse, executorResponse] = await Promise.all([taskPromise, executorPromise]);
+        if (cancelled) return;
         if (taskResponse.ok) setTasks(await taskResponse.json());
+        if (executorResponse?.ok) {
+          const executorSnapshot = await executorResponse.json();
+          setExecutorNodes(executorSnapshot.nodes || []);
+        } else if (current) {
+          setExecutorNodes([]);
+        }
       } catch {
         // Keep the previous project status while polling retries.
       }
@@ -116,6 +134,9 @@ export const BridgeMiniStatus: React.FC<{ state: WorkspaceState }> = ({ state })
   const chatgpt = workspace?.chatgpt_targets[0];
   const studio = workspace?.studio_targets[0];
   const progress = taskProgress(currentTask);
+  const executorState = executorNodes.some(node => node.connection_status === 'online')
+    ? 'online'
+    : executorNodes.length > 0 ? 'offline' : 'unbound';
 
   return (
     <div className="no-scrollbar flex shrink-0 items-center gap-3 overflow-x-auto border-y border-border bg-surface/40 px-3 py-1.5 text-[11.5px] sm:px-4">
@@ -128,6 +149,11 @@ export const BridgeMiniStatus: React.FC<{ state: WorkspaceState }> = ({ state })
         <Boxes className="size-3.5 text-studio" />
         <span className={`size-1.5 rounded-full ${studio?.connection_status === 'active' ? 'animate-pulse-dot bg-studio' : studio?.connection_status === 'offline' || !studio ? 'bg-muted-foreground' : 'bg-studio/70'}`} />
         Studio {targetStatus(studio)}
+      </span>
+      <span className="inline-flex shrink-0 items-center gap-1.5 text-muted-foreground" title="Bridge Local Executor PC node">
+        <Terminal className="size-3.5 text-human" />
+        <span className={`size-1.5 rounded-full ${executorState === 'online' ? 'animate-pulse-dot bg-gpt' : 'bg-muted-foreground'}`} />
+        PC {executorState}
       </span>
 
       {currentTask && (

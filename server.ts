@@ -17,6 +17,8 @@ import { startBatchOrchestrator } from './server/batchOrchestrator.js';
 import { projectBrainRouter } from './server/projectBrainRoutes.js';
 import { resourceRegistryRouter } from './server/resourceRoutes.js';
 import { androidWakeRouter } from './server/androidWake.js';
+import { executorRouter } from './server/executorRoutes.js';
+import { handleExecutorMcpRequest } from './server/executorMcp.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,12 +41,13 @@ async function startServer() {
   app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-bridge-token', 'x-mcp-token', 'x-agent-name'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-bridge-token', 'x-mcp-token', 'x-agent-name', 'x-bridge-executor-token'],
   }));
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
   app.all('/mcp', handleMcpRequest);
+  app.all('/mcp-executor', handleExecutorMcpRequest);
 
   const healthHandler = async (_req: express.Request, res: express.Response) => {
     try {
@@ -56,6 +59,8 @@ async function startServer() {
         database: 'connected (sql.js persisted to disk)',
         project: project.project_name,
         mcp: 'ready (Streamable HTTP)',
+        executor_mcp: 'ready (Streamable HTTP)',
+        local_executor: 'ready',
         studio_relay: 'ready',
         review_packets: 'ready',
         batch_orchestrator: 'ready',
@@ -73,6 +78,8 @@ async function startServer() {
         database: `error: ${err.message}`,
         project: 'unknown',
         mcp: 'degraded',
+        executor_mcp: 'degraded',
+        local_executor: 'degraded',
         studio_relay: 'degraded',
         review_packets: 'degraded',
         batch_orchestrator: 'degraded',
@@ -90,6 +97,10 @@ async function startServer() {
   // Android companion pairing + read-only wake queue. Pair tokens are scoped,
   // signed, and never expose the main Bridge MCP token to the APK.
   app.use('/api/android-wake', androidWakeRouter);
+
+  // Bridge Local Executor: project-scoped PC workers poll outbound for jobs.
+  // Same-origin dashboard requests are allowed; remote workers use BRIDGE_EXECUTOR_TOKEN.
+  app.use('/api/executors', executorRouter);
 
   // External Google AI Studio Build-mode relay. It never calls Gemini here;
   // it only exchanges task/state data with an authenticated Studio client.
@@ -132,6 +143,8 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Bridge Server] Running on http://0.0.0.0:${PORT}`);
     console.log(`[Bridge MCP] Streamable HTTP endpoint: http://0.0.0.0:${PORT}/mcp`);
+    console.log(`[Bridge Executor MCP] Streamable HTTP endpoint: http://0.0.0.0:${PORT}/mcp-executor`);
+    console.log('[Bridge Local Executor] REST endpoint: /api/executors');
     console.log(`[Bridge Studio Relay] REST endpoint: http://0.0.0.0:${PORT}/api/studio-relay`);
     console.log('[Bridge Android Wake] REST endpoint: /api/android-wake');
     console.log('[Bridge Resource Registry] REST endpoint: /api/resource-registry');

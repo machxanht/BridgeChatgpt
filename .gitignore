@@ -14,5 +14,6 @@ data/workspace-registry.json
 data/workspace-registry.json.*.tmp
 data/resource-registry.json
 data/resource-registry.json.*.tmp
+data/executors.json
+data/executors.json.*.tmp
 bridge-bus/outbox/
-android/bridge-wake-app/bridge-dev.keystore
