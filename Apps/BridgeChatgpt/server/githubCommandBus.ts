@@ -7,7 +7,7 @@ import { attachTaskBinding } from './taskBinding.js';
 import { createExecutorJob } from './executorStore.js';
 import type { ExecutorAction } from './executorStore.js';
 
-const BUS_DIR = path.resolve(process.cwd(), 'bridge-bus');
+const BUS_DIR = path.resolve(process.cwd(), process.env.GITHUB_COMMAND_BUS_DIR || 'runtime/bridge-bus');
 const INBOX_DIR = path.join(BUS_DIR, 'inbox');
 const OUTBOX_DIR = path.join(BUS_DIR, 'outbox');
 const POLL_MS = Math.max(3000, Number(process.env.GITHUB_COMMAND_BUS_POLL_MS || 5000));
@@ -186,18 +186,12 @@ export async function processGitHubCommandBusOnce() {
   } finally { running = false; }
 }
 
-/**
- * Poll the public GitHub inbox directly. This removes the requirement for AI Studio
- * to Pull before Bridge can see commands written by ChatGPT. Only remote files that
- * are not present in the checked-out inbox are fetched; checked-out commands continue
- * through the local path above. No GitHub credential is required for a public repo.
- */
 export async function processGitHubRemoteCommandBusOnce() {
   if (!enabled || !remoteEnabled || remoteRunning) return;
   remoteRunning = true;
   try {
     ensureDirs();
-    const api = `https://api.github.com/repos/${repository}/contents/bridge-bus/inbox?ref=${encodeURIComponent(branch)}`;
+    const api = `https://api.github.com/repos/${repository}/contents/runtime/bridge-bus/inbox?ref=${encodeURIComponent(branch)}`;
     const response = await fetch(api, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Bridge-GitHub-Command-Bus' } });
     if (!response.ok) throw new Error(`GitHub inbox HTTP ${response.status}: ${await response.text()}`);
     const items = await response.json() as GitHubContentItem[];
