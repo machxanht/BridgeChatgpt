@@ -1,0 +1,61 @@
+name: Apply execution target selector v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/execution-target-patch-v2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Reuse patch script with type fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('.github/workflows/execution-target-patch.yml').read_text()
+          start = src.index("          python3 - <<'PY'\n") + len("          python3 - <<'PY'\n")
+          end = src.index("          PY\n", start)
+          lines = src[start:end].splitlines()
+          code = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          code = code.replace(
+              "    execution_target: 'pc' | 'studio';\\n    studio_targets: ResourceTargetView[];",
+              "    execution_target?: 'pc' | 'studio';\\n    studio_targets: ResourceTargetView[];",
+          )
+          code = code.replace(
+              "      execution_target: workspace.execution_target === 'pc' ? 'pc' : 'studio',\\n      studio_targets:",
+              "      execution_target: workspace.execution_target === 'pc' ? ('pc' as const) : ('studio' as const),\\n      studio_targets:",
+          )
+          # Do not let the reused script delete only v1 before v2 can clean up both.
+          code = code.replace("Path('.github/workflows/execution-target-patch.yml').unlink()", "pass")
+          Path('/tmp/apply_execution_target.py').write_text(code)
+          PY
+          python3 /tmp/apply_execution_target.py
+          rm -f .github/workflows/execution-target-patch.yml .github/workflows/execution-target-patch-v2.yml
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify
+        run: |
+          npm run lint
+          npm test
+          npm run build
+      - name: Commit verified patch
+        shell: bash
+        run: |
+          git config user.name "machxanht"
+          git config user.email "machxanht@gmail.com"
+          git add -A
+          git commit -m "feat(router): choose PC or Studio execution per project"
+          git push origin HEAD:main
