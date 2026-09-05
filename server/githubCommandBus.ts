@@ -4,6 +4,8 @@ import { createTask, getTask, reviewTask, isCommandProcessed, recordCommandRecei
 import { attachExecutionPayload } from './executionPayload.js';
 import { createBatch, startBatch, type BatchLimits, type BatchTaskInput } from './batchOrchestrator.js';
 import { attachTaskBinding } from './taskBinding.js';
+import { createExecutorJob } from './executorStore.js';
+import type { ExecutorAction } from './executorStore.js';
 
 const BUS_DIR = path.resolve(process.cwd(), 'bridge-bus');
 const INBOX_DIR = path.join(BUS_DIR, 'inbox');
@@ -21,7 +23,7 @@ let remoteRunning = false;
 
 export interface BusCommand {
   id: string;
-  type: 'task_create' | 'task_review' | 'batch_create';
+  type: 'task_create' | 'task_review' | 'batch_create' | 'executor_job_create';
   created_by?: 'chatgpt' | 'human';
   title?: string;
   description?: string;
@@ -41,6 +43,9 @@ export interface BusCommand {
   batch_tasks?: BatchTaskInput[];
   batch_limits?: Partial<BatchLimits>;
   auto_start?: boolean;
+  node_id?: string;
+  executor_action?: ExecutorAction;
+  executor_payload?: Record<string, unknown>;
 }
 
 interface GitHubContentItem { name: string; path: string; type: string; download_url?: string | null; }
@@ -114,6 +119,21 @@ export async function execute(command: BusCommand) {
       type: command.type,
       batch: resultBatch,
     };
+  }
+  if (command.type === 'executor_job_create') {
+    if (!command.workspace_id || !command.project_id || !command.executor_action) {
+      throw new Error('executor_job_create requires workspace_id, project_id, and executor_action.');
+    }
+    const job = await createExecutorJob({
+      workspace_id: command.workspace_id,
+      project_id: command.project_id,
+      node_id: command.node_id,
+      task_id: command.task_id,
+      action: command.executor_action,
+      payload: command.executor_payload || {},
+      created_by: command.created_by || 'chatgpt',
+    });
+    return { ok: true, command_id: command.id, type: command.type, job };
   }
   throw new Error(`Unsupported command type: ${(command as any).type}`);
 }
