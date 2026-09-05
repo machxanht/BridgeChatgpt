@@ -9,7 +9,7 @@ import type {
 } from '../types.js';
 import { MissionControlView } from './MissionControlView.js';
 import { ProjectRouterV2 } from './ProjectRouterV2.js';
-import { BridgeChatPanel } from './BridgeChatPanel.js';
+import { BridgeChatPanelV2 } from './BridgeChatPanelV2.js';
 import { BridgeMiniStatus } from './BridgeMiniStatus.js';
 import { LocalExecutorPanel } from './LocalExecutorPanel.js';
 
@@ -183,7 +183,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         <BridgeOverviewBar />
         <ProjectRouterV2 />
         <BridgeMiniStatus state={state} />
-        <BridgeChatPanel />
+        <BridgeChatPanelV2 />
 
         <details className="group shrink-0 border-t border-border bg-surface/50">
           <summary className="flex h-10 cursor-pointer list-none items-center gap-2 px-3 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground sm:px-4">
