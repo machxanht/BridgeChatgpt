@@ -35,9 +35,8 @@ jobs:
       - name: Package Bridge Wake extension
         run: |
           set -euo pipefail
-          cd chrome-extension
-          zip -qr ../bridge-wake.zip bridge-wake
-          test -s ../bridge-wake.zip
+          zip -qr bridge-wake.zip Apps/BridgeChatgpt/browser-wake
+          test -s bridge-wake.zip
       - name: Upload Bridge Wake extension
         uses: actions/upload-artifact@v4
         with:
