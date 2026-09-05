@@ -7,7 +7,6 @@ import type {
   Task,
   WorkspaceState,
 } from '../types.js';
-import { MissionControlView } from './MissionControlView.js';
 import { ProjectRouterV2 } from './ProjectRouterV2.js';
 import { BridgeChatPanel } from './BridgeChatPanel.js';
 import { BridgeMiniStatus } from './BridgeMiniStatus.js';
@@ -32,17 +31,7 @@ interface WorkspaceViewProps {
   onOpenAdvancedTab: (tab: string) => void;
 }
 
-export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
-  state,
-  onSendCommand,
-  onTriggerAutoReviewCycle,
-  isAutoReviewing,
-  onPauseAll,
-  onResumeAll,
-  onStopAgent,
-  onCancelTask,
-  onOpenAdvancedTab,
-}) => {
+export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ state }) => {
   const [systemOpen, setSystemOpen] = React.useState(false);
 
   if (state.mission_control) {
@@ -59,7 +48,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
         >
           <Settings2 className="size-4.5" />
           <span>System Details</span>
-          <span className="ml-1 hidden text-[10px] font-normal text-muted-foreground/70 sm:inline">executor · tasks · agents · logs · diagnostics</span>
+          <span className="ml-1 hidden text-[10px] font-normal text-muted-foreground/70 sm:inline">executor · git · test/build · job history</span>
           <span className="ml-auto rounded-full border border-border bg-background/60 px-2 py-1 text-[10px] font-medium text-muted-foreground">OPEN</span>
         </button>
 
@@ -71,7 +60,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               </span>
               <div className="min-w-0">
                 <div className="text-[15px] font-semibold leading-tight text-foreground">System Details</div>
-                <div className="truncate text-[10.5px] text-muted-foreground">PC executor · jobs · logs · diagnostics</div>
+                <div className="truncate text-[10.5px] text-muted-foreground">PC executor · Git · test/build · recent jobs</div>
               </div>
               <button
                 type="button"
@@ -86,18 +75,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
             <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto p-3 pb-8 sm:p-5 sm:pb-10">
               <div className="mx-auto w-full max-w-6xl">
                 <LocalExecutorPanel />
-                <MissionControlView
-                  state={state}
-                  missionControl={state.mission_control}
-                  onSendCommand={onSendCommand}
-                  onPauseAll={onPauseAll}
-                  onResumeAll={onResumeAll}
-                  onStopAgent={onStopAgent}
-                  onCancelTask={onCancelTask}
-                  onTriggerAutoReviewCycle={onTriggerAutoReviewCycle}
-                  isAutoReviewing={isAutoReviewing}
-                  onOpenAdvancedTab={onOpenAdvancedTab}
-                />
               </div>
             </div>
           </div>
