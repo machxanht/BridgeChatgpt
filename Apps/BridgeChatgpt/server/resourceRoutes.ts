@@ -2,8 +2,9 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { getProject } from './db.js';
 import { getResourceRegistry, removeResourceTarget, upsertResourceTarget } from './resourceRegistry.js';
-import { upsertWorkspace } from './workspaceRegistry.js';
+import { projectLocalPath, upsertWorkspace } from './workspaceRegistry.js';
 import { buildWakeQueue } from './wakeQueue.js';
+import { createExecutorJob, getExecutorSnapshot } from './executorStore.js';
 
 export const resourceRegistryRouter = Router();
 
@@ -44,6 +45,30 @@ function makeWorkspaceId(repositoryUrl: string) {
   return `workspace-${slug}-${digest}`;
 }
 
+async function queuePcProjectSetup(workspace: {
+  repository_url: string;
+  branch: string;
+  local_path: string;
+}) {
+  const snapshot = await getExecutorSnapshot({ limit: 10 });
+  const node = snapshot.nodes.find(item => item.connection_status === 'online' && item.capabilities.includes('command.run'));
+  if (!node) return { status: 'waiting_for_pc' as const, job: null };
+
+  const job = await createExecutorJob({
+    workspace_id: node.workspace_id,
+    project_id: node.project_id,
+    node_id: node.node_id,
+    action: 'command.run',
+    payload: {
+      argv: ['git', 'clone', '--branch', workspace.branch || 'main', '--single-branch', workspace.repository_url, workspace.local_path],
+      cwd: '.',
+      timeout_ms: 10 * 60_000,
+    },
+    created_by: 'bridge-project-create',
+  });
+  return { status: 'queued' as const, job };
+}
+
 resourceRegistryRouter.get('/', async (_req: Request, res: Response) => {
   try {
     const project = await getProject();
@@ -72,16 +97,37 @@ resourceRegistryRouter.post('/projects', async (req: Request, res: Response) => 
   try {
     const project = await getProject();
     const repositoryUrl = normalizeRepoUrl(req.body?.repository_url);
-    const workspaceId = String(req.body?.workspace_id || '').trim() || makeWorkspaceId(repositoryUrl);
+    const suppliedWorkspaceId = String(req.body?.workspace_id || '').trim();
+    const creating = !suppliedWorkspaceId;
+    const workspaceId = suppliedWorkspaceId || makeWorkspaceId(repositoryUrl);
+    const projectId = String(req.body?.project_id || '').trim() || workspaceId.replace(/^workspace-/, 'project-');
+    const projectName = String(req.body?.project_name || '').trim() || deriveProjectName(repositoryUrl);
+    const branch = String(req.body?.branch || '').trim() || 'main';
+
     const workspace = await upsertWorkspace(project, {
       workspace_id: workspaceId,
-      project_id: String(req.body?.project_id || '').trim() || workspaceId.replace(/^workspace-/, 'project-'),
-      project_name: String(req.body?.project_name || '').trim() || deriveProjectName(repositoryUrl),
+      project_id: projectId,
+      project_name: projectName,
       repository_url: repositoryUrl,
-      branch: String(req.body?.branch || '').trim() || 'main',
+      branch,
+      local_path: creating ? projectLocalPath(projectName, projectId) : undefined,
       execution_target: req.body?.execution_target,
     });
-    res.status(201).json({ ok: true, workspace });
+
+    let pcSetup: 'not_requested' | 'queued' | 'waiting_for_pc' = 'not_requested';
+    let pcSetupJob: Awaited<ReturnType<typeof createExecutorJob>> | null = null;
+    if (creating && workspace.execution_target === 'pc') {
+      const setup = await queuePcProjectSetup(workspace);
+      pcSetup = setup.status;
+      pcSetupJob = setup.job;
+    }
+
+    res.status(201).json({
+      ok: true,
+      workspace,
+      pc_setup: pcSetup,
+      pc_setup_job: pcSetupJob,
+    });
   } catch (err: any) {
     res.status(400).json({ ok: false, error: err.message });
   }
