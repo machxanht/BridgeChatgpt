@@ -66,7 +66,7 @@ function timeLabel(value: string) {
   try { return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
 }
 
-function MessageRow({ message }: { message: Message }) {
+function MessageRow({ message }: { message: Message; key?: React.Key }) {
   const mine = message.from === 'human';
   const studio = message.from === 'gemini';
   const gpt = message.from === 'chatgpt';
