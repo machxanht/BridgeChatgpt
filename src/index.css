@@ -144,6 +144,12 @@
     border-radius: 999px;
     display: inline-block;
   }
+
+  /* The project router already exposes PC status in the mini status strip.
+     Keep the detailed executor card only inside System Details. */
+  div[class*="col-span-2"][class*="lg:contents"] > div[class*="border-human/25"][class*="bg-human/8"] {
+    display: none;
+  }
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
