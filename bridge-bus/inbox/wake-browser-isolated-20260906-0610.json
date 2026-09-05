@@ -1,0 +1,17 @@
+{
+  "id": "wake-browser-isolated-20260906-0610",
+  "type": "executor_job_create",
+  "created_by": "chatgpt",
+  "workspace_id": "workspace-proj-default",
+  "project_id": "proj-default",
+  "executor_action": "command.run",
+  "executor_payload": {
+    "argv": [
+      "node",
+      "-e",
+      "const {spawn}=require('child_process');const path=require('path');const fs=require('fs');const root=process.cwd();const ext=path.resolve(root,'chrome-extension/bridge-wake');const profile=path.resolve(root,'.bridge-browser-profile');fs.mkdirSync(profile,{recursive:true});const c=[process.env['ProgramFiles(x86)']&&path.join(process.env['ProgramFiles(x86)'],'Microsoft','Edge','Application','msedge.exe'),process.env.ProgramFiles&&path.join(process.env.ProgramFiles,'Microsoft','Edge','Application','msedge.exe'),process.env.LOCALAPPDATA&&path.join(process.env.LOCALAPPDATA,'Google','Chrome','Application','chrome.exe'),process.env.ProgramFiles&&path.join(process.env.ProgramFiles,'Google','Chrome','Application','chrome.exe')].filter(Boolean);function go(i){if(i>=c.length){console.error('BROWSER_NOT_FOUND');process.exit(2);return;}let p;try{p=spawn(c[i],[`--user-data-dir=${profile}`,`--load-extension=${ext}`,'--new-window','https://bridgechatgpt-production.up.railway.app/'],{detached:true,stdio:'ignore'});}catch(e){go(i+1);return;}let ok=false;p.once('spawn',()=>{ok=true;console.log('LAUNCHED_ISOLATED '+c[i]);console.log('PROFILE '+profile);console.log('EXT '+ext);p.unref();setTimeout(()=>process.exit(0),500);});p.once('error',()=>{if(!ok)go(i+1);});}go(0);"
+    ],
+    "cwd": ".",
+    "timeout_ms": 15000
+  }
+}
