@@ -116,7 +116,7 @@ resourceRegistryRouter.post('/projects', async (req: Request, res: Response) => 
 
     let pcSetup: 'not_requested' | 'queued' | 'waiting_for_pc' = 'not_requested';
     let pcSetupJob: Awaited<ReturnType<typeof createExecutorJob>> | null = null;
-    if (creating && workspace.execution_target === 'pc') {
+    if (creating) {
       const setup = await queuePcProjectSetup(workspace);
       pcSetup = setup.status;
       pcSetupJob = setup.job;
