@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bridge Wake",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Wake the exact ChatGPT conversation or Google AI Studio app only when Bridge has work for it.",
   "permissions": [
     "alarms",
@@ -10,6 +10,7 @@
     "storage"
   ],
   "host_permissions": [
+    "https://bridgechatgpt-production.up.railway.app/*",
     "https://bridge-ai-mission-control.ai.studio/*",
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
