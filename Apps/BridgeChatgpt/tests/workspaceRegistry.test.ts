@@ -33,6 +33,7 @@ try {
   assert.strictEqual(initial.workspaces.length, 1);
   assert.strictEqual(initial.workspaces[0].project_id, 'proj-default');
   assert.strictEqual(initial.workspaces[0].execution_target, 'studio');
+  assert.strictEqual(initial.workspaces[0].local_path, 'Apps/BridgeChatgpt');
 
   const legacySelection = resolveStudioSessionSelection(initial, {});
   assert.strictEqual(legacySelection.mode, 'legacy');
@@ -47,6 +48,7 @@ try {
   });
   assert.strictEqual(second.workspace_id, 'workspace-khmer');
   assert.strictEqual(second.execution_target, 'pc');
+  assert.strictEqual(second.local_path, 'Apps/Khmer Learning App');
 
   const chatgpt = await registerAgentInstance(project, {
     agent_instance_id: 'chatgpt-a-01',
