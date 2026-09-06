@@ -35,9 +35,29 @@ type BoundTask = {
 
 const TERMINAL_STATUSES = new Set(['completed', 'cancelled']);
 const DEBATE_MARKER = '<!-- BRIDGE_DEBATE_V1 -->';
+const ATTACHMENT_START = '<!-- BRIDGE_ATTACHMENTS_V1';
+const ATTACHMENT_END = 'BRIDGE_ATTACHMENTS_V1 -->';
 
 function isDebateTask(task: Task) {
   return String(task.description || '').includes(DEBATE_MARKER);
+}
+
+function attachmentPrompt(task: Task) {
+  const source = String(task.description || '');
+  const start = source.indexOf(ATTACHMENT_START);
+  const end = source.indexOf(ATTACHMENT_END, start + ATTACHMENT_START.length);
+  if (start < 0 || end < 0) return [];
+  try {
+    const items = JSON.parse(source.slice(start + ATTACHMENT_START.length, end).trim());
+    if (!Array.isArray(items) || !items.length) return [];
+    return [
+      'Attachments:',
+      ...items.slice(0, 5).map((item: any) => `- ${item.name} (${item.type}, ${item.size} bytes): ${item.url}`),
+      'Inspect the relevant attachments before answering or acting.',
+    ];
+  } catch {
+    return [];
+  }
 }
 
 function eventId(reason: WakeReason, targetId: string, task: Task) {
@@ -56,6 +76,7 @@ function directPrompt(target: ResourceTargetView, task: Task, projectName: strin
         `project=${projectName}`,
         `repo=${repositoryUrl}`,
         `studio_app_id=${target.resource_id}`,
+        ...attachmentPrompt(task),
         `Claim exactly ${task.id} for this Studio target.`,
         'This is a question/debate task, not a coding task. Read the task question and give the strongest first position.',
         'State uncertainty and likely counterarguments. Do not edit files, run builds, or Publish.',
@@ -68,6 +89,7 @@ function directPrompt(target: ResourceTargetView, task: Task, projectName: strin
       `project=${projectName}`,
       `repo=${repositoryUrl}`,
       `studio_app_id=${target.resource_id}`,
+      ...attachmentPrompt(task),
       `Claim exactly ${task.id} for this Studio target. When using the Studio relay, pass task_id=${task.id}; never use an unscoped claim-next to skip an earlier non-terminal task.`,
       `Process only ${task.id} completely, run the required build/tests, and submit its result back to Bridge.`,
       'Do not start another Bridge task until this task reaches completed or cancelled.',
@@ -80,6 +102,7 @@ function directPrompt(target: ResourceTargetView, task: Task, projectName: strin
     `project=${projectName}`,
     `repo=${repositoryUrl}`,
     `chatgpt_conversation_id=${target.resource_id}`,
+    ...attachmentPrompt(task),
     'Check Bridge and the project repo now. Continue the ChatGPT work assigned to this conversation and write back the resulting task/handoff state when done.',
     'Do not start another Bridge task until this task reaches completed or cancelled.',
     'Use normal ChatGPT tools for this workflow; do not invoke Codex unless the user explicitly requests it.',
