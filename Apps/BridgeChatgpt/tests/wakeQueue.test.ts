@@ -147,6 +147,20 @@ const debateStudio = {
 const debateQueue = buildWakeQueueFromData(snapshot, [debateStudio]);
 assert.match(debateQueue[0].prompt, /Bridge Debate — Studio round/);
 assert.match(debateQueue[0].prompt, /artifacts: \[\]/);
+
+const fastChatStudio = {
+  ...task('TASK-C', 'gemini', 'assigned', 'studio-app-1234', '2026-01-04T00:00:02.000Z'),
+  description: attachTaskBinding('Tại sao nó chậm vậy?\n\n<!-- BRIDGE_CHAT_V1 -->', {
+    version: 1,
+    workspace_id: 'workspace-demo',
+    project_id: 'project-demo',
+    agent_instance_id: 'studio-app-1234',
+  }).description,
+};
+const fastChatQueue = buildWakeQueueFromData(snapshot, [fastChatStudio]);
+assert.match(fastChatQueue[0].prompt, /Bridge Fast Chat/);
+assert.match(fastChatQueue[0].prompt, /tiếng Việt/);
+assert.match(fastChatQueue[0].prompt, /studio-relay\/claim/);
 const debateReview = buildWakeQueueFromData(snapshot, [{ ...debateStudio, status: 'review' }]);
 const debateReviewWake = debateReview.find(item => item.reason === 'review-ready');
 assert.ok(debateReviewWake);
@@ -155,10 +169,7 @@ assert.match(debateReviewWake!.prompt, /Bridge Debate — ChatGPT final round/);
 const attachedTask = {
   ...task('TASK-A', 'gemini', 'assigned', 'studio-app-1234', '2026-01-05T00:00:01.000Z'),
   description: attachTaskBinding('Inspect this\n\n<!-- BRIDGE_ATTACHMENTS_V1\n[{"name":"sample.png","type":"image/png","size":1234,"url":"/api/attachments/public/abc"}]\nBRIDGE_ATTACHMENTS_V1 -->', {
-    version: 1,
-    workspace_id: 'workspace-demo',
-    project_id: 'project-demo',
-    agent_instance_id: 'studio-app-1234',
+    version: 1, workspace_id: 'workspace-demo', project_id: 'project-demo', agent_instance_id: 'studio-app-1234',
   }).description,
 };
 const attachedWake = buildWakeQueueFromData(snapshot, [attachedTask]);

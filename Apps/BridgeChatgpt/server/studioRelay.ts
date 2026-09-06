@@ -89,11 +89,19 @@ function validateArtifacts(artifacts: ChangedFileArtifact[]): string | null {
 }
 
 const DEBATE_MARKER = '<!-- BRIDGE_DEBATE_V1 -->';
+const CHAT_MARKER = '<!-- BRIDGE_CHAT_V1 -->';
 
 function isDebateTask(task: any) {
   return String(task?.description || '').includes(DEBATE_MARKER);
 }
 
+function isFastChatTask(task: any) {
+  return String(task?.description || '').includes(CHAT_MARKER);
+}
+
+function isDiscussionTask(task: any) {
+  return isDebateTask(task) || isFastChatTask(task);
+}
 const resultContract = {
   review_requires_artifacts: true,
   conflict_safe: true,
@@ -117,21 +125,28 @@ const resultContract = {
 };
 
 function resultContractForTask(task: any) {
-  if (!isDebateTask(task)) return resultContract;
+  if (!isDiscussionTask(task)) return resultContract;
+  const fastChat = isFastChatTask(task);
   return {
     ...resultContract,
     review_requires_artifacts: false,
     discussion_mode: true,
-    rules: [
-      'This is a discussion/debate task: do not edit files or Publish.',
-      'Put your strongest position, uncertainty, and likely counterarguments in summary.',
-      'Submit artifacts: [] and files_changed: []. ChatGPT will critique and synthesize the final answer.',
-    ],
+    fast_chat: fastChat,
+    rules: fastChat
+      ? [
+          'Đây là Fast Chat: không sửa file, không build/test và không Publish trừ khi yêu cầu gốc nói rõ.',
+          'Trả lời trực tiếp bằng tiếng Việt trong summary.',
+          'Submit artifacts: [] và files_changed: []. Fast Chat hoàn tất trực tiếp, không qua vòng review ChatGPT thứ hai.',
+        ]
+      : [
+          'Đây là task tranh luận: không sửa file và không Publish.',
+          'Đưa quan điểm mạnh nhất, điểm chưa chắc và phản biện có thể có trong summary.',
+          'Submit artifacts: [] và files_changed: []. ChatGPT sẽ phản biện và tổng hợp câu trả lời cuối.',
+        ],
   };
 }
-
 function prepareTaskForStudio(task: any) {
-  if (!task) return { task: null, execution_payload: null, task_binding: null, debate_mode: false };
+  if (!task) return { task: null, execution_payload: null, task_binding: null, debate_mode: false, fast_chat: false };
   const execution = extractExecutionPayload(String(task.description || ''));
   const binding = extractTaskBinding(execution.description);
   return {
@@ -139,6 +154,7 @@ function prepareTaskForStudio(task: any) {
     execution_payload: execution.payload,
     task_binding: binding.binding,
     debate_mode: isDebateTask(task),
+    fast_chat: isFastChatTask(task),
   };
 }
 
@@ -329,7 +345,9 @@ studioRelayRouter.post('/result', async (req: Request, res: Response) => {
     const artifacts = normalizeArtifacts(rawArtifacts);
     if (Array.isArray(rawArtifacts) && artifacts.length !== rawArtifacts.length) { res.status(400).json({ ok: false, error: 'one or more artifact paths are unsafe or protected' }); return; }
     const debateMode = isDebateTask(task);
-    if (!blocked && artifacts.length === 0 && !debateMode) { res.status(400).json({ ok: false, error: 'artifacts are required before review; Git push is not required.' }); return; }
+    const fastChatMode = isFastChatTask(task);
+    const discussionMode = debateMode || fastChatMode;
+    if (!blocked && artifacts.length === 0 && !discussionMode) { res.status(400).json({ ok: false, error: 'artifacts are required before review; Git push is not required.' }); return; }
     const artifactError = validateArtifacts(artifacts);
     if (artifactError) { res.status(400).json({ ok: false, error: artifactError }); return; }
 
@@ -342,12 +360,19 @@ studioRelayRouter.post('/result', async (req: Request, res: Response) => {
       tests: tests ?? null,
       files_changed: Array.isArray(files_changed) ? files_changed : artifacts.map(a => a.path),
       artifacts,
-      mode: debateMode ? 'debate' : 'artifact-review',
-      conflict_policy: debateMode ? null : 'ChatGPT must compare each base_sha with current GitHub before create/update/delete',
+      mode: fastChatMode ? 'fast-chat' : debateMode ? 'debate' : 'artifact-review',
+      conflict_policy: discussionMode ? null : 'ChatGPT must compare each base_sha with current GitHub before create/update/delete',
       submitted_at: new Date().toISOString(),
     };
     const resultPayload = JSON.stringify(resultObject, null, 2);
     if (Buffer.byteLength(resultPayload, 'utf8') > MAX_ARTIFACT_BYTES) { res.status(413).json({ ok: false, error: `result payload exceeds ${MAX_ARTIFACT_BYTES} bytes` }); return; }
+
+    if (fastChatMode && !blocked) {
+      const updated = await updateTask(task_id, { status: 'completed', result: String(summary) }, 'gemini');
+      await setAgentStatus({ agent: 'gemini', status: 'idle', current_task_id: null, message: `${resolved.instance.agent_instance_id} completed fast chat ${task_id}` });
+      res.json({ ok: true, agent_instance: resolved.instance, task: updated, artifact_count: 0, conflict_safe: true, fast_chat: true });
+      return;
+    }
 
     const updated = await updateTask(task_id, { status: blocked ? 'blocked' : 'review', result: resultPayload }, 'gemini');
     await setAgentStatus({ agent: 'gemini', status: blocked ? 'blocked' : 'idle', current_task_id: blocked ? task_id : null, message: blocked ? `${resolved.instance.agent_instance_id} blocked on ${task_id}` : `${resolved.instance.agent_instance_id} submitted ${task_id}` });
@@ -358,8 +383,8 @@ studioRelayRouter.post('/result', async (req: Request, res: Response) => {
       content: blocked
         ? `${resolved.instance.agent_instance_id} blocked on ${task_id}`
         : debateMode
-          ? `AI Studio position for ${task_id}:\n${summary}\n\nCritique this position, add independent reasoning, then give the final answer to the user.`
-          : `${task_id} from ${resolved.instance.agent_instance_id} has conflict-safe artifacts ready.`,
+          ? `Quan điểm AI Studio cho ${task_id}:\n${summary}\n\nHãy phản biện, bổ sung lập luận độc lập rồi trả lời cuối cùng cho người dùng bằng tiếng Việt.`
+          : `${task_id} từ ${resolved.instance.agent_instance_id} đã có conflict-safe artifacts để review.`,
       task_id,
       finding_id: null,
     });

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bridge Wake",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Wake the exact ChatGPT conversation or Google AI Studio app only when Bridge has work for it.",
   "permissions": [
     "alarms",

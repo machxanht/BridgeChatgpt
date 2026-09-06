@@ -35,11 +35,16 @@ type BoundTask = {
 
 const TERMINAL_STATUSES = new Set(['completed', 'cancelled']);
 const DEBATE_MARKER = '<!-- BRIDGE_DEBATE_V1 -->';
+const CHAT_MARKER = '<!-- BRIDGE_CHAT_V1 -->';
 const ATTACHMENT_START = '<!-- BRIDGE_ATTACHMENTS_V1';
 const ATTACHMENT_END = 'BRIDGE_ATTACHMENTS_V1 -->';
 
 function isDebateTask(task: Task) {
   return String(task.description || '').includes(DEBATE_MARKER);
+}
+
+function isFastChatTask(task: Task) {
+  return String(task.description || '').includes(CHAT_MARKER);
 }
 
 function attachmentPrompt(task: Task) {
@@ -50,14 +55,8 @@ function attachmentPrompt(task: Task) {
   try {
     const items = JSON.parse(source.slice(start + ATTACHMENT_START.length, end).trim());
     if (!Array.isArray(items) || !items.length) return [];
-    return [
-      'Attachments:',
-      ...items.slice(0, 5).map((item: any) => `- ${item.name} (${item.type}, ${item.size} bytes): ${item.url}`),
-      'Inspect the relevant attachments before answering or acting.',
-    ];
-  } catch {
-    return [];
-  }
+    return ['File đính kèm:', ...items.slice(0, 5).map((item: any) => `- ${item.name} (${item.type}, ${item.size} bytes): ${item.url}`), 'Kiểm tra file liên quan trước khi trả lời hoặc thao tác.'];
+  } catch { return []; }
 }
 
 function eventId(reason: WakeReason, targetId: string, task: Task) {
@@ -69,7 +68,22 @@ function eventId(reason: WakeReason, targetId: string, task: Task) {
 }
 
 function directPrompt(target: ResourceTargetView, task: Task, projectName: string, repositoryUrl: string) {
+  const replyLanguage = 'Mặc định trả lời người dùng bằng tiếng Việt; chỉ dùng ngôn ngữ khác khi yêu cầu gốc nói rõ.';
   if (target.provider === 'google-ai-studio') {
+    if (isFastChatTask(task)) {
+      return [
+        `Bridge Fast Chat — ${task.id}: ${task.title}`,
+        `project=${projectName}`,
+        `repo=${repositoryUrl}`,
+        `studio_app_id=${target.resource_id}`,
+        ...attachmentPrompt(task),
+        `Hành động đầu tiên: gọi Studio Relay POST /api/studio-relay/claim với task_id=${task.id} cho đúng Studio target này.`,
+        'Đây là chat nhanh, không phải coding workflow. Đọc câu hỏi gốc và trả lời trực tiếp, ngắn gọn, hữu ích.',
+        replyLanguage,
+        'Không audit repo, không sửa file, không chạy build/test và không Publish trừ khi yêu cầu gốc nói rõ phải làm.',
+        'Gửi kết quả về Studio Relay POST /api/studio-relay/result với summary là câu trả lời, artifacts: [], files_changed: [].',
+      ].join('\n');
+    }
     if (isDebateTask(task)) {
       return [
         `Bridge Debate — Studio round for ${task.id}: ${task.title}`,
@@ -77,11 +91,12 @@ function directPrompt(target: ResourceTargetView, task: Task, projectName: strin
         `repo=${repositoryUrl}`,
         `studio_app_id=${target.resource_id}`,
         ...attachmentPrompt(task),
-        `Claim exactly ${task.id} for this Studio target.`,
-        'This is a question/debate task, not a coding task. Read the task question and give the strongest first position.',
-        'State uncertainty and likely counterarguments. Do not edit files, run builds, or Publish.',
-        'Submit the Studio relay result with your argument in summary, artifacts: [], files_changed: [].',
-        'ChatGPT will receive your position automatically, critique it, and synthesize the final answer.',
+        `Hành động đầu tiên: gọi Studio Relay POST /api/studio-relay/claim với task_id=${task.id}.`,
+        'Đây là task tranh luận, không phải coding task. Đưa ra quan điểm mạnh nhất trước, nêu điểm chưa chắc và phản biện có thể có.',
+        replyLanguage,
+        'Không sửa file, không chạy build/test và không Publish.',
+        'Gửi Studio Relay result với lập luận trong summary, artifacts: [], files_changed: [].',
+        'ChatGPT sẽ nhận quan điểm này để phản biện và tổng hợp câu trả lời cuối.',
       ].join('\n');
     }
     return [
@@ -90,10 +105,26 @@ function directPrompt(target: ResourceTargetView, task: Task, projectName: strin
       `repo=${repositoryUrl}`,
       `studio_app_id=${target.resource_id}`,
       ...attachmentPrompt(task),
-      `Claim exactly ${task.id} for this Studio target. When using the Studio relay, pass task_id=${task.id}; never use an unscoped claim-next to skip an earlier non-terminal task.`,
-      `Process only ${task.id} completely, run the required build/tests, and submit its result back to Bridge.`,
-      'Do not start another Bridge task until this task reaches completed or cancelled.',
-      'Do not Publish unless the user explicitly asks.',
+      `Hành động đầu tiên: gọi Studio Relay POST /api/studio-relay/claim với task_id=${task.id}; không dùng claim-next không scope để bỏ qua task cũ chưa terminal.`,
+      `Chỉ xử lý ${task.id}, chạy đúng build/test được yêu cầu rồi gửi result về Bridge.`,
+      replyLanguage,
+      'Không bắt đầu Bridge task khác cho tới khi task này completed hoặc cancelled.',
+      'Không Publish trừ khi người dùng yêu cầu rõ.',
+    ].join('\n');
+  }
+
+  if (isFastChatTask(task)) {
+    return [
+      `Bridge Fast Chat — ${task.id}: ${task.title}`,
+      `project=${projectName}`,
+      `repo=${repositoryUrl}`,
+      `chatgpt_conversation_id=${target.resource_id}`,
+      ...attachmentPrompt(task),
+      'Đây là chat nhanh. Đọc câu hỏi gốc trong task và trả lời trực tiếp cho người dùng.',
+      replyLanguage,
+      'Không audit repo, không sửa file, không chạy build/test trừ khi yêu cầu gốc nói rõ phải thực hiện hành động.',
+      'Ghi câu trả lời vào Bridge và hoàn tất task này. Không nhận task khác trước khi hoàn tất.',
+      'Dùng tool ChatGPT bình thường; không gọi Codex trừ khi người dùng yêu cầu rõ.',
     ].join('\n');
   }
 
@@ -103,12 +134,12 @@ function directPrompt(target: ResourceTargetView, task: Task, projectName: strin
     `repo=${repositoryUrl}`,
     `chatgpt_conversation_id=${target.resource_id}`,
     ...attachmentPrompt(task),
-    'Check Bridge and the project repo now. Continue the ChatGPT work assigned to this conversation and write back the resulting task/handoff state when done.',
-    'Do not start another Bridge task until this task reaches completed or cancelled.',
-    'Use normal ChatGPT tools for this workflow; do not invoke Codex unless the user explicitly requests it.',
+    'Kiểm tra Bridge và đúng project cần thiết cho task này, tiếp tục phần việc được giao và ghi lại task/handoff khi xong.',
+    replyLanguage,
+    'Không bắt đầu Bridge task khác cho tới khi task này completed hoặc cancelled.',
+    'Dùng tool ChatGPT bình thường; không gọi Codex trừ khi người dùng yêu cầu rõ.',
   ].join('\n');
 }
-
 function reviewPrompt(target: ResourceTargetView, task: Task, projectName: string, repositoryUrl: string, blocked: boolean) {
   if (!blocked && isDebateTask(task)) {
     return [
@@ -116,10 +147,10 @@ function reviewPrompt(target: ResourceTargetView, task: Task, projectName: strin
       `project=${projectName}`,
       `repo=${repositoryUrl}`,
       `chatgpt_conversation_id=${target.resource_id}`,
-      'Read the latest AI Studio position for this question in Bridge.',
-      'Challenge weak assumptions, add your independent reasoning, and resolve disagreements explicitly.',
-      'Then mark the task completed with one user-facing final answer. Do not edit repo/files unless the original question explicitly asks for work.',
-      'Use normal ChatGPT tools; do not invoke Codex unless the user explicitly requests it.',
+      'Đọc quan điểm AI Studio mới nhất cho câu hỏi này trong Bridge.',
+      'Phản biện điểm yếu, thêm lập luận độc lập và giải quyết khác biệt rõ ràng.',
+      'Sau đó hoàn tất task bằng một câu trả lời cuối cho người dùng bằng tiếng Việt. Không sửa repo/file nếu câu hỏi gốc không yêu cầu.',
+      'Dùng tool ChatGPT bình thường; không gọi Codex trừ khi người dùng yêu cầu rõ.',
     ].join('\n');
   }
   return [
@@ -128,13 +159,13 @@ function reviewPrompt(target: ResourceTargetView, task: Task, projectName: strin
     `repo=${repositoryUrl}`,
     `chatgpt_conversation_id=${target.resource_id}`,
     blocked
-      ? 'Check the latest Bridge blocker/handoff from AI Studio. Diagnose it, update the task/plan, and send the next actionable instruction.'
-      : 'Check the latest Studio result and conflict-safe artifacts in Bridge. Review them, apply/approve or request changes, and update Bridge/GitHub accordingly.',
-    'Finish this review/blocker cycle before accepting the next Bridge wake for this conversation.',
-    'Use normal ChatGPT tools for this workflow; do not invoke Codex unless the user explicitly requests it.',
+      ? 'Kiểm tra blocker/handoff mới nhất từ AI Studio, chẩn đoán đúng điểm nghẽn và gửi chỉ dẫn hành động tiếp theo.'
+      : 'Kiểm tra Studio result và conflict-safe artifacts mới nhất trong Bridge; review, apply/approve hoặc yêu cầu sửa rồi cập nhật Bridge/GitHub đúng scope.',
+    'Mặc định phản hồi người dùng bằng tiếng Việt.',
+    'Hoàn tất vòng review/blocker này trước khi nhận Bridge wake tiếp theo.',
+    'Dùng tool ChatGPT bình thường; không gọi Codex trừ khi người dùng yêu cầu rõ.',
   ].join('\n');
 }
-
 function taskOrder(a: Task, b: Task) {
   const created = String(a.created_at || '').localeCompare(String(b.created_at || ''));
   if (created !== 0) return created;
