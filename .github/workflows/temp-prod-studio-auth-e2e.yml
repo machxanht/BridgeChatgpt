@@ -1,0 +1,32 @@
+name: Temp Production Studio Auth E2E
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  auth-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify production Studio auth boundary
+        shell: bash
+        env:
+          BASE: https://bridgechatgpt-production.up.railway.app
+        run: |
+          set -euo pipefail
+          health=$(curl -sS -o /tmp/health.json -w '%{http_code}' "$BASE/api/health")
+          unauth=$(curl -sS -o /tmp/unauth.json -w '%{http_code}' "$BASE/api/studio-relay/registry")
+          spoof=$(curl -sS -o /tmp/spoof.json -w '%{http_code}' \
+            -H "Origin: $BASE" \
+            -H 'User-Agent: Mozilla/5.0 Chrome/140 Safari/537.36' \
+            -H 'Sec-Fetch-Site: same-origin' \
+            -H 'Sec-Fetch-Mode: cors' \
+            "$BASE/api/studio-relay/registry")
+          echo "health=$health unauth=$unauth spoof=$spoof"
+          test "$health" = 200
+          test "$unauth" = 401
+          test "$spoof" = 401
+          node -e "const d=require('/tmp/unauth.json'); if(!String(d.error||'').includes('token required')) process.exit(2)"
+          node -e "const d=require('/tmp/spoof.json'); if(!String(d.error||'').includes('token required')) process.exit(3)"
+          echo 'PROD_STUDIO_AUTH_NEGATIVE_E2E=PASS'
