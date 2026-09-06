@@ -1,4 +1,4 @@
 Bridge Railway deploy trigger
-feature: project setup status + retry
-source parent: 5ddf3d7e0a5bf9638354bf33f3f1a7ecd559c4b0
-created: 2026-09-06T08:17:00Z
+feature: fast Vietnamese chat routing + wake delivery
+source parent: 3f6e6f0f28e402d9a09b39c3ddb17ad11ead7a16
+created: 2026-09-06T16:44:00Z
