@@ -98,12 +98,17 @@ function requireExecutorAccess(req: Request, res: Response, next: NextFunction) 
   });
 }
 
-function enforcePairedScope(req: Request, input: { node_id?: unknown; workspace_id?: unknown; project_id?: unknown }) {
+/**
+ * Paired executor credentials are machine-scoped. The pairing remembers the
+ * workspace/project where the PC was first connected for audit/backward
+ * compatibility, but it does not need a new token for each Apps/<Project>.
+ */
+function enforcePairedNode(req: Request, nodeIdRaw: unknown) {
   const auth = requestAuth(req);
   if (!auth || auth.kind !== 'paired') return;
-  if (input.node_id != null && String(input.node_id) !== auth.pairing.node_id) throw new Error('Paired token belongs to another PC node');
-  if (input.workspace_id != null && String(input.workspace_id) !== auth.pairing.workspace_id) throw new Error('Paired token belongs to another workspace');
-  if (input.project_id != null && String(input.project_id) !== auth.pairing.project_id) throw new Error('Paired token belongs to another project');
+  if (nodeIdRaw != null && String(nodeIdRaw) !== auth.pairing.node_id) {
+    throw new Error('Paired token belongs to another PC node');
+  }
 }
 
 function requireController(req: Request) {
@@ -118,8 +123,8 @@ executorRouter.get('/snapshot', async (req: Request, res: Response) => {
     const auth = requestAuth(req);
     const paired = auth?.kind === 'paired' ? auth.pairing : null;
     const snapshot = await getExecutorSnapshot({
-      workspace_id: paired?.workspace_id || (req.query.workspace_id ? String(req.query.workspace_id) : undefined),
-      project_id: paired?.project_id || (req.query.project_id ? String(req.query.project_id) : undefined),
+      workspace_id: req.query.workspace_id ? String(req.query.workspace_id) : undefined,
+      project_id: req.query.project_id ? String(req.query.project_id) : undefined,
       node_id: paired?.node_id || (req.query.node_id ? String(req.query.node_id) : undefined),
       limit: req.query.limit ? Number(req.query.limit) : undefined,
     });
@@ -136,7 +141,10 @@ executorRouter.get('/jobs/:job_id', async (req: Request, res: Response) => {
       res.status(404).json({ ok: false, error: `Executor job ${req.params.job_id} not found` });
       return;
     }
-    enforcePairedScope(req, { node_id: job.node_id || undefined, workspace_id: job.workspace_id, project_id: job.project_id });
+    const auth = requestAuth(req);
+    if (auth?.kind === 'paired' && job.node_id !== auth.pairing.node_id) {
+      throw new Error(`Executor job ${job.job_id} does not belong to this PC node`);
+    }
     res.json({ ok: true, job });
   } catch (err: any) {
     res.status(400).json({ ok: false, error: err.message });
@@ -145,12 +153,16 @@ executorRouter.get('/jobs/:job_id', async (req: Request, res: Response) => {
 
 executorRouter.post('/nodes/register', async (req: Request, res: Response) => {
   try {
-    enforcePairedScope(req, { node_id: req.body?.node_id, workspace_id: req.body?.workspace_id, project_id: req.body?.project_id });
+    enforcePairedNode(req, req.body?.node_id);
+    const auth = requestAuth(req);
+    const paired = auth?.kind === 'paired' ? auth.pairing : null;
     const node = await registerExecutorNode({
       node_id: req.body?.node_id,
       name: req.body?.name,
-      workspace_id: req.body?.workspace_id,
-      project_id: req.body?.project_id,
+      // Keep the original pairing project as node metadata. It no longer limits
+      // which project jobs the machine may execute.
+      workspace_id: paired?.workspace_id || req.body?.workspace_id,
+      project_id: paired?.project_id || req.body?.project_id,
       root_label: req.body?.root_label,
       platform: req.body?.platform,
       capabilities: req.body?.capabilities,
@@ -163,7 +175,7 @@ executorRouter.post('/nodes/register', async (req: Request, res: Response) => {
 
 executorRouter.post('/nodes/:node_id/heartbeat', async (req: Request, res: Response) => {
   try {
-    enforcePairedScope(req, { node_id: req.params.node_id });
+    enforcePairedNode(req, req.params.node_id);
     const node = await heartbeatExecutorNode(req.params.node_id);
     res.json({ ok: true, node });
   } catch (err: any) {
@@ -191,9 +203,10 @@ executorRouter.post('/jobs', async (req: Request, res: Response) => {
 
 executorRouter.post('/jobs/claim', async (req: Request, res: Response) => {
   try {
-    enforcePairedScope(req, { node_id: req.body?.node_id, workspace_id: req.body?.workspace_id, project_id: req.body?.project_id });
+    enforcePairedNode(req, req.body?.node_id);
     const job = await claimExecutorJob({
       node_id: req.body?.node_id,
+      // Accepted for backward-compatible clients; routing is machine-scoped.
       workspace_id: req.body?.workspace_id,
       project_id: req.body?.project_id,
     });
@@ -205,7 +218,7 @@ executorRouter.post('/jobs/claim', async (req: Request, res: Response) => {
 
 executorRouter.post('/jobs/:job_id/result', async (req: Request, res: Response) => {
   try {
-    enforcePairedScope(req, { node_id: req.body?.node_id });
+    enforcePairedNode(req, req.body?.node_id);
     const job = await completeExecutorJob({
       node_id: req.body?.node_id,
       job_id: req.params.job_id,
@@ -213,7 +226,7 @@ executorRouter.post('/jobs/:job_id/result', async (req: Request, res: Response) 
       result: req.body?.result,
       error: req.body?.error,
     });
-    enforcePairedScope(req, { node_id: job.node_id || undefined, workspace_id: job.workspace_id, project_id: job.project_id });
+    enforcePairedNode(req, job.node_id || undefined);
     res.json({ ok: true, job });
   } catch (err: any) {
     res.status(400).json({ ok: false, error: err.message });
