@@ -13,6 +13,7 @@ Before making changes, read these files in order:
 5. `docs/RUNBOOK.md`
 6. `docs/ROADMAP.md`
 7. `docs/PROJECT_STANDARD.md`
+8. `docs/FREE_FIRST_POLICY.md`
 
 Do not reconstruct project state from chat memory alone. GitHub `main` + the handoff documents are the durable source of truth. When live infrastructure can be checked, verify it before claiming that something is online, deployed, synced, or completed.
 
@@ -165,3 +166,18 @@ Read START_HERE.md → docs/HANDOFF.md → docs/ROADMAP.md
 ```
 
 Then verify GitHub `main` and live Railway deployment before changing anything.
+
+## 10. FREE-first / no-paid-API rule — mandatory
+
+`docs/FREE_FIRST_POLICY.md` is a hard operating constraint for every agent and project.
+
+- Default to free/included/local/browser/open-source/repository solutions.
+- Do not add, enable, or call a paid API, token-metered AI API, provider AI Agent, paid automation, or quota-consuming service without explicit prior user approval.
+- Availability of an API key, credit balance, environment variable, connected account, or tool does **not** equal permission to spend quota or money.
+- Prefer ChatGPT Web / AI Studio Web / local PC / GitHub / ordinary Railway controls / existing tools over metered AI APIs when they can do the job.
+- Railway AI Agent is not a routine deploy path and must not be used just because it is available.
+- Before building from scratch, search this repo. If work/troubleshooting is dragging, search trusted public repos/docs/internet and reuse a maintained compatible solution when practical.
+- If the free path is blocked or materially slower, stop and ask. State the paid option, expected cost/quota, why it is needed, and the free alternative.
+- Internal Bridge REST/HTTP plumbing is allowed, but it must not silently create an external paid API dependency.
+
+No explicit approval = no paid/quota path.
