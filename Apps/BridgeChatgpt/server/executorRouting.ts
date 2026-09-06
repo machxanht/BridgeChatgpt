@@ -1,3 +1,6 @@
+import { getProject } from './db.js';
+import { getResourceRegistry } from './resourceRegistry.js';
+
 export function executorCwdForWorkspace(bridgeProjectIdRaw: unknown, workspaceProjectIdRaw: unknown, localPathRaw: unknown) {
   const bridgeProjectId = String(bridgeProjectIdRaw || '').trim();
   const workspaceProjectId = String(workspaceProjectIdRaw || '').trim();
@@ -16,4 +19,24 @@ export function executorCwdForWorkspace(bridgeProjectIdRaw: unknown, workspacePr
     throw new Error(`Executor project path must stay under Apps/: ${localPath || '(empty)'}`);
   }
   return localPath;
+}
+
+export async function projectScopedExecutorPayload(
+  workspaceIdRaw: unknown,
+  projectIdRaw: unknown,
+  rawPayload: unknown,
+) {
+  const workspaceId = String(workspaceIdRaw || '').trim();
+  const projectId = String(projectIdRaw || '').trim();
+  const payload = rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)
+    ? { ...(rawPayload as Record<string, unknown>) }
+    : {};
+
+  const project = await getProject();
+  const registry = await getResourceRegistry(project);
+  const workspace = registry.workspaces.find(item => item.workspace_id === workspaceId && item.project_id === projectId);
+  if (!workspace) throw new Error(`Workspace/project not found: ${workspaceId}/${projectId}`);
+
+  payload.cwd = executorCwdForWorkspace(project.id, workspace.project_id, workspace.local_path);
+  return payload;
 }
