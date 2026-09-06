@@ -194,3 +194,12 @@ PC helper and explicit wake instructions implemented and tested; live read-only 
 ### Live chat progress
 
 TASK-12: real ChatGPT Vietnamese direct answer appeared in production without workflow wrapper (17:51:20 UTC). TASK-13 and final TASK-14 remain to verify. Wake 0.1.3 send confirmation/own-draft retry tested; running Chrome activation pending.
+
+
+## Release checkpoint — 2026-09-06 17:56 UTC
+
+PR #19 (9400a69) and PR #20 (b3824b245ac8108ea3b586b2e6856ef01b1a0d10) merged after complete GitHub CI PASS: runs 34049768662 and 34049965621. Latest clean PC checkout at b3824b2 uploaded via Railway CLI; deployment eaf97ecd-2549-492e-909d-65e003aa7dc4 SUCCESS. CLI upload metadata omits commitHash; clean source/upload provenance recorded separately.
+
+PC helper complete-chat.mjs installed and read-only authenticated checks PASS. Real ChatGPT TASK-12 completed at 17:51:20 via direct GET/PATCH and appeared verbatim in Vietnamese without task/review wrapper. TASK-13 still pending, TASK-14 Studio result in review awaiting ChatGPT final; not full E2E PASS. Do not create more duplicate test tasks.
+
+Wake service-worker.js and manifest 0.1.3 copied to E:\AI\Bridge\Apps\BridgeChatgpt\browser-wake only after verifying no conflicting user changes (worker matched our earlier copied SHA256 6026BE59AC64D9CA64DFB16B4FAC0699776D2182E7DD0A26246D3982F81558EC; manifest unchanged from local HEAD). Syntax check PASS. The running Chrome extension has not been proven reloaded. Available browser automation controls only the cloud browser, not the PC's logged-in Chrome. Required next action: reload Bridge Wake in chrome://extensions on that PC browser, preserve profiles/bindings/logins, then observe TASK-13 and TASK-14 and actual poll cadence. No further repo audit or redeploy is needed just to activate the extension. No guarantee this step alone resolves all live delivery issues; verify before claiming success.
