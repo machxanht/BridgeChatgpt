@@ -20,7 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Message, Task } from '../types.js';
-import { shouldAutoDebate } from '../chatRouting.js';
+import { buildMultiRolePlan, looksLikeQuestion, shouldAutoDebate } from '../chatRouting.js';
 
 interface ResourceTarget {
   target_id: string;
@@ -53,6 +53,7 @@ const BINDING_END = 'BRIDGE_TASK_BINDING_V1 -->';
 const ATTACHMENT_START = '<!-- BRIDGE_ATTACHMENTS_V1';
 const ATTACHMENT_END = 'BRIDGE_ATTACHMENTS_V1 -->';
 const DEBATE_MARKER = '<!-- BRIDGE_DEBATE_V1 -->';
+const CHAT_MARKER = '<!-- BRIDGE_CHAT_V1 -->';
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
@@ -199,7 +200,7 @@ export const BridgeChatPanel: React.FC = () => {
 
   useEffect(() => {
     load();
-    const timer = window.setInterval(load, 4500);
+    const timer = window.setInterval(load, 2000);
     return () => window.clearInterval(timer);
   }, [activeWorkspaceId]);
 
@@ -252,13 +253,24 @@ export const BridgeChatPanel: React.FC = () => {
     const content = text.trim() || (attachments.length ? 'Analyze the attached file(s).' : '');
     if (!content || !workspace || busy) return;
     const chosenTarget = chooseTarget();
-    const debateStudio = shouldAutoDebate(
+    const rolePlan = buildMultiRolePlan(content);
+    const chatRoleTarget = [...workspace.chatgpt_targets].reverse().find(item => item.connection_status !== 'offline') || null;
+    const studioRoleTarget = workspace.studio_targets.find(item => item.connection_status !== 'offline') || null;
+    if (rolePlan.length && (!chatRoleTarget || !studioRoleTarget)) {
+      setFeedback('Multi-role cần cả ChatGPT và AI Studio đang được bind/online để mỗi vai trò có reply riêng.');
+      return;
+    }
+    const fastChat = !rolePlan.length && looksLikeQuestion(content);
+    const debateStudio = !rolePlan.length && shouldAutoDebate(
       content,
       workspace.studio_targets.map(item => item.connection_status),
       workspace.chatgpt_targets.map(item => item.connection_status),
     ) ? workspace.studio_targets.find(item => item.connection_status !== 'offline') || null : null;
-    const target = debateStudio || chosenTarget;
-    if (!target) {
+    const fastChatTarget = fastChat && !debateStudio && targetId === 'auto'
+      ? [...workspace.chatgpt_targets].reverse().find(item => item.connection_status !== 'offline') || null
+      : null;
+    const target = debateStudio || fastChatTarget || chosenTarget;
+    if (!rolePlan.length && !target) {
       setFeedback((workspace.execution_target || 'studio') === 'pc'
         ? 'PC mode cần bind ChatGPT conversation để xử lý lệnh tự nhiên. Local Executor vẫn dùng được trong System Details.'
         : 'Project này chưa có AI Studio/ChatGPT session để giao việc.');
@@ -278,14 +290,67 @@ export const BridgeChatPanel: React.FC = () => {
       }
       const attachmentBlock = uploaded.length ? `\n\n${ATTACHMENT_START}\n${JSON.stringify(uploaded)}\n${ATTACHMENT_END}` : '';
       const firstLine = content.split('\n').map(line => line.trim()).find(Boolean) || content;
+
+      if (rolePlan.length) {
+        const roleKeys = rolePlan.map((_, index) => `ROLE-${index + 1}`);
+        const batchTasks = rolePlan.map((step, index) => {
+          const roleTarget = step.assignee === 'chatgpt' ? chatRoleTarget! : studioRoleTarget!;
+          return {
+            key: roleKeys[index],
+            title: `${step.label}: ${step.instruction.slice(0, 72)}`,
+            description: `${content}${attachmentBlock}\n\nAssigned role: ${step.label}\nFocus only on this role: ${step.instruction}\nReturn a concrete role result for the next collaborator.\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: roleTarget.agent_instance_id })}\n${BINDING_END}`,
+            assignee: step.assignee,
+            priority: 'high',
+            depends_on: index === 0 ? [] : [roleKeys[index - 1]],
+            related_files: [],
+          };
+        });
+        batchTasks.push({
+          key: 'SYNTHESIS',
+          title: 'ChatGPT: synthesize all role results',
+          description: `${content}${attachmentBlock}\n\nSynthesis role: read every dependency output, resolve conflicts, state what each role contributed, and return one final user-facing answer/result. Do not silently drop any role.\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: chatRoleTarget!.agent_instance_id })}\n${BINDING_END}`,
+          assignee: 'chatgpt',
+          priority: 'high',
+          depends_on: roleKeys,
+          related_files: [],
+        });
+
+        const batchResponse = await fetch('/api/batches', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine, goal: content, tasks: batchTasks, created_by: 'human', auto_start: true, limits: { max_parallel_tasks: 1 } }),
+        });
+        const batchData = await batchResponse.json().catch(() => ({}));
+        if (!batchResponse.ok) throw new Error(batchData.error || 'Không tạo được multi-role workflow');
+        const firstBridgeTaskId = batchData.tasks?.find((item: any) => item.bridge_task_id)?.bridge_task_id;
+        if (!firstBridgeTaskId) throw new Error('Multi-role workflow đã tạo nhưng child task đầu chưa materialize');
+        const messageResponse = await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from: 'human', to: rolePlan[0].assignee, type: 'task', content: uploaded.length ? `${content}\n\nAttachments:\n${uploaded.map(item => `• ${item.name} — ${item.url}`).join('\n')}` : content, task_id: firstBridgeTaskId }),
+        });
+        if (!messageResponse.ok) throw new Error('Multi-role workflow đã tạo nhưng không ghi được chat feed');
+        setText('');
+        setAttachments([]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        setDeliveryState('delivered');
+        setFeedback(`${batchData.id} → ${rolePlan.map(step => step.label).join(' → ')} → ChatGPT synthesis`);
+        await load();
+        window.setTimeout(() => setDeliveryState('idle'), 1400);
+        return;
+      }
+
+      if (!target) throw new Error('Không có agent target khả dụng');
       const taskResponse = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine,
           description: debateStudio
-            ? `${content}${attachmentBlock}\n\n${DEBATE_MARKER}\nAI Studio: give the strongest first position, note uncertainty and likely counterarguments. Do not edit files or Publish. Submit a textual summary with artifacts: [].\nChatGPT: when Studio finishes, critique that position, add independent reasoning, and give the final answer to the user.\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`
-            : `${content}${attachmentBlock}\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`,
+            ? `${content}${attachmentBlock}\n\n${DEBATE_MARKER}\nAI Studio đưa ra quan điểm mạnh nhất trước, nêu điểm chưa chắc và phản biện có thể có. Không sửa file, không build/test, không Publish. Trả kết quả dạng tóm tắt với artifacts: [].\nChatGPT nhận kết quả Studio, phản biện độc lập rồi trả lời cuối cùng cho người dùng bằng tiếng Việt.\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`
+            : fastChat
+              ? `${content}${attachmentBlock}\n\n${CHAT_MARKER}\nĐây là Fast Chat, không phải coding workflow. Trả lời trực tiếp bằng tiếng Việt; không audit repo, không sửa file, không chạy build/test trừ khi yêu cầu gốc nói rõ phải thực hiện hành động.\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`
+              : `${content}${attachmentBlock}\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`,
           priority: 'high',
           assignee: target.provider === 'chatgpt' ? 'chatgpt' : 'gemini',
           workspace_id: workspace.workspace_id,

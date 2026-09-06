@@ -4,8 +4,9 @@ const LEGACY_BRIDGE_URL = 'https://bridge-ai-mission-control.ai.studio/';
 const DEFAULTS = {
   enabled: true,
   bridgeUrl: CURRENT_BRIDGE_URL,
-  intervalMinutes: 1,
-  redeliveryMinutes: 10,
+  settingsVersion: 2,
+  intervalMinutes: 0.5,
+  redeliveryMinutes: 1,
   focusOnWake: false,
   deliveredEvents: {},
   lastRunAt: null,
@@ -17,14 +18,21 @@ const DEFAULTS = {
 let running = false;
 
 async function settings() {
-  const config = await chrome.storage.local.get(DEFAULTS);
-  if (!config.bridgeUrl || config.bridgeUrl === LEGACY_BRIDGE_URL) {
-    config.bridgeUrl = CURRENT_BRIDGE_URL;
-    await chrome.storage.local.set({ bridgeUrl: CURRENT_BRIDGE_URL });
+  const raw = await chrome.storage.local.get(null);
+  const config = { ...DEFAULTS, ...raw };
+  const patch = {};
+  if (Number(raw.settingsVersion || 0) < 2) {
+    patch.settingsVersion = 2;
+    patch.intervalMinutes = 0.5;
+    patch.redeliveryMinutes = 1;
+  }
+  if (!config.bridgeUrl || config.bridgeUrl === LEGACY_BRIDGE_URL) patch.bridgeUrl = CURRENT_BRIDGE_URL;
+  if (Object.keys(patch).length) {
+    Object.assign(config, patch);
+    await chrome.storage.local.set(patch);
   }
   return config;
 }
-
 async function appendLog(message) {
   const state = await chrome.storage.local.get({ lastLog: [] });
   const next = [{ at: new Date().toISOString(), message }, ...(state.lastLog || [])].slice(0, 20);
@@ -37,7 +45,7 @@ async function resetAlarm() {
   if (!config.enabled) return;
   const periodInMinutes = Math.max(0.5, Number(config.intervalMinutes) || 1);
   await chrome.alarms.create(ALARM_NAME, {
-    delayInMinutes: 0.5,
+    delayInMinutes: 0.1,
     periodInMinutes,
   });
 }

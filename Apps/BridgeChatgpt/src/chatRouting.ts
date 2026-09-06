@@ -9,8 +9,42 @@ export function targetUsable(status: string | undefined) {
   return status !== 'offline';
 }
 
+export function wantsMultiAgentDebate(value: string) {
+  const text = value.trim().toLowerCase();
+  const explicitGroupIntent = /\b(tụi mày|tui may|tụi bay|tui bay|cả hai|ca hai|hai đứa|hai dua|tranh luận|tranh luan|debate|phản biện|phan bien|đối chiếu|doi chieu|multi-agent|multi agent)\b/.test(text);
+  const namesBothAgents = /\b(chatgpt|gpt)\b/.test(text) && /\b(ai studio|studio|gemini)\b/.test(text);
+  return explicitGroupIntent || namesBothAgents;
+}
+
 export function shouldAutoDebate(text: string, studioStatuses: string[], chatgptStatuses: string[]) {
   return looksLikeQuestion(text)
+    && wantsMultiAgentDebate(text)
     && studioStatuses.some(targetUsable)
     && chatgptStatuses.some(targetUsable);
+}
+
+export type MultiRoleStep = {
+  assignee: 'chatgpt' | 'gemini';
+  label: 'ChatGPT' | 'AI Studio';
+  instruction: string;
+};
+
+export function buildMultiRolePlan(value: string): MultiRoleStep[] {
+  if (looksLikeQuestion(value)) return [];
+  const matches = [...value.matchAll(/\b(chatgpt|gpt|ai\s+studio|studio|gemini)\b/gi)];
+  if (matches.length < 2) return [];
+  const providers = new Set(matches.map(match => /studio|gemini/i.test(match[0]) ? 'gemini' : 'chatgpt'));
+  if (providers.size < 2) return [];
+
+  return matches.map((match, index) => {
+    const start = (match.index || 0) + match[0].length;
+    const end = index + 1 < matches.length ? (matches[index + 1].index || value.length) : value.length;
+    const assignee = /studio|gemini/i.test(match[0]) ? 'gemini' as const : 'chatgpt' as const;
+    const instruction = value.slice(start, end).replace(/^[\s:,.\-–—]+/, '').trim();
+    return {
+      assignee,
+      label: assignee === 'gemini' ? 'AI Studio' : 'ChatGPT',
+      instruction: instruction || 'Handle your assigned role in the user request and report a concrete result.',
+    };
+  });
 }
