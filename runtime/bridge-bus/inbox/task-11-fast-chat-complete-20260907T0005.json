@@ -1,0 +1,9 @@
+{
+  "id": "task-11-fast-chat-complete-20260907T0005",
+  "type": "task_review",
+  "created_by": "chatgpt",
+  "task_id": "TASK-11",
+  "decision": "approve",
+  "summary": "Answered the user's Astra/Bridge question directly in Vietnamese. Explained that GPT-6 Astra is rolling out gradually, requires Codex CLI 0.153.0+ for Codex use, and that Bridge should use Astra through a ChatGPT-signed-in Codex worker only when the user explicitly requests Codex/Astra; no OpenAI API key is required for that path, but usage counts against the user's included Work/Codex allowance. Also noted the API path exists as gpt-6-astra but would be separately metered and is not the preferred Bridge route.",
+  "tests_verified": true
+}
