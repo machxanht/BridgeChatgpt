@@ -1,0 +1,13 @@
+{
+  "id": "sync-final-handoff-20260906",
+  "type": "executor_job_create",
+  "created_by": "chatgpt",
+  "workspace_id": "workspace-proj-default",
+  "project_id": "proj-default",
+  "executor_action": "command.run",
+  "executor_payload": {
+    "argv": ["git", "pull", "--ff-only"],
+    "cwd": ".",
+    "timeout_ms": 120000
+  }
+}
