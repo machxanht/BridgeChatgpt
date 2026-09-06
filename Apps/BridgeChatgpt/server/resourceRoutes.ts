@@ -46,6 +46,8 @@ function makeWorkspaceId(repositoryUrl: string) {
 }
 
 async function queuePcProjectSetup(workspace: {
+  workspace_id: string;
+  project_id: string;
   repository_url: string;
   branch: string;
   local_path: string;
@@ -55,8 +57,8 @@ async function queuePcProjectSetup(workspace: {
   if (!node) return { status: 'waiting_for_pc' as const, job: null };
 
   const job = await createExecutorJob({
-    workspace_id: node.workspace_id,
-    project_id: node.project_id,
+    workspace_id: workspace.workspace_id,
+    project_id: workspace.project_id,
     node_id: node.node_id,
     action: 'command.run',
     payload: {
