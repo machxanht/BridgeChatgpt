@@ -72,6 +72,90 @@
       "source_task_id": null,
       "created_at": "2026-09-03T05:10:00.000Z",
       "updated_at": "2026-09-03T05:10:00.000Z"
+    },
+    {
+      "id": "decision-fast-coding-default",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "decision",
+      "content": "FAST CODING is the default execution mode for ordinary coding tasks. Do the exact requested task only; do not audit the whole repository, do not broaden scope, do not explain at length, and edit as soon as enough evidence exists. Read only directly relevant files, run one targeted build/test after the change, allow at most two repair loops, then report a concrete blocker or escalate.",
+      "source_agent": "chatgpt",
+      "source_session": "performance-policy",
+      "source_task_id": null,
+      "created_at": "2026-09-06T18:45:00.000Z",
+      "updated_at": "2026-09-06T18:45:00.000Z"
+    },
+    {
+      "id": "decision-minimal-tool-surface",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "decision",
+      "content": "Expose the smallest useful tool surface per task. For local coding, prefer filesystem + terminal + git only. Do not expose web, broad search, unrelated connectors, deployment tools, or other capabilities unless the task actually needs them. Fewer tools means less agent wandering and lower latency.",
+      "source_agent": "chatgpt",
+      "source_session": "performance-policy",
+      "source_task_id": null,
+      "created_at": "2026-09-06T18:45:00.000Z",
+      "updated_at": "2026-09-06T18:45:00.000Z"
+    },
+    {
+      "id": "architecture-prepared-context",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "architecture",
+      "content": "Bridge should prepare compact task context before invoking a coding agent: exact task, likely 3-8 relevant files, current error/log, test or build command, repo map, package scripts, important architecture facts, and last known errors. Cache repo tree/architecture/build commands so agents do not rediscover the project on every task.",
+      "source_agent": "chatgpt",
+      "source_session": "performance-policy",
+      "source_task_id": null,
+      "created_at": "2026-09-06T18:45:00.000Z",
+      "updated_at": "2026-09-06T18:45:00.000Z"
+    },
+    {
+      "id": "architecture-agent-role-split",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "architecture",
+      "content": "Do not force one agent to plan, browse, code, test and review everything. Separate roles when useful: planner creates a short bounded plan, worker edits/builds/tests, reviewer checks diff and evidence. Simple work should skip planning overhead and go directly to the worker; difficult work may escalate to Sol/high reasoning.",
+      "source_agent": "chatgpt",
+      "source_session": "performance-policy",
+      "source_task_id": null,
+      "created_at": "2026-09-06T18:45:00.000Z",
+      "updated_at": "2026-09-06T18:45:00.000Z"
+    },
+    {
+      "id": "decision-hard-agent-limits",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "decision",
+      "content": "Default guardrails for a normal coding task: max_tool_calls=6, max_files_read=10, max_fix_loops=2, target_timeout=5_minutes. These are performance guardrails, not safety absolutes; Bridge may relax them for clearly complex tasks. When a guardrail is hit, stop wandering and either escalate to a stronger agent/reasoning level or return a precise blocker.",
+      "source_agent": "chatgpt",
+      "source_session": "performance-policy",
+      "source_task_id": null,
+      "created_at": "2026-09-06T18:45:00.000Z",
+      "updated_at": "2026-09-06T18:45:00.000Z"
+    },
+    {
+      "id": "decision-model-routing-performance-first",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "decision",
+      "content": "Bridge must be model-agnostic and performance-first. Route simple UI, CRUD, wiring, boilerplate, routine build errors and small refactors to the fastest capable worker. Reserve Sol/high reasoning for architecture, difficult debugging, large refactors and final review when justified. Do not use a slow flagship model for every task merely because its benchmark score is higher.",
+      "source_agent": "chatgpt",
+      "source_session": "performance-policy",
+      "source_task_id": null,
+      "created_at": "2026-09-06T18:45:00.000Z",
+      "updated_at": "2026-09-06T18:45:00.000Z"
+    },
+    {
+      "id": "decision-coding-success-metrics",
+      "workspace_id": "workspace-proj-default",
+      "project_id": "proj-default",
+      "scope": "decision",
+      "content": "Judge coding agents by real workflow throughput, not benchmark prestige: time-to-completion, first-pass success rate, number of retries, build-fix-build latency, test pass rate, quota/cost, and regressions. If an agent spends 15-20 minutes circling a simple task, Bridge should terminate or reroute it rather than reward longer reasoning.",
+      "source_agent": "chatgpt",
+      "source_session": "performance-policy",
+      "source_task_id": null,
+      "created_at": "2026-09-06T18:45:00.000Z",
+      "updated_at": "2026-09-06T18:45:00.000Z"
     }
   ]
 }
