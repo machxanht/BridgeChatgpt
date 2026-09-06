@@ -4,6 +4,7 @@ import { createTask, getTask, reviewTask, isCommandProcessed, recordCommandRecei
 import { attachExecutionPayload } from './executionPayload.js';
 import { createBatch, startBatch, type BatchLimits, type BatchTaskInput } from './batchOrchestrator.js';
 import { attachTaskBinding } from './taskBinding.js';
+import { projectScopedExecutorPayload } from './executorRouting.js';
 import { createExecutorJob } from './executorStore.js';
 import type { ExecutorAction } from './executorStore.js';
 
@@ -124,13 +125,14 @@ export async function execute(command: BusCommand) {
     if (!command.workspace_id || !command.project_id || !command.executor_action) {
       throw new Error('executor_job_create requires workspace_id, project_id, and executor_action.');
     }
+    const payload = await projectScopedExecutorPayload(command.workspace_id, command.project_id, command.executor_payload || {});
     const job = await createExecutorJob({
       workspace_id: command.workspace_id,
       project_id: command.project_id,
       node_id: command.node_id,
       task_id: command.task_id,
       action: command.executor_action,
-      payload: command.executor_payload || {},
+      payload,
       created_by: command.created_by || 'chatgpt',
     });
     return { ok: true, command_id: command.id, type: command.type, job };
