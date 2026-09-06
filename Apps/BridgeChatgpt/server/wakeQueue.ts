@@ -63,7 +63,7 @@ function attachmentPrompt(task: Task) {
 function eventId(reason: WakeReason, targetId: string, task: Task) {
   return crypto
     .createHash('sha256')
-    .update(`${reason}:${targetId}:${task.id}:${task.status}:${task.updated_at}${isFastChatTask(task) || isDebateTask(task) ? ':direct-return-v2' : ''}`)
+    .update(`${reason}:${targetId}:${task.id}:${task.status}:${task.updated_at}${isFastChatTask(task) || isDebateTask(task) ? ':direct-return-v3' : ''}`)
     .digest('hex')
     .slice(0, 24);
 }
@@ -72,7 +72,8 @@ function chatReturnInstructions(task: Task) {
   return [
     `Gọi task_update id="${task.id}", status="completed", result là NGUYÊN VĂN câu trả lời cuối, không tóm tắt việc đã làm.`,
     'Nếu phiên này không có tool task_update: dùng Remote Desktop Commander start_process trên PC đã kết nối để chạy helper dưới đây. Không cần GitHub commit, review, test, token hay đăng nhập lại.',
-    `node E:\\AI\\Bridge\\Apps\\BridgeChatgpt\\scripts\\complete-chat.mjs ${task.id} <base64 UTF-8 của nguyên văn câu trả lời>`,
+    `Dùng Remote Desktop Commander write_file để ghi NGUYÊN VĂN câu trả lời vào E:\\AI\\Bridge\\runtime\\bridge-chat-answer-${task.id}.txt, rồi chạy helper:`,
+    `node E:\\AI\\Bridge\\Apps\\BridgeChatgpt\\scripts\\complete-chat.mjs ${task.id} --file E:\\AI\\Bridge\\runtime\\bridge-chat-answer-${task.id}.txt`,
     'Chỉ khi helper trả ok=true mới coi đã gửi câu trả lời về Bridge. Nếu tool PC không khả dụng, nói rõ không gửi được; không giả lập hoàn tất.',
   ];
 }
