@@ -7,6 +7,15 @@ Status legend:
 - 🟡 live verification pending
 - ⬜ intentionally not started / deferred
 
+## Mandatory cost/reuse gate
+
+All roadmap work follows `docs/FREE_FIRST_POLICY.md`.
+
+- Prefer free/included/browser/local/open-source/repository paths.
+- No paid/quota API, token-metered AI API, provider AI Agent, or paid automation without explicit prior user approval.
+- If work/troubleshooting starts taking too long, search the current repo first, then trusted public repos/docs/internet, and reuse a maintained compatible solution before expanding custom implementation.
+- Routine deploy must be deterministic and free/included; Railway AI Agent is not a routine deployment path.
+
 ## Core platform
 
 ### ✅ Railway control plane
@@ -64,9 +73,11 @@ Tablet → Bridge task → wake bound ChatGPT conversation → prompt sent
 → ChatGPT interprets → scoped PC action → result returned
 ```
 
+Browser/subscription integration remains preferred over a metered OpenAI API dependency.
+
 ### 🟡 Google AI Studio E2E
 
-Studio relay + bound instance/task/result path are implemented. Remaining work is live browser/Studio verification.
+Studio relay + bound instance/task/result path are implemented. Remaining work is live browser/Studio verification. Browser/Studio path remains preferred over a metered Gemini API dependency.
 
 ### 🟡 Browser startup persistence
 
@@ -76,11 +87,11 @@ Extension handles browser startup, but automatically launching the browser after
 
 ### ✅ Mandatory Markdown standard
 
-`AGENTS.md`, `START_HERE.md`, `docs/PROJECT_STANDARD.md`, `docs/HANDOFF.md`, and the rest of the handoff set define the mandatory recovery protocol for every project.
+`AGENTS.md`, `START_HERE.md`, `docs/PROJECT_STANDARD.md`, `docs/FREE_FIRST_POLICY.md`, `docs/HANDOFF.md`, and the rest of the handoff set define the mandatory recovery/cost protocol for every project.
 
 ### ✅ Project template
 
-`Apps/_TEMPLATE/` contains the required handoff skeleton.
+`Apps/_TEMPLATE/` contains the required handoff skeleton and free-first policy references.
 
 ### 🟢 Automatic template seeding
 
@@ -94,6 +105,22 @@ Safety behavior:
 - no automatic push.
 
 Live acceptance test remains: create a real second project and confirm missing handoff docs are seeded while existing README/docs remain untouched.
+
+## Deployment / cost control
+
+### 🟡 Deterministic Railway deploy without AI Agent quota
+
+Current requirement: routine deployment must not depend on Railway AI Agent or another paid/quota AI service.
+
+Completion criterion:
+
+- identify/reuse the simplest free/included deterministic Git/platform-native deploy path available to the existing Railway/GitHub setup;
+- deploy the exact intended `main` commit without Railway AI Agent;
+- verify `SUCCESS` + exact `commitHash`;
+- document the procedure in `docs/RUNBOOK.md`;
+- no recurring paid API/AI-agent dependency introduced.
+
+Before building new deployment machinery, inspect this repo and trusted existing Railway/GitHub/open-source solutions first.
 
 ## Tablet UX
 
@@ -113,17 +140,16 @@ Replacement sessions use:
 
 1. `START_HERE.md`
 2. `AGENTS.md`
-3. `docs/HANDOFF.md`
-4. `docs/PRE_POWER_RETURN_CHECKLIST.md` when the PC returns.
+3. `docs/FREE_FIRST_POLICY.md`
+4. `docs/HANDOFF.md`
+5. `docs/PRE_POWER_RETURN_CHECKLIST.md` when the PC returns.
 
-## Remaining sequence after final offline-prep merge/deploy
+## Remaining sequence
 
-No planned source edits remain before the PC returns.
-
-1. Verify final GitHub `main` CI PASS.
-2. Deploy exact final `main` SHA to Railway and verify `SUCCESS` + exact `commitHash`.
+1. Merge/CI-verify the free-first documentation policy.
+2. Establish and prove the deterministic free/included Railway deploy path without provider AI Agent quota.
 3. Leave the existing fast-forward PC sync pending while the PC is off.
-4. When power returns, perform `docs/PRE_POWER_RETURN_CHECKLIST.md` only:
+4. When power returns, perform `docs/PRE_POWER_RETURN_CHECKLIST.md`:
    - executor reconnect;
    - PC Git sync;
    - Bridge git status/test/build;
@@ -141,3 +167,7 @@ Not planned. Browser integration is the selected path.
 ### ⬜ Windows/browser autostart outside approved root
 
 Requires explicit narrow permission before touching Windows user/system locations.
+
+### ⬜ Paid/quota API fallback
+
+Not a default roadmap item. It may only be considered after explicit prior user approval with cost/quota disclosure and a comparison against the free alternative.
