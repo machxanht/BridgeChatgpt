@@ -7,7 +7,7 @@ import { apiRouter } from './server/routes.js';
 import { initDatabase } from './server/db.js';
 import { handleMcpRequest } from './server/mcp.js';
 import { startGeminiWorker, getGeminiWorkerConfig } from './server/geminiWorker.js';
-import { requireAuth } from './server/auth.js';
+import { requireAuth, requireStudioAuth } from './server/auth.js';
 import { studioRelayRouter } from './server/studioRelay.js';
 import { studioSessionPairingGuard } from './server/studioSessionPairingGuard.js';
 import { reviewPacketsRouter } from './server/reviewPackets.js';
@@ -97,7 +97,7 @@ async function startServer() {
 
   app.use('/api/android-wake', androidWakeRouter);
   app.use('/api/executors', executorRouter);
-  app.use('/api/studio-relay', requireAuth, studioSessionPairingGuard, studioRelayRouter);
+  app.use('/api/studio-relay', requireStudioAuth, studioSessionPairingGuard, studioRelayRouter);
   app.use('/api/resource-registry', requireAuth, resourceRegistryRouter);
   app.use('/api/project-brain', requireAuth, projectBrainRouter);
   app.use('/api/batches', requireAuth, batchRouter);
