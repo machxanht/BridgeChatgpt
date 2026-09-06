@@ -24,3 +24,5 @@ Rules:
 - Never store raw secrets.
 - Record implementation, deployment and E2E proof as separate states.
 - Follow the parent Bridge `docs/PROJECT_STANDARD.md` contract.
+- Follow the parent Bridge `docs/FREE_FIRST_POLICY.md`: free/included/local/browser/open-source/repository solutions first; no paid/quota API or provider AI Agent without explicit prior user approval.
+- If implementation/troubleshooting is taking too long, search the project/repository first, then trusted public repos/docs/internet, and reuse a compatible existing solution before rebuilding from scratch.
