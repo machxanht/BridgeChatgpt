@@ -1,6 +1,8 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { isSameOriginBrowserRequest, verifyToken } from './auth.js';
+import { getProject } from './db.js';
 import { issueExecutorPairing, redeemExecutorPairing, verifyPairedExecutorToken, type PairedExecutorAuth } from './executorPairing.js';
+import { getResourceRegistry } from './resourceRegistry.js';
 import {
   cancelExecutorJob,
   claimExecutorJob,
@@ -116,6 +118,22 @@ function requireController(req: Request) {
   if (auth?.kind === 'paired') throw new Error('PC worker tokens cannot queue or cancel jobs');
 }
 
+async function projectScopedPayload(workspaceIdRaw: unknown, projectIdRaw: unknown, rawPayload: unknown) {
+  const workspaceId = String(workspaceIdRaw || '').trim();
+  const projectId = String(projectIdRaw || '').trim();
+  const payload = rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)
+    ? { ...(rawPayload as Record<string, unknown>) }
+    : {};
+  const project = await getProject();
+  const registry = await getResourceRegistry(project);
+  const workspace = registry.workspaces.find(item => item.workspace_id === workspaceId && item.project_id === projectId);
+  if (!workspace) throw new Error(`Workspace/project not found: ${workspaceId}/${projectId}`);
+  // Controller-created jobs always run from the active project's declared Apps path.
+  // The local executor independently rejects any cwd that escapes its approved root.
+  payload.cwd = workspace.local_path;
+  return payload;
+}
+
 executorRouter.use(requireExecutorAccess);
 
 executorRouter.get('/snapshot', async (req: Request, res: Response) => {
@@ -186,13 +204,14 @@ executorRouter.post('/nodes/:node_id/heartbeat', async (req: Request, res: Respo
 executorRouter.post('/jobs', async (req: Request, res: Response) => {
   try {
     requireController(req);
+    const payload = await projectScopedPayload(req.body?.workspace_id, req.body?.project_id, req.body?.payload);
     const job = await createExecutorJob({
       workspace_id: req.body?.workspace_id,
       project_id: req.body?.project_id,
       node_id: req.body?.node_id,
       task_id: req.body?.task_id,
       action: req.body?.action,
-      payload: req.body?.payload,
+      payload,
       created_by: req.body?.created_by || (req as any).auth?.agentName || 'bridge',
     });
     res.status(201).json({ ok: true, job });
