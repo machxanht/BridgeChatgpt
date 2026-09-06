@@ -1,17 +1,27 @@
 # Bridge Recovery Guide
 
-Use this when chat context is lost, Git/Deploy state diverges, the PC restarts, or an agent is unsure what to trust.
+Use this when chat context is lost, Git/Deploy state diverges, the PC restarts, an agent is unsure what to trust, or a normal free/included operating path breaks.
+
+## 0. Mandatory recovery cost/reuse rule
+
+Read `docs/FREE_FIRST_POLICY.md` first. Recovery is not permission to spend money/quota.
+
+- Do not call a paid/quota API or provider AI Agent as a shortcut without explicit prior user approval.
+- Before inventing a new recovery mechanism, search this repository for an existing one.
+- If two targeted attempts fail or recovery is dragging, search trusted public repos, official docs, and the internet for a maintained compatible solution before writing more custom machinery.
+- Prefer deterministic free/included Git/platform/browser/local paths.
 
 ## A. Replacement chat/agent recovery
 
 1. Read `START_HERE.md`.
 2. Read `AGENTS.md`.
-3. Read `docs/HANDOFF.md`.
-4. Read `docs/ROADMAP.md`.
-5. Verify GitHub `main` HEAD; do not assume the handoff's commit is still current.
-6. Verify live Railway deployment commit hash.
-7. If PC-dependent work is next, verify whether the PC is powered/online before diagnosing worker issues.
-8. Continue only from an item explicitly marked unfinished/blocked.
+3. Read `docs/FREE_FIRST_POLICY.md`.
+4. Read `docs/HANDOFF.md`.
+5. Read `docs/ROADMAP.md`.
+6. Verify GitHub `main` HEAD; do not assume the handoff's commit is still current.
+7. Verify live Railway deployment commit hash.
+8. If PC-dependent work is next, verify whether the PC is powered/online before diagnosing worker issues.
+9. Continue only from an item explicitly marked unfinished/blocked.
 
 Do not ask the human to re-explain the entire project unless documentation is genuinely incomplete.
 
@@ -25,10 +35,11 @@ If GitHub `main` and Railway are on different commits:
 4. Never deploy the older GitHub head merely because it is called `main`.
 5. Restore one canonical forward history through a branch/PR or safe fast-forward.
 6. Verify CI.
-7. Deploy/verify the exact canonical commit.
-8. Update `docs/HANDOFF.md` with the resolved commit IDs.
+7. Use a deterministic free/included deploy path for the exact canonical commit.
+8. Verify deployment commit hash.
+9. Update `docs/HANDOFF.md` with the resolved commit IDs.
 
-Avoid force moves unless required and explicitly justified.
+Do not invoke Railway AI Agent simply because normal deployment is inconvenient. Railway AI Agent use requires explicit prior user approval when it consumes separate quota. Avoid force moves unless required and explicitly justified.
 
 ## C. PC power loss / reboot
 
@@ -82,7 +93,7 @@ Separate the stages:
 7. Did DOM selectors find composer/send control?
 8. Was task/result state updated?
 
-Do not reinstall everything when only one stage failed.
+Do not reinstall/rebuild everything when only one stage failed. Check the existing extension code and compatible public implementations/selectors before replacing the design. Do not replace browser wake with a metered LLM API without explicit approval.
 
 ## G. Persistent Railway state issue
 
@@ -118,3 +129,14 @@ If a raw secret was committed:
 3. Remove it from current source/documentation.
 4. Assess Git history exposure.
 5. Do not publish the replacement secret in handoff docs.
+
+## J. Unapproved paid/quota usage
+
+If an agent accidentally consumes a paid API or AI-Agent quota without explicit approval:
+
+1. Stop further use immediately.
+2. Record which service was used and what action caused consumption; do not expose secrets.
+3. Do not buy/increase quota automatically.
+4. Return to the free/included path.
+5. Search existing repo/public solutions for a non-metered replacement.
+6. Update `docs/HANDOFF.md` and the relevant runbook/roadmap so another agent does not repeat it.
