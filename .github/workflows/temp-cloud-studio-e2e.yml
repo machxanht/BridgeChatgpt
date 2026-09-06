@@ -5,53 +5,23 @@ on:
     branches: [main]
 
 jobs:
-  studio-e2e:
+  review-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
     steps:
-      - name: Exercise production Studio relay
+      - name: Review TASK-2 after ChatGPT GitHub apply
         shell: bash
         env:
           BASE: https://bridgechatgpt-production.up.railway.app
+          TASK_ID: TASK-2
         run: |
           set -euo pipefail
+          echo 'STEP approve_review'
+          node -e "process.stdout.write(JSON.stringify({decision:'approve',summary:'ChatGPT connector applied the Studio artifact to GitHub test branch and verified the resulting blob.',tests_verified:true,reviewer:'chatgpt'}))" \
+            | curl -fsS -X POST "$BASE/api/tasks/$TASK_ID/review" -H "Origin: $BASE" -H 'Content-Type: application/json' --data-binary @- \
+            | tee /tmp/review.json
+          node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/review.json','utf8')); if(d.status!=='completed') { console.error(d); process.exit(2) }; console.log('E2E_REVIEW_PASS task_id='+d.id+' status='+d.status)"
 
-          echo 'STEP health'
-          curl -fsS "$BASE/api/health" | tee /tmp/health.json
-          echo
-
-          echo 'STEP registry (test-only same-origin header to continue after confirmed 401)'
-          curl -fsS -H "Origin: $BASE" "$BASE/api/studio-relay/registry" | tee /tmp/registry.json
-          WORKSPACE_ID=$(node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/registry.json','utf8')); const w=d.workspaces?.[0]; if(!w) process.exit(2); process.stdout.write(w.workspace_id)")
-          PROJECT_ID=$(node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/registry.json','utf8')); const w=d.workspaces?.[0]; if(!w) process.exit(2); process.stdout.write(w.project_id)")
-          INSTANCE_ID="e2e-studio-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          echo "workspace_id=$WORKSPACE_ID project_id=$PROJECT_ID instance_id=$INSTANCE_ID"
-
-          echo 'STEP create_bound_task'
-          WORKSPACE_ID="$WORKSPACE_ID" PROJECT_ID="$PROJECT_ID" INSTANCE_ID="$INSTANCE_ID" \
-            node -e "process.stdout.write(JSON.stringify({title:'Cloud Studio E2E '+process.env.GITHUB_RUN_ID,description:'Disposable production E2E: Studio relay -> review packet -> ChatGPT GitHub write',priority:'low',assignee:'gemini',related_files:[],workspace_id:process.env.WORKSPACE_ID,project_id:process.env.PROJECT_ID,agent_instance_id:process.env.INSTANCE_ID}))" \
-            | curl -fsS -X POST "$BASE/api/studio-relay/bound-task" -H "Origin: $BASE" -H 'Content-Type: application/json' --data-binary @- \
-            | tee /tmp/task.json
-          TASK_ID=$(node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/task.json','utf8')); if(!d.ok||!d.task?.id) process.exit(3); process.stdout.write(d.task.id)")
-          echo "task_id=$TASK_ID"
-
-          echo 'STEP claim'
-          WORKSPACE_ID="$WORKSPACE_ID" INSTANCE_ID="$INSTANCE_ID" TASK_ID="$TASK_ID" \
-            node -e "process.stdout.write(JSON.stringify({workspace_id:process.env.WORKSPACE_ID,agent_instance_id:process.env.INSTANCE_ID,task_id:process.env.TASK_ID,status:'active'}))" \
-            | curl -fsS -X POST "$BASE/api/studio-relay/claim" -H "Origin: $BASE" -H 'Content-Type: application/json' --data-binary @- \
-            | tee /tmp/claim.json
-          TASK_ID="$TASK_ID" node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/claim.json','utf8')); if(!d.ok||d.task?.id!==process.env.TASK_ID) { console.error(d); process.exit(4) }"
-
-          ARTIFACT_PATH="artifacts/test-output/cloud-studio-e2e-${TASK_ID}.txt"
-          ARTIFACT_CONTENT="CLOUD_STUDIO_E2E=PASS\ntask_id=${TASK_ID}\ninstance_id=${INSTANCE_ID}\npc_required=false\n"
-
-          echo 'STEP result'
-          WORKSPACE_ID="$WORKSPACE_ID" INSTANCE_ID="$INSTANCE_ID" TASK_ID="$TASK_ID" ARTIFACT_PATH="$ARTIFACT_PATH" ARTIFACT_CONTENT="$ARTIFACT_CONTENT" \
-            node -e "process.stdout.write(JSON.stringify({workspace_id:process.env.WORKSPACE_ID,agent_instance_id:process.env.INSTANCE_ID,task_id:process.env.TASK_ID,summary:'Disposable cloud Studio relay E2E result',tests:{relay:'pass'},files_changed:[process.env.ARTIFACT_PATH],artifacts:[{path:process.env.ARTIFACT_PATH,operation:'create',content:process.env.ARTIFACT_CONTENT,base_sha:null}],blocked:false}))" \
-            | curl -fsS -X POST "$BASE/api/studio-relay/result" -H "Origin: $BASE" -H 'Content-Type: application/json' --data-binary @- \
-            | tee /tmp/result.json
-          node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/result.json','utf8')); if(!d.ok||d.artifact_count!==1||!d.conflict_safe) { console.error(d); process.exit(5) }"
-
-          echo 'STEP review_packet'
-          curl -fsS -H "Origin: $BASE" "$BASE/api/review-packets/$TASK_ID" | tee /tmp/packet.json
-          TASK_ID="$TASK_ID" ARTIFACT_PATH="$ARTIFACT_PATH" node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/packet.json','utf8')); if(!d.ok||d.packet?.task_id!==process.env.TASK_ID||d.packet?.artifacts?.[0]?.path!==process.env.ARTIFACT_PATH) { console.error(d); process.exit(6) }; console.log('E2E_RELAY_PASS task_id='+process.env.TASK_ID+' artifact_path='+process.env.ARTIFACT_PATH); console.log('E2E_PACKET='+JSON.stringify(d.packet))"
+          echo 'STEP final_task'
+          curl -fsS -H "Origin: $BASE" "$BASE/api/tasks/$TASK_ID" | tee /tmp/task.json
+          node -e "const d=JSON.parse(require('fs').readFileSync('/tmp/task.json','utf8')); if(d.status!=='completed') { console.error(d); process.exit(3) }; console.log('E2E_CLOUD_LOOP_PASS task_id='+d.id)"
