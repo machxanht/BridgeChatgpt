@@ -188,3 +188,6 @@ assert.equal(directChatWake.length, 1);
 assert.equal(directChatWake[0].provider, 'chatgpt');
 assert.match(directChatWake[0].prompt, /Chatgpt mày biết Astra không\?/);
 assert.match(directChatWake[0].prompt, /status="completed"/);
+assert.match(directChatWake[0].prompt, /complete-chat\.mjs TASK-2/);
+assert.match(directChatWake[0].prompt, /Remote Desktop Commander/);
+assert.match(debateReviewWake.prompt, /complete-chat\.mjs/);

@@ -186,3 +186,7 @@ Implemented and locally tested: direct completion at DB/MCP boundary, no chat/de
 - Railway CLI is unavailable on the connected Windows PC. No re-login, re-pair, browser profile reset, or Railway AI Agent was used.
 - Production browser was opened successfully and old TASK/review metadata was observed. Three real-agent E2E cases for the fix are NOT PROVEN because the fix is not deployed. PC extension 2-second poll is also NOT PROVEN installed/live.
 - Next necessary step: deploy the existing Railway service from b085fe3 (or its documentation-only successor), verify actual deployment commitHash, then submit the three specified real chat cases and record answers/latency. Do not rerun the repo audit.
+
+### Direct answer return fallback
+
+PC helper and explicit wake instructions implemented and tested; live read-only authentication check PASS. Real ChatGPT invocation, Vietnamese answer completion and final debate answer remain unproven until observed. Do not re-audit prior passing modules.
