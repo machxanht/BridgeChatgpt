@@ -34,6 +34,11 @@ type BoundTask = {
 };
 
 const TERMINAL_STATUSES = new Set(['completed', 'cancelled']);
+const DEBATE_MARKER = '<!-- BRIDGE_DEBATE_V1 -->';
+
+function isDebateTask(task: Task) {
+  return String(task.description || '').includes(DEBATE_MARKER);
+}
 
 function eventId(reason: WakeReason, targetId: string, task: Task) {
   return crypto
@@ -45,6 +50,19 @@ function eventId(reason: WakeReason, targetId: string, task: Task) {
 
 function directPrompt(target: ResourceTargetView, task: Task, projectName: string, repositoryUrl: string) {
   if (target.provider === 'google-ai-studio') {
+    if (isDebateTask(task)) {
+      return [
+        `Bridge Debate — Studio round for ${task.id}: ${task.title}`,
+        `project=${projectName}`,
+        `repo=${repositoryUrl}`,
+        `studio_app_id=${target.resource_id}`,
+        `Claim exactly ${task.id} for this Studio target.`,
+        'This is a question/debate task, not a coding task. Read the task question and give the strongest first position.',
+        'State uncertainty and likely counterarguments. Do not edit files, run builds, or Publish.',
+        'Submit the Studio relay result with your argument in summary, artifacts: [], files_changed: [].',
+        'ChatGPT will receive your position automatically, critique it, and synthesize the final answer.',
+      ].join('\n');
+    }
     return [
       `Bridge Wake — ${task.id}: ${task.title}`,
       `project=${projectName}`,
@@ -69,6 +87,18 @@ function directPrompt(target: ResourceTargetView, task: Task, projectName: strin
 }
 
 function reviewPrompt(target: ResourceTargetView, task: Task, projectName: string, repositoryUrl: string, blocked: boolean) {
+  if (!blocked && isDebateTask(task)) {
+    return [
+      `Bridge Debate — ChatGPT final round for ${task.id}: ${task.title}`,
+      `project=${projectName}`,
+      `repo=${repositoryUrl}`,
+      `chatgpt_conversation_id=${target.resource_id}`,
+      'Read the latest AI Studio position for this question in Bridge.',
+      'Challenge weak assumptions, add your independent reasoning, and resolve disagreements explicitly.',
+      'Then mark the task completed with one user-facing final answer. Do not edit repo/files unless the original question explicitly asks for work.',
+      'Use normal ChatGPT tools; do not invoke Codex unless the user explicitly requests it.',
+    ].join('\n');
+  }
   return [
     `Bridge Wake — ${blocked ? 'Studio blocker' : 'Studio result ready'} for ${task.id}: ${task.title}`,
     `project=${projectName}`,
