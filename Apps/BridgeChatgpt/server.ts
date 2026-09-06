@@ -19,6 +19,7 @@ import { resourceRegistryRouter } from './server/resourceRoutes.js';
 import { androidWakeRouter } from './server/androidWake.js';
 import { executorRouter } from './server/executorRoutes.js';
 import { handleExecutorMcpRequest } from './server/executorMcp.js';
+import { attachmentRouter } from './server/attachments.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,7 +43,7 @@ async function startServer() {
   app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-bridge-token', 'x-mcp-token', 'x-agent-name', 'x-bridge-executor-token'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-bridge-token', 'x-mcp-token', 'x-agent-name', 'x-bridge-executor-token', 'x-file-name', 'x-file-type'],
   }));
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
@@ -95,6 +96,7 @@ async function startServer() {
   app.get('/health', healthHandler);
   app.get('/api/health', healthHandler);
 
+  app.use('/api/attachments', attachmentRouter);
   app.use('/api/android-wake', androidWakeRouter);
   app.use('/api/executors', executorRouter);
   app.use('/api/studio-relay', requireStudioAuth, studioSessionPairingGuard, studioRelayRouter);

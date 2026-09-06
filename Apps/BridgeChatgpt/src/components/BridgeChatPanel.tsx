@@ -8,13 +8,19 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  File as FileIcon,
+  Image as ImageIcon,
   Loader2,
   MonitorCog,
+  Paperclip,
   Sparkles,
   TriangleAlert,
   User,
+  Video,
+  X,
 } from 'lucide-react';
 import type { Message, Task } from '../types.js';
+import { shouldAutoDebate } from '../chatRouting.js';
 
 interface ResourceTarget {
   target_id: string;
@@ -44,14 +50,13 @@ interface ResourceWorkspace {
 const ACTIVE_WORKSPACE_KEY = 'bridge.resource.activeWorkspace';
 const BINDING_START = '<!-- BRIDGE_TASK_BINDING_V1';
 const BINDING_END = 'BRIDGE_TASK_BINDING_V1 -->';
+const ATTACHMENT_START = '<!-- BRIDGE_ATTACHMENTS_V1';
+const ATTACHMENT_END = 'BRIDGE_ATTACHMENTS_V1 -->';
 const DEBATE_MARKER = '<!-- BRIDGE_DEBATE_V1 -->';
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
-function looksLikeQuestion(value: string) {
-  const text = value.trim().toLowerCase();
-  if (text.includes('?')) return true;
-  return /(^|\s)(theo|tại sao|tai sao|vì sao|vi sao|sao|có nên|co nen|là gì|la gi|ai|cái gì|cai gi)(\s|$)/.test(text)
-    || /\b(hay|hoặc|or)\b.*\b(không|ko|khong)\b/.test(text);
-}
+type UploadedAttachment = { id:string; name:string; type:string; size:number; url:string; created_at:string };
 
 function readActiveWorkspace() {
   try { return window.localStorage.getItem(ACTIVE_WORKSPACE_KEY) || ''; } catch { return ''; }
@@ -151,12 +156,14 @@ export const BridgeChatPanel: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [targetId, setTargetId] = useState('auto');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [deliveryState, setDeliveryState] = useState<'idle' | 'sending' | 'delivered'>('idle');
   const feedRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const handle = (event: Event) => {
@@ -242,12 +249,14 @@ export const BridgeChatPanel: React.FC = () => {
   };
 
   const send = async () => {
-    const content = text.trim();
+    const content = text.trim() || (attachments.length ? 'Analyze the attached file(s).' : '');
     if (!content || !workspace || busy) return;
     const chosenTarget = chooseTarget();
-    const debateStudio = looksLikeQuestion(content) && workspace.studio_targets[0] && workspace.chatgpt_targets.length
-      ? workspace.studio_targets[0]
-      : null;
+    const debateStudio = shouldAutoDebate(
+      content,
+      workspace.studio_targets.map(item => item.connection_status),
+      workspace.chatgpt_targets.map(item => item.connection_status),
+    ) ? workspace.studio_targets.find(item => item.connection_status !== 'offline') || null : null;
     const target = debateStudio || chosenTarget;
     if (!target) {
       setFeedback((workspace.execution_target || 'studio') === 'pc'
@@ -260,6 +269,14 @@ export const BridgeChatPanel: React.FC = () => {
     setDeliveryState('sending');
     setFeedback('');
     try {
+      const uploaded: UploadedAttachment[] = [];
+      for (const file of attachments) {
+        const response = await fetch('/api/attachments', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name), 'x-file-type': file.type || 'application/octet-stream' }, body: file });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `Không upload được ${file.name}`);
+        uploaded.push(data.attachment);
+      }
+      const attachmentBlock = uploaded.length ? `\n\n${ATTACHMENT_START}\n${JSON.stringify(uploaded)}\n${ATTACHMENT_END}` : '';
       const firstLine = content.split('\n').map(line => line.trim()).find(Boolean) || content;
       const taskResponse = await fetch('/api/tasks', {
         method: 'POST',
@@ -267,8 +284,8 @@ export const BridgeChatPanel: React.FC = () => {
         body: JSON.stringify({
           title: firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine,
           description: debateStudio
-            ? `${content}\n\n${DEBATE_MARKER}\nAI Studio: give the strongest first position, note uncertainty and likely counterarguments. Do not edit files or Publish. Submit a textual summary with artifacts: [].\nChatGPT: when Studio finishes, critique that position, add independent reasoning, and give the final answer to the user.\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`
-            : `${content}\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`,
+            ? `${content}${attachmentBlock}\n\n${DEBATE_MARKER}\nAI Studio: give the strongest first position, note uncertainty and likely counterarguments. Do not edit files or Publish. Submit a textual summary with artifacts: [].\nChatGPT: when Studio finishes, critique that position, add independent reasoning, and give the final answer to the user.\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`
+            : `${content}${attachmentBlock}\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`,
           priority: 'high',
           assignee: target.provider === 'chatgpt' ? 'chatgpt' : 'gemini',
           workspace_id: workspace.workspace_id,
@@ -287,7 +304,7 @@ export const BridgeChatPanel: React.FC = () => {
           from: 'human',
           to: target.provider === 'chatgpt' ? 'chatgpt' : 'gemini',
           type: 'task',
-          content,
+          content: uploaded.length ? `${content}\n\nAttachments:\n${uploaded.map(item => `• ${item.name} — ${item.url}`).join('\n')}` : content,
           task_id: taskData.id,
         }),
       });
@@ -297,6 +314,8 @@ export const BridgeChatPanel: React.FC = () => {
       }
 
       setText('');
+      setAttachments([]);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       setDeliveryState('delivered');
       setFeedback(debateStudio ? `${taskData.id} → Debate · Studio → ChatGPT` : `${taskData.id} → ${displayTarget(target)}`);
       await load();
@@ -359,7 +378,25 @@ export const BridgeChatPanel: React.FC = () => {
             </div>
           )}
 
+          {attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {attachments.map((file, index) => { const Icon = file.type.startsWith('image/') ? ImageIcon : file.type.startsWith('video/') ? Video : FileIcon; return (
+                <span key={`${file.name}-${index}`} className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border bg-surface px-2 py-1 text-[11px] text-muted-foreground">
+                  <Icon className="size-3.5 shrink-0" /><span className="max-w-44 truncate">{file.name}</span><span>{Math.ceil(file.size / 1024)} KB</span>
+                  <button type="button" aria-label={`Remove ${file.name}`} onClick={() => setAttachments(items => items.filter((_, i) => i !== index))}><X className="size-3" /></button>
+                </span>
+              ); })}
+            </div>
+          )}
+          <input ref={fileInputRef} type="file" multiple hidden accept="image/*,video/*,.pdf,.txt,.md,.json,.csv,.zip,.doc,.docx,.xls,.xlsx" onChange={event => {
+            const files = Array.from(event.target.files ?? []) as File[];
+            const invalid = files.find(file => file.size > MAX_ATTACHMENT_BYTES);
+            if (invalid) { setFeedback(`Lỗi: ${invalid.name} vượt quá 25 MB`); event.target.value = ''; return; }
+            setAttachments(current => { const combined = [...current, ...files]; if (combined.length > MAX_ATTACHMENTS) setFeedback(`Tối đa ${MAX_ATTACHMENTS} file mỗi tin nhắn`); return combined.slice(0, MAX_ATTACHMENTS); });
+          }} />
+
           <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface p-2 shadow-panel focus-within:ring-2 focus-within:ring-ring/60">
+            <button type="button" onClick={() => fileInputRef.current?.click()} aria-label="Attach image, video, or file" className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-muted-foreground transition-colors hover:text-foreground"><Paperclip className="size-4" /></button>
             <button onClick={() => setPickerOpen(value => !value)} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-surface-2 px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground">
               {targetId === 'auto' ? ((workspace?.execution_target || 'studio') === 'pc' ? <MonitorCog className="size-3.5" /> : <Sparkles className="size-3.5" />) : chooseTarget()?.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
               <span className="hidden max-w-36 truncate sm:inline">{targetLabel()}</span>
@@ -381,7 +418,7 @@ export const BridgeChatPanel: React.FC = () => {
               className="max-h-40 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[14px] leading-snug text-foreground outline-none placeholder:text-muted-foreground/70 disabled:opacity-40"
             />
 
-            <button onClick={send} disabled={!text.trim() || busy || !workspace} aria-label="Send" className={`grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground transition-all duration-200 hover:opacity-90 disabled:opacity-30 ${deliveryState === 'sending' ? 'scale-95' : ''}`}>
+            <button onClick={send} disabled={(!text.trim() && attachments.length === 0) || busy || !workspace} aria-label="Send" className={`grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground transition-all duration-200 hover:opacity-90 disabled:opacity-30 ${deliveryState === 'sending' ? 'scale-95' : ''}`}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
             </button>
           </div>
