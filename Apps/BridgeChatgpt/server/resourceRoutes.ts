@@ -2,9 +2,9 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { getProject } from './db.js';
 import { getResourceRegistry, removeResourceTarget, upsertResourceTarget } from './resourceRegistry.js';
-import { projectLocalPath, upsertWorkspace } from './workspaceRegistry.js';
+import { getWorkspaceRegistry, projectLocalPath, upsertWorkspace } from './workspaceRegistry.js';
 import { buildWakeQueue } from './wakeQueue.js';
-import { createExecutorJob, getExecutorSnapshot } from './executorStore.js';
+import { queueProjectSetup } from './projectSetup.js';
 
 export const resourceRegistryRouter = Router();
 
@@ -43,40 +43,6 @@ function makeWorkspaceId(repositoryUrl: string) {
     .slice(0, 54) || 'project';
   const digest = crypto.createHash('sha256').update(repositoryUrl).digest('hex').slice(0, 8);
   return `workspace-${slug}-${digest}`;
-}
-
-async function queuePcProjectSetup(workspace: {
-  workspace_id: string;
-  project_id: string;
-  repository_url: string;
-  branch: string;
-  local_path: string;
-}) {
-  const snapshot = await getExecutorSnapshot({ limit: 10 });
-  const node = snapshot.nodes.find(item => item.connection_status === 'online' && item.capabilities.includes('command.run'));
-  if (!node) return { status: 'waiting_for_pc' as const, job: null };
-
-  const job = await createExecutorJob({
-    workspace_id: workspace.workspace_id,
-    project_id: workspace.project_id,
-    node_id: node.node_id,
-    action: 'command.run',
-    payload: {
-      // Project bootstrap is the intentional root-level exception: it creates the
-      // new Apps/<ProjectName> directory, then seeds only missing handoff docs.
-      argv: [
-        'node',
-        'Apps/BridgeChatgpt/scripts/clone-project.mjs',
-        '--repo', workspace.repository_url,
-        '--branch', workspace.branch || 'main',
-        '--target', workspace.local_path,
-      ],
-      cwd: '.',
-      timeout_ms: 10 * 60_000,
-    },
-    created_by: 'bridge-project-create',
-  });
-  return { status: 'queued' as const, job };
 }
 
 resourceRegistryRouter.get('/', async (_req: Request, res: Response) => {
@@ -122,22 +88,40 @@ resourceRegistryRouter.post('/projects', async (req: Request, res: Response) => 
       branch,
       local_path: creating ? projectLocalPath(projectName, projectId) : undefined,
       execution_target: req.body?.execution_target,
+      setup_required: creating ? true : undefined,
     });
 
-    let pcSetup: 'not_requested' | 'queued' | 'waiting_for_pc' = 'not_requested';
-    let pcSetupJob: Awaited<ReturnType<typeof createExecutorJob>> | null = null;
-    if (creating) {
-      const setup = await queuePcProjectSetup(workspace);
-      pcSetup = setup.status;
-      pcSetupJob = setup.job;
-    }
+    const setup = creating
+      ? await queueProjectSetup(workspace)
+      : { status: 'not_required' as const, job_id: null, error: null };
 
     res.status(201).json({
       ok: true,
       workspace,
-      pc_setup: pcSetup,
-      pc_setup_job: pcSetupJob,
+      pc_setup: setup.status,
+      pc_setup_job_id: setup.job_id,
+      pc_setup_error: setup.error,
     });
+  } catch (err: any) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+resourceRegistryRouter.post('/projects/:workspace_id/setup', async (req: Request, res: Response) => {
+  try {
+    const project = await getProject();
+    const registry = await getWorkspaceRegistry(project);
+    const workspace = registry.workspaces.find(item => item.workspace_id === req.params.workspace_id);
+    if (!workspace) {
+      res.status(404).json({ ok: false, error: `workspace ${req.params.workspace_id} not found` });
+      return;
+    }
+    if (!workspace.setup_required) {
+      res.json({ ok: true, setup: { status: 'not_required', job_id: null, error: null } });
+      return;
+    }
+    const setup = await queueProjectSetup(workspace, { retryFailed: true });
+    res.json({ ok: true, setup });
   } catch (err: any) {
     res.status(400).json({ ok: false, error: err.message });
   }

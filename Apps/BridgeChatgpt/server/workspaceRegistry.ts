@@ -14,6 +14,7 @@ export interface WorkspaceRecord {
   branch: string;
   local_path: string;
   execution_target: WorkspaceExecutionTarget;
+  setup_required: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -127,6 +128,7 @@ function defaultWorkspace(project: ProjectConfig): WorkspaceRecord {
     branch: project.default_branch || 'main',
     local_path: projectLocalPath(projectName, 'BridgeChatgpt'),
     execution_target: 'studio',
+    setup_required: false,
     created_at: now,
     updated_at: now,
   };
@@ -148,6 +150,7 @@ export async function getWorkspaceRegistry(project: ProjectConfig): Promise<Work
       ...workspace,
       local_path: workspace.local_path || projectLocalPath(workspace.project_name, workspace.project_id),
       execution_target: normalizeExecutionTarget(workspace.execution_target),
+      setup_required: Boolean(workspace.setup_required),
       chatgpt_instances: store.instances.filter(instance => instance.workspace_id === workspace.workspace_id && instance.provider === 'chatgpt'),
       studio_instances: store.instances.filter(instance => instance.workspace_id === workspace.workspace_id && instance.provider === 'google-ai-studio'),
     }));
@@ -177,6 +180,7 @@ export async function upsertWorkspace(project: ProjectConfig, input: Partial<Wor
       branch: cleanLabel(input.branch, existing?.branch || project.default_branch || 'main'),
       local_path: cleanLabel(input.local_path, existing?.local_path || projectLocalPath(projectName, projectId)),
       execution_target: normalizeExecutionTarget(input.execution_target, normalizeExecutionTarget(existing?.execution_target)),
+      setup_required: input.setup_required == null ? Boolean(existing?.setup_required) : Boolean(input.setup_required),
       created_at: existing?.created_at || now,
       updated_at: now,
     };

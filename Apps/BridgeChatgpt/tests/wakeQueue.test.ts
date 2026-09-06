@@ -16,6 +16,10 @@ const snapshot: ResourceRegistrySnapshot = {
     repository_url: 'https://github.com/example/demo',
     branch: 'main',
     local_path: 'Apps/Demo',
+    setup_required: false,
+    pc_setup_status: 'not_required',
+    pc_setup_job_id: null,
+    pc_setup_error: null,
     studio_targets: [{
       target_id: 'studio-app-1234',
       provider: 'google-ai-studio',
@@ -94,6 +98,8 @@ const assignedChat = task('TASK-2', 'chatgpt', 'pending', 'chatgpt-chat-2222', '
 const reviewStudio = task('TASK-3', 'gemini', 'review', 'studio-app-1234', '2026-01-03T00:00:03.000Z');
 const secondStudio = task('TASK-4', 'gemini', 'assigned', 'studio-app-1234', '2026-01-03T00:00:04.000Z');
 
+// One direct wake per exact target. TASK-4 must not leak through while TASK-1 is active,
+// and Studio review must not interrupt a ChatGPT conversation already holding TASK-2.
 const queue = buildWakeQueueFromData(snapshot, [assignedStudio, assignedChat, reviewStudio, secondStudio]);
 assert.strictEqual(queue.length, 2);
 
@@ -110,6 +116,8 @@ assert.strictEqual(chatWake!.resource_id, 'chat-2222');
 assert.match(chatWake!.prompt, /chatgpt_conversation_id=chat-2222/);
 assert.ok(!queue.some(item => item.task_id === 'TASK-3' && item.reason === 'review-ready'));
 
+// Completing the direct ChatGPT task allows the pending Studio review to wake ChatGPT,
+// but TASK-4 remains blocked because TASK-3 itself is still non-terminal on Studio.
 const queueAfterChatDone = buildWakeQueueFromData(snapshot, [
   assignedStudio,
   { ...assignedChat, status: 'completed' },
@@ -121,6 +129,8 @@ assert.ok(reviewWake);
 assert.strictEqual(reviewWake!.resource_id, 'chat-2222');
 assert.ok(!queueAfterChatDone.some(item => item.task_id === 'TASK-4'));
 
+// A later Studio task can wake only after every older task on that exact Studio target
+// becomes terminal.
 const queueAfterOlderStudioDone = buildWakeQueueFromData(snapshot, [
   { ...assignedStudio, status: 'completed' },
   { ...assignedChat, status: 'completed' },

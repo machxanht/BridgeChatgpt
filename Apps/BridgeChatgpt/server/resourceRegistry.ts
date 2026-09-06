@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import type { ProjectConfig } from '../src/types.js';
 import { getWorkspaceRegistry } from './workspaceRegistry.js';
+import { ensureProjectSetup, type ProjectSetupStatus } from './projectSetup.js';
 
 export type ResourceProvider = 'chatgpt' | 'google-ai-studio';
 export type ResourceConnectionStatus = 'registered' | 'active' | 'idle' | 'offline';
@@ -40,6 +41,10 @@ export interface ResourceRegistrySnapshot {
     branch: string;
     local_path: string;
     execution_target?: 'pc' | 'studio';
+    setup_required: boolean;
+    pc_setup_status: ProjectSetupStatus;
+    pc_setup_job_id: string | null;
+    pc_setup_error: string | null;
     studio_targets: ResourceTargetView[];
     chatgpt_targets: ResourceTargetView[];
   }>;
@@ -222,6 +227,11 @@ export async function getResourceRegistry(project: ProjectConfig): Promise<Resou
     Promise.resolve(readStore()),
   ]);
 
+  const setupViews = new Map<string, Awaited<ReturnType<typeof ensureProjectSetup>>>();
+  for (const workspace of workspaceRegistry.workspaces) {
+    setupViews.set(workspace.workspace_id, await ensureProjectSetup(workspace));
+  }
+
   const workspaces = workspaceRegistry.workspaces.map(workspace => {
     const agents = [...workspace.chatgpt_instances, ...workspace.studio_instances];
     const targets = store.targets
@@ -234,6 +244,7 @@ export async function getResourceRegistry(project: ProjectConfig): Promise<Resou
           last_seen_at: agent?.last_seen_at || null,
         };
       });
+    const setup = setupViews.get(workspace.workspace_id) || { status: 'not_required' as const, job_id: null, error: null };
     return {
       workspace_id: workspace.workspace_id,
       project_id: workspace.project_id,
@@ -242,6 +253,10 @@ export async function getResourceRegistry(project: ProjectConfig): Promise<Resou
       branch: workspace.branch,
       local_path: workspace.local_path,
       execution_target: workspace.execution_target === 'pc' ? ('pc' as const) : ('studio' as const),
+      setup_required: Boolean(workspace.setup_required),
+      pc_setup_status: setup.status,
+      pc_setup_job_id: setup.job_id,
+      pc_setup_error: setup.error,
       studio_targets: targets.filter(target => target.provider === 'google-ai-studio'),
       chatgpt_targets: targets.filter(target => target.provider === 'chatgpt'),
     };
