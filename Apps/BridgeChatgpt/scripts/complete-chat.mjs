@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export async function completeChat({ taskId, answer, checkOnly = false, request }) {
@@ -16,11 +18,13 @@ export async function completeChat({ taskId, answer, checkOnly = false, request 
 }
 
 async function main() {
-  const [taskId, encoded] = process.argv.slice(2);
+  const [taskId, encoded, filePath] = process.argv.slice(2);
   const checkOnly = encoded === '--check';
-  if (!/^TASK-\d+$/.test(taskId || '')) throw new Error('Pass a task ID and base64 UTF-8 answer, or --check');
-  if (!checkOnly && (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))) throw new Error('Invalid base64 answer');
-  // Use existing CLI login; credentials stay in this process, never in output.
+  const fileMode = encoded === '--file';
+  if (!/^TASK-\d+$/.test(taskId || '')) throw new Error('Pass a task ID and answer source, or --check');
+  if (fileMode && (!filePath || !path.isAbsolute(filePath))) throw new Error('Pass an absolute answer file path');
+  if (!checkOnly && !fileMode && (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))) throw new Error('Invalid base64 answer');
+  const answer = checkOnly ? '' : fileMode ? fs.readFileSync(filePath, 'utf8') : Buffer.from(encoded, 'base64').toString('utf8');
   const raw = execFileSync('E:\\AI\\Bridge\\runtime\\railway-cli\\node_modules\\@railway\\cli\\bin\\railway.exe', [
     'variables', '--project', '664cfde0-1227-4403-8757-f957f7b5d1de',
     '--service', '12d9ceee-f56b-4c18-a8b0-243df2a55fd9',
@@ -38,7 +42,7 @@ async function main() {
     if (!response.ok) throw new Error(`Bridge HTTP ${response.status}`);
     return response.json();
   };
-  console.log(JSON.stringify(await completeChat({ taskId, answer: checkOnly ? '' : Buffer.from(encoded, 'base64').toString('utf8'), checkOnly, request })));
+  console.log(JSON.stringify(await completeChat({ taskId, answer, checkOnly, request })));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
