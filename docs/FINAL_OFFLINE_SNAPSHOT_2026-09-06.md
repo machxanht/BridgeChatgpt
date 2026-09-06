@@ -2,6 +2,8 @@
 
 This is the durable checkpoint to use if the current ChatGPT session disappears before the Windows PC returns.
 
+> **Mandatory current policy:** this historical snapshot is subordinate to `docs/FREE_FIRST_POLICY.md`. Do not use Railway AI Agent, another provider AI Agent, or any paid/quota API as a fallback without explicit prior user approval. Prefer deterministic free/included deploy/control paths. If implementation/troubleshooting drags, search the current repo first, then trusted public repos/docs/internet, and reuse a compatible existing solution before rebuilding.
+
 ## Final GitHub source baseline
 
 PR #6 passed full Bridge CI and was squash-merged.
@@ -29,7 +31,7 @@ Verified gates:
 - Bridge Wake artifact upload
 - Production startup smoke test
 
-No additional planned source-code edits remain before the PC returns.
+No additional planned source-code edits remain before the PC returns, except later policy/deployment work recorded in current `docs/HANDOFF.md`.
 
 ## What the final source implements
 
@@ -44,9 +46,9 @@ No additional planned source-code edits remain before the PC returns.
 - Browser Wake / ChatGPT Web / AI Studio static logic was reviewed while the PC was off; no additional known source blocker was found.
 - `docs/PRE_POWER_RETURN_CHECKLIST.md` is the authoritative live verification sequence.
 
-## Railway production — current blocker
+## Railway production — historical blocker
 
-Latest proven Railway deployment remains:
+Latest proven Railway deployment at this snapshot was:
 
 ```text
 Deployment: ecd68879-3976-40ed-84a5-a10c3f9cb38f
@@ -60,27 +62,22 @@ Persistent database startup was proven from:
 /app/data/bridge.sqlite
 ```
 
-The final source baseline `07e421...` has NOT yet been proven deployed to Railway.
+The source baseline `07e421...` had NOT yet been proven deployed to Railway at the time of this snapshot.
 
-Reason:
+Historical reason:
 
 - automatic Railway deploy did not trigger after PR #6 merged;
-- the Railway AI agent was asked to deploy exact commit `07e421...` but returned `Agent usage limit reached`;
-- Railway service config still reports a stale source commit SHA (`11943b...`);
-- do not use generic Railway Redeploy for this purpose: Railway documents Redeploy as rebuilding a deployment from that deployment's original source code, which can reproduce an older source snapshot.
+- Railway AI Agent was used during troubleshooting and returned `Agent usage limit reached`;
+- Railway service config still reported a stale source commit SHA (`11943b...`);
+- generic Railway Redeploy was deliberately avoided because it could rebuild an older deployment source snapshot.
 
-Safe action when Railway exact-deploy capability is available again:
-
-1. deploy the exact latest GitHub source/main commit through a mechanism that explicitly accepts the desired commit SHA;
-2. do not change variables, volume, domain, healthcheck, restart policy, or start command;
-3. verify Railway deployment status is SUCCESS;
-4. verify deployment metadata `commitHash` equals the intended GitHub commit before starting final PC E2E tests.
+**Current policy correction:** Railway AI Agent must no longer be treated as a normal deploy/fix path. A deterministic free/included Git/platform-native deploy route must be preferred. Any future use of a paid/quota AI Agent requires explicit prior user approval.
 
 ## PC state and queued sync
 
-The Windows PC is currently without power. Executor/RDC offline is expected.
+The Windows PC was without power at this snapshot. Executor/RDC offline was expected.
 
-A fast-forward-only sync command already exists:
+A fast-forward-only sync command already existed:
 
 ```text
 git pull --ff-only
@@ -90,26 +87,15 @@ Do not report this sync as completed until the worker returns and the job result
 
 ## When the PC returns
 
-Do not begin by editing source. Read and execute:
+Do not begin by editing source. Read current `START_HERE.md`, `docs/FREE_FIRST_POLICY.md`, `docs/HANDOFF.md`, then execute:
 
 ```text
 docs/PRE_POWER_RETURN_CHECKLIST.md
 ```
 
-Expected remaining work is live verification only:
+Expected remaining work is live verification only unless current handoff states otherwise.
 
-1. executor reconnect;
-2. queued Git sync and local HEAD verification;
-3. Bridge Git status/test/build from cwd `.`;
-4. second-project shared-node + `Apps/<ProjectName>` cwd proof;
-5. new-project template seed proof without overwrite;
-6. ChatGPT Web wake/injection/scoped-PC/result E2E;
-7. AI Studio wake/relay/result E2E;
-8. record actual PASS/FAIL evidence in HANDOFF/ROADMAP.
-
-Only modify source if a live test reveals an unexpected defect.
-
-## Security boundary
+## Security and cost boundary
 
 Approved filesystem scope remains:
 
@@ -117,4 +103,4 @@ Approved filesystem scope remains:
 E:\AI\Bridge
 ```
 
-Do not use RDC, shell, or other tools outside this root without explicit new human permission. Never store raw credentials, cookies, tokens, or private keys in Markdown.
+Do not use RDC, shell, or other tools outside this root without explicit new human permission. Never store raw credentials, cookies, tokens, or private keys in Markdown. Never spend paid API/AI-Agent quota without explicit prior approval.
