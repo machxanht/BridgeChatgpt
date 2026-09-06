@@ -1,0 +1,1 @@
+CLOUD_STUDIO_E2E=PASS\ntask_id=TASK-2\ninstance_id=e2e-studio-34025115078-1\npc_required=false\n
