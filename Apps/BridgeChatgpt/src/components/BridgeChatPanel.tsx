@@ -249,12 +249,12 @@ export const BridgeChatPanel: React.FC = () => {
     setFeedback('');
     try {
       const firstLine = content.split('\n').map(line => line.trim()).find(Boolean) || content;
-      const taskResponse = await fetch('/api/studio-relay/bound-task', {
+      const taskResponse = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine,
-          description: content,
+          description: `${content}\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`,
           priority: 'high',
           assignee: target.provider === 'chatgpt' ? 'chatgpt' : 'gemini',
           workspace_id: workspace.workspace_id,
@@ -274,7 +274,7 @@ export const BridgeChatPanel: React.FC = () => {
           to: target.provider === 'chatgpt' ? 'chatgpt' : 'gemini',
           type: 'task',
           content,
-          task_id: taskData.task.id,
+          task_id: taskData.id,
         }),
       });
       if (!messageResponse.ok) {
@@ -284,7 +284,7 @@ export const BridgeChatPanel: React.FC = () => {
 
       setText('');
       setDeliveryState('delivered');
-      setFeedback(`${taskData.task.id} → ${displayTarget(target)}`);
+      setFeedback(`${taskData.id} → ${displayTarget(target)}`);
       await load();
       window.setTimeout(() => setDeliveryState('idle'), 1400);
     } catch (error: any) {
