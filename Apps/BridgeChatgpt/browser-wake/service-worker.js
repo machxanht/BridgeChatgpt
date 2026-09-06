@@ -348,6 +348,10 @@ chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === ALARM_NAME) void runWakeCycle('alarm');
 });
 
+// Alarms remain the restart fallback. While the worker is awake, avoid adding
+// up to 30 seconds to every chat; runWakeCycle already prevents overlapping polls.
+setInterval(() => void runWakeCycle('chat-poll'), 2000);
+
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return;
   if (changes.enabled || changes.intervalMinutes) void resetAlarm();

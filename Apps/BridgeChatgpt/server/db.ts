@@ -17,6 +17,7 @@ import {
   WorkspaceState,
 } from '../src/types.js';
 import { exactLaneBlocker, filterClaimableSingleFlight } from './singleFlight.js';
+import { isFastChatTask, isDiscussionTask } from '../src/chatMode.js';
 
 let SQL: SqlJsStatic | null = null;
 let db: Database | null = null;
@@ -529,7 +530,7 @@ export async function createTask(input: {
     await createMessage({
       from: created_by,
       to: assignee,
-      type: 'task',
+      type: 'task_created',
       content: `New task ${id} assigned: "${input.title}". Description: ${input.description}`,
       task_id: id,
       finding_id: relatedFinding,
@@ -560,6 +561,8 @@ export async function updateTask(
     }
   }
 
+  // Enforce at the shared boundary: REST, MCP and relay cannot send chat to CI.
+  if (isFastChatTask(current) && cleanUpdates.status === 'review') cleanUpdates.status = 'completed';
   const requestedStatus = cleanUpdates.status;
   if (requestedStatus && ['working', 'review', 'blocked'].includes(requestedStatus)) {
     const laneTasks = await getTasks({ assignee: current.assignee });
@@ -625,9 +628,9 @@ export async function updateTask(
   if (statusChanged && (updated.status === 'review' || updated.status === 'completed')) {
     await createMessage({
       from: agent,
-      to: 'chatgpt',
+      to: updated.status === 'completed' ? 'human' : 'chatgpt',
       type: updated.status === 'review' ? 'review' : 'result',
-      content: `Task ${id} "${updated.title}" marked as ${updated.status}. Result: ${updated.result || 'Changes made.'}`,
+      content: updated.result || '',
       task_id: id,
       finding_id: updated.related_finding,
     });
@@ -760,6 +763,16 @@ export async function reviewTask(payload: TaskReviewPayload): Promise<Task> {
   const task = await getTask(payload.id);
   if (!task) {
     throw new Error(`Task ${payload.id} not found`);
+  }
+
+  if (isDiscussionTask(task)) {
+    // Fast chat ignores review semantics, including accidental request_changes.
+    // Debate uses the final review summary as the user's synthesized answer.
+    if (isFastChatTask(task) && task.status === 'completed') return task;
+    return updateTask(task.id, {
+      status: 'completed',
+      result: isFastChatTask(task) ? (task.result || payload.summary) : payload.summary,
+    }, payload.reviewer || 'chatgpt');
   }
 
   if (task.status !== 'review') {

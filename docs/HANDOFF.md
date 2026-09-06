@@ -151,3 +151,16 @@ Browser/executor startup mechanisms that require writing Windows user/system loc
 ## Security and cost reminder
 
 Never put raw Bridge/Railway/executor tokens, passwords, cookies, private keys, or browser credentials in Markdown. Do not use RDC outside `E:\AI\Bridge` without explicit permission. Do not spend API/AI-Agent quota or money without explicit prior approval.
+
+## Fast Chat fix — 2026-09-06
+
+Focused fix on chat routing, shared DB completion, MCP, relay, wake and primary chat panel:
+- BRIDGE_CHAT_V1 review updates normalize to completed. task_review preserves the answer and cannot append review notes.
+- Auto-review excludes chat and debate. Coding tasks retain review/test policy.
+- Chat defaults to one available ChatGPT target; explicit group intent alone enables discussion.
+- Primary feed shows human messages and canonical completed answers, hiding orchestration logs and legacy envelopes.
+- Wake carries the full original question, requests Vietnamese/direct completion, and skips Fast Chat review handoff.
+- Browser Wake has a 2-second awake polling path with the existing alarm fallback; UI refresh is 1 second. Installed PC extension update and actual dispatch latency are not yet proven.
+- Targeted tests, npm run lint, npm test, npm run build passed locally. Test runner uses node --import tsx (avoids unnecessary CLI IPC socket).
+- Production deploy and real-agent E2E are pending at this commit. Do not infer PASS from unit tests.
+- PC E:\AI\Bridge has pre-existing uncommitted changes; this fix uses a separate checkout and does not overwrite them.

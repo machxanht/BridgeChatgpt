@@ -1,3 +1,4 @@
+import { originalChatText } from '../src/chatMode.js';
 import crypto from 'crypto';
 import type { ProjectConfig, Task } from '../src/types.js';
 import { getTasks } from './db.js';
@@ -72,7 +73,8 @@ function directPrompt(target: ResourceTargetView, task: Task, projectName: strin
   if (target.provider === 'google-ai-studio') {
     if (isFastChatTask(task)) {
       return [
-        `Bridge Fast Chat — ${task.id}: ${task.title}`,
+        `Bridge Fast Chat — ${task.id}`,
+        originalChatText(task.description),
         `project=${projectName}`,
         `repo=${repositoryUrl}`,
         `studio_app_id=${target.resource_id}`,
@@ -115,7 +117,8 @@ function directPrompt(target: ResourceTargetView, task: Task, projectName: strin
 
   if (isFastChatTask(task)) {
     return [
-      `Bridge Fast Chat — ${task.id}: ${task.title}`,
+      `Bridge Fast Chat — ${task.id}`,
+        originalChatText(task.description),
       `project=${projectName}`,
       `repo=${repositoryUrl}`,
       `chatgpt_conversation_id=${target.resource_id}`,
@@ -123,7 +126,7 @@ function directPrompt(target: ResourceTargetView, task: Task, projectName: strin
       'Đây là chat nhanh. Đọc câu hỏi gốc trong task và trả lời trực tiếp cho người dùng.',
       replyLanguage,
       'Không audit repo, không sửa file, không chạy build/test trừ khi yêu cầu gốc nói rõ phải thực hiện hành động.',
-      'Ghi câu trả lời vào Bridge và hoàn tất task này. Không nhận task khác trước khi hoàn tất.',
+      `Gọi task_update với id="${task.id}", status="completed", result là NGUYÊN VĂN câu trả lời cuối. Không gọi task_review, không review/CI, không thêm metadata hay handoff.`,
       'Dùng tool ChatGPT bình thường; không gọi Codex trừ khi người dùng yêu cầu rõ.',
     ].join('\n');
   }
@@ -147,7 +150,9 @@ function reviewPrompt(target: ResourceTargetView, task: Task, projectName: strin
       `project=${projectName}`,
       `repo=${repositoryUrl}`,
       `chatgpt_conversation_id=${target.resource_id}`,
-      'Đọc quan điểm AI Studio mới nhất cho câu hỏi này trong Bridge.',
+      originalChatText(task.description),
+      `Quan điểm AI Studio: ${task.result || ''}`,
+      'Đây là thảo luận, không chạy test/CI. Gọi task_update status=completed với result là nguyên văn câu trả lời tổng hợp, không metadata.',
       'Phản biện điểm yếu, thêm lập luận độc lập và giải quyết khác biệt rõ ràng.',
       'Sau đó hoàn tất task bằng một câu trả lời cuối cho người dùng bằng tiếng Việt. Không sửa repo/file nếu câu hỏi gốc không yêu cầu.',
       'Dùng tool ChatGPT bình thường; không gọi Codex trừ khi người dùng yêu cầu rõ.',
@@ -247,7 +252,7 @@ export function buildWakeQueueFromData(snapshot: ResourceRegistrySnapshot, tasks
       if (!chatgptBusy) {
         const reviewTask = boundTasks
           .map(item => item.task)
-          .filter(task => task.assignee === 'gemini' && (task.status === 'review' || task.status === 'blocked'))
+          .filter(task => !isFastChatTask(task) && task.assignee === 'gemini' && (task.status === 'review' || task.status === 'blocked'))
           .sort(taskOrder)[0];
 
         if (reviewTask) {

@@ -178,3 +178,13 @@ assert.match(attachedWake[0].prompt, /\/api\/attachments\/public\/abc/);
 
 assert.strictEqual(new Set(queue.map(item => item.event_id)).size, queue.length);
 console.log('wakeQueue.test.ts: all assertions passed');
+assert.match(fastChatQueue[0].prompt, /Tại sao nó chậm vậy\?/);
+for (const status of ['review', 'blocked'] as const) {
+  assert.deepEqual(buildWakeQueueFromData(snapshot, [{ ...fastChatStudio, status }]), [], 'Fast Chat must never wake a second reviewer');
+}
+const directChat = { ...assignedChat, description: attachTaskBinding('Chatgpt mày biết Astra không?\n\n<!-- BRIDGE_CHAT_V1 -->', { version: 1, workspace_id: 'workspace-demo', project_id: 'project-demo', agent_instance_id: 'chatgpt-chat-2222' }).description };
+const directChatWake = buildWakeQueueFromData(snapshot, [directChat]);
+assert.equal(directChatWake.length, 1);
+assert.equal(directChatWake[0].provider, 'chatgpt');
+assert.match(directChatWake[0].prompt, /Chatgpt mày biết Astra không\?/);
+assert.match(directChatWake[0].prompt, /status="completed"/);
