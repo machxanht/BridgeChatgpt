@@ -2,6 +2,16 @@
 
 This runbook is for normal operation, deployment, recovery after PC power loss, and handoff to another agent.
 
+## 0. Cost/quota gate — mandatory
+
+Read `docs/FREE_FIRST_POLICY.md` before choosing an operational path.
+
+- Prefer free/included/browser/local/repository/open-source operations.
+- Do not call a paid/quota API, token-metered AI API, provider AI Agent, or paid automation without explicit prior user approval.
+- Railway AI Agent is not a routine deployment mechanism.
+- If an operation/fix takes too long, search this repository first, then trusted public repos/docs/internet for an existing maintained solution before adding custom machinery or switching to a paid path.
+- If the free path is blocked, stop and present the free vs paid options, including expected quota/cost when knowable. No approval = no paid/quota fallback.
+
 ## 1. Normal live-state verification
 
 Do not infer state from old screenshots or chat history.
@@ -115,6 +125,8 @@ Use the app URL containing:
 
 Bridge stores resource identity in the project registry and Bridge Wake uses it to find/open the correct tab.
 
+Prefer these browser/subscription paths over metered LLM APIs.
+
 ## 7. Browser Wake
 
 Expected behavior:
@@ -126,20 +138,22 @@ Expected behavior:
 5. It injects the prompt only if the composer is not busy and there is no existing draft.
 6. It sends the prompt.
 
-If wake queue polling works but prompt injection fails, inspect extension state/logs and current page DOM behavior. Do not assume the entire wake mechanism is broken.
+If wake queue polling works but prompt injection fails, inspect extension state/logs and current page DOM behavior. Do not assume the entire wake mechanism is broken. Check existing source and maintained public implementations before replacing the browser-wake design.
 
 ## 8. Deploying Bridge to Railway
 
-Preferred workflow:
+Preferred routine workflow:
 
 ```text
 feature branch
 → CI
 → pull request
 → merge to main
-→ Railway deploy from exact merged commit
+→ deterministic Railway deploy from exact merged commit
 → verify deployment commitHash
 ```
+
+Routine deployment must use ordinary free/included Git/platform-native controls and must **not** depend on Railway AI Agent. If the normal webhook/deploy route fails, diagnose/reuse an existing deterministic deploy mechanism first. Do not silently fall back to Railway AI Agent or another paid/quota AI API.
 
 Do not report deployment complete until Railway shows `SUCCESS` for the intended commit hash.
 
@@ -167,6 +181,7 @@ Before ending substantial work:
 4. Record Railway deployment ID/hash if deployment occurred.
 5. Record PC sync status separately from GitHub/Railway status.
 6. Clearly state which E2E checks are still unproven.
+7. Record any explicitly approved paid/quota dependency, its purpose, cost/quota risk, and removal path.
 
 ## 11. Common failure classification
 
@@ -188,8 +203,12 @@ Check target binding, browser login state, extension delivery log, busy/draft de
 
 ### GitHub main and Railway commit differ
 
-Do not blindly redeploy. Determine which commit is intended, inspect ancestry/diff, then restore a single canonical `main` before proceeding.
+Do not blindly redeploy or invoke a provider AI Agent. Determine which commit is intended, inspect ancestry/diff, then restore a single canonical `main` and use a deterministic deploy path.
 
-## 12. No-secret rule
+### A small task is consuming too much time
 
-Runbooks and handoff docs may name configuration variables and service IDs, but must never contain raw authentication secrets.
+Stop expanding the investigation. Search the current repo for an existing implementation, then trusted public repos/docs/internet. Reuse/adapt an existing compatible solution when safe instead of repeatedly rebuilding the same capability.
+
+## 12. No-secret / no-surprise-spend rule
+
+Runbooks and handoff docs may name configuration variables and service IDs, but must never contain raw authentication secrets. An available API key or connected service is not authorization to consume paid quota. Explicit prior user approval is required before any paid/quota API/AI-Agent use.
