@@ -17,6 +17,20 @@ export interface ProjectSetupView {
   error: string | null;
 }
 
+let setupQueueTail: Promise<void> = Promise.resolve();
+
+async function withSetupQueueLock<T>(fn: () => Promise<T>): Promise<T> {
+  let release!: () => void;
+  const previous = setupQueueTail;
+  setupQueueTail = new Promise<void>(resolve => { release = resolve; });
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
 function latestSetupJob(jobs: any[], workspace: ProjectSetupWorkspace) {
   return jobs
     .filter(job => job.workspace_id === workspace.workspace_id && job.project_id === workspace.project_id && job.created_by === 'bridge-project-create')
@@ -40,37 +54,39 @@ export async function queueProjectSetup(
   workspace: ProjectSetupWorkspace,
   options: { retryFailed?: boolean } = {},
 ): Promise<ProjectSetupView> {
-  if (!workspace.setup_required) return { status: 'not_required', job_id: null, error: null };
+  return withSetupQueueLock(async () => {
+    if (!workspace.setup_required) return { status: 'not_required', job_id: null, error: null };
 
-  const snapshot = await getExecutorSnapshot({ limit: 200 });
-  const existing = latestSetupJob(snapshot.jobs, workspace);
-  const existingView = viewFromJob(existing);
-  if (existing && existingView.status !== 'failed') return existingView;
-  if (existing && existingView.status === 'failed' && !options.retryFailed) return existingView;
+    const snapshot = await getExecutorSnapshot({ limit: 200 });
+    const existing = latestSetupJob(snapshot.jobs, workspace);
+    const existingView = viewFromJob(existing);
+    if (existing && existingView.status !== 'failed') return existingView;
+    if (existing && existingView.status === 'failed' && !options.retryFailed) return existingView;
 
-  const node = snapshot.nodes.find(item => item.connection_status === 'online' && item.capabilities.includes('command.run'));
-  if (!node) return { status: 'waiting_for_pc', job_id: null, error: null };
+    const node = snapshot.nodes.find(item => item.connection_status === 'online' && item.capabilities.includes('command.run'));
+    if (!node) return { status: 'waiting_for_pc', job_id: null, error: null };
 
-  const job = await createExecutorJob({
-    workspace_id: workspace.workspace_id,
-    project_id: workspace.project_id,
-    node_id: node.node_id,
-    action: 'command.run',
-    payload: {
-      argv: [
-        'node',
-        'Apps/BridgeChatgpt/scripts/clone-project.mjs',
-        '--repo', workspace.repository_url,
-        '--branch', workspace.branch || 'main',
-        '--target', workspace.local_path,
-      ],
-      cwd: '.',
-      timeout_ms: 10 * 60_000,
-    },
-    created_by: 'bridge-project-create',
+    const job = await createExecutorJob({
+      workspace_id: workspace.workspace_id,
+      project_id: workspace.project_id,
+      node_id: node.node_id,
+      action: 'command.run',
+      payload: {
+        argv: [
+          'node',
+          'Apps/BridgeChatgpt/scripts/clone-project.mjs',
+          '--repo', workspace.repository_url,
+          '--branch', workspace.branch || 'main',
+          '--target', workspace.local_path,
+        ],
+        cwd: '.',
+        timeout_ms: 10 * 60_000,
+      },
+      created_by: 'bridge-project-create',
+    });
+
+    return { status: 'queued', job_id: job.job_id, error: null };
   });
-
-  return { status: 'queued', job_id: job.job_id, error: null };
 }
 
 export async function ensureProjectSetup(workspace: ProjectSetupWorkspace): Promise<ProjectSetupView> {
