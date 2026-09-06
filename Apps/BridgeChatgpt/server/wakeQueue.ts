@@ -63,9 +63,18 @@ function attachmentPrompt(task: Task) {
 function eventId(reason: WakeReason, targetId: string, task: Task) {
   return crypto
     .createHash('sha256')
-    .update(`${reason}:${targetId}:${task.id}:${task.status}:${task.updated_at}`)
+    .update(`${reason}:${targetId}:${task.id}:${task.status}:${task.updated_at}${isFastChatTask(task) || isDebateTask(task) ? ':direct-return-v2' : ''}`)
     .digest('hex')
     .slice(0, 24);
+}
+
+function chatReturnInstructions(task: Task) {
+  return [
+    `Gọi task_update id="${task.id}", status="completed", result là NGUYÊN VĂN câu trả lời cuối, không tóm tắt việc đã làm.`,
+    'Nếu phiên này không có tool task_update: dùng Remote Desktop Commander start_process trên PC đã kết nối để chạy helper dưới đây. Không cần GitHub commit, review, test, token hay đăng nhập lại.',
+    `node E:\\AI\\Bridge\\Apps\\BridgeChatgpt\\scripts\\complete-chat.mjs ${task.id} <base64 UTF-8 của nguyên văn câu trả lời>`,
+    'Chỉ khi helper trả ok=true mới coi đã gửi câu trả lời về Bridge. Nếu tool PC không khả dụng, nói rõ không gửi được; không giả lập hoàn tất.',
+  ];
 }
 
 function directPrompt(target: ResourceTargetView, task: Task, projectName: string, repositoryUrl: string) {
@@ -126,7 +135,8 @@ function directPrompt(target: ResourceTargetView, task: Task, projectName: strin
       'Đây là chat nhanh. Đọc câu hỏi gốc trong task và trả lời trực tiếp cho người dùng.',
       replyLanguage,
       'Không audit repo, không sửa file, không chạy build/test trừ khi yêu cầu gốc nói rõ phải thực hiện hành động.',
-      `Gọi task_update với id="${task.id}", status="completed", result là NGUYÊN VĂN câu trả lời cuối. Không gọi task_review, không review/CI, không thêm metadata hay handoff.`,
+      ...chatReturnInstructions(task),
+      'Không gọi task_review, không review/CI, không thêm metadata hay handoff.',
       'Dùng tool ChatGPT bình thường; không gọi Codex trừ khi người dùng yêu cầu rõ.',
     ].join('\n');
   }
@@ -153,6 +163,7 @@ function reviewPrompt(target: ResourceTargetView, task: Task, projectName: strin
       originalChatText(task.description),
       `Quan điểm AI Studio: ${task.result || ''}`,
       'Đây là thảo luận, không chạy test/CI. Gọi task_update status=completed với result là nguyên văn câu trả lời tổng hợp, không metadata.',
+      ...chatReturnInstructions(task),
       'Phản biện điểm yếu, thêm lập luận độc lập và giải quyết khác biệt rõ ràng.',
       'Sau đó hoàn tất task bằng một câu trả lời cuối cho người dùng bằng tiếng Việt. Không sửa repo/file nếu câu hỏi gốc không yêu cầu.',
       'Dùng tool ChatGPT bình thường; không gọi Codex trừ khi người dùng yêu cầu rõ.',
