@@ -256,7 +256,7 @@ export const BRIDGE_TOOLS: MCPToolDefinition[] = [
   },
   {
     name: 'task_update',
-    description: 'Update the status, execution result, or assignee of a task (e.g. Gemini marking as working or review with result).',
+    description: 'Update a task. BRIDGE_CHAT_V1: submit status=completed and result=verbatim final answer in the user language. Never review, test or append workflow metadata for Fast Chat.',
     inputSchema: {
       type: 'object',
       properties: {

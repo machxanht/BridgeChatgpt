@@ -171,3 +171,7 @@ Requires explicit narrow permission before touching Windows user/system location
 ### ⬜ Paid/quota API fallback
 
 Not a default roadmap item. It may only be considered after explicit prior user approval with cost/quota disclosure and a comparison against the free alternative.
+
+## Fast Chat usability — 2026-09-06
+
+Implemented and locally tested: direct completion at DB/MCP boundary, no chat/debate CI, clean chat answers, Vietnamese wake instructions, ChatGPT-first Auto, explicit-only multi-agent, larger composer. Production deploy and real ChatGPT/Studio E2E remain unproven until deployment evidence is recorded. Awake wake polling requires updated extension code on PC.

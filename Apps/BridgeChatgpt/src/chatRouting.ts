@@ -9,15 +9,22 @@ export function targetUsable(status: string | undefined) {
   return status !== 'offline';
 }
 
+export function requiresAction(value: string) {
+  const text = value.trim().toLowerCase();
+  // Questions about performing an action remain chat; explicit imperatives use the workflow.
+  if (/^(?:chatgpt[,:]?\s+)?(?:làm sao|cách nào|hướng dẫn|tại sao|vì sao|how|why|what)\s/u.test(text)) return false;
+  return /(?:^|[\s,;])(?:sửa|fix|implement|deploy|push|merge|commit|audit|refactor|cài đặt|tạo (?:file|folder|project|app|repo)|chạy (?:test|build|lệnh)|run (?:tests?|build))(?=\s|$)/u.test(text);
+}
+
 export function wantsMultiAgentDebate(value: string) {
   const text = value.trim().toLowerCase();
-  const explicitGroupIntent = /\b(tụi mày|tui may|tụi bay|tui bay|cả hai|ca hai|hai đứa|hai dua|tranh luận|tranh luan|debate|phản biện|phan bien|đối chiếu|doi chieu|multi-agent|multi agent)\b/.test(text);
+  const explicitGroupIntent = /(?:^|\s)(tụi mày|tui may|tụi bay|tui bay|cả hai|ca hai|hai đứa|hai dua|tranh luận|tranh luan|debate|phản biện|phan bien|multi-agent|multi agent)(?=\s|[,.!?]|$)/u.test(text);
   const namesBothAgents = /\b(chatgpt|gpt)\b/.test(text) && /\b(ai studio|studio|gemini)\b/.test(text);
   return explicitGroupIntent || namesBothAgents;
 }
 
 export function shouldAutoDebate(text: string, studioStatuses: string[], chatgptStatuses: string[]) {
-  return looksLikeQuestion(text)
+  return !requiresAction(text)
     && wantsMultiAgentDebate(text)
     && studioStatuses.some(targetUsable)
     && chatgptStatuses.some(targetUsable);
@@ -30,7 +37,7 @@ export type MultiRoleStep = {
 };
 
 export function buildMultiRolePlan(value: string): MultiRoleStep[] {
-  if (looksLikeQuestion(value)) return [];
+  if (!requiresAction(value)) return [];
   const matches = [...value.matchAll(/\b(chatgpt|gpt|ai\s+studio|studio|gemini)\b/gi)];
   if (matches.length < 2) return [];
   const providers = new Set(matches.map(match => /studio|gemini/i.test(match[0]) ? 'gemini' : 'chatgpt'));

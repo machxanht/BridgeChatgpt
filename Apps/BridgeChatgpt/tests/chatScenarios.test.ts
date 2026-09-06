@@ -23,3 +23,15 @@ assert.deepStrictEqual(buildMultiRolePlan('ChatGPT sửa auth thôi'), []);
 assert.deepStrictEqual(buildMultiRolePlan('Theo ChatGPT và Studio cái nào mạnh hơn?'), []);
 
 console.log('chatScenarios.test.ts: all assertions passed');
+
+const { requiresAction, wantsMultiAgentDebate } = await import('../src/chatRouting.js');
+for (const text of ['Chatgpt mày biết Astra không?', 'Railway dùng để làm gì?', 'Xin chào', 'Chatgpt mày có biết về Astra ko, làm sao t dùng dc nó trong bridge này']) {
+  assert.equal(requiresAction(text), false);
+  assert.equal(shouldAutoDebate(text, ['idle'], ['registered']), false);
+}
+assert.equal(requiresAction('Sửa bug X rồi chạy test'), true);
+assert.equal(requiresAction('Làm sao sửa bug này?'), false);
+for (const text of ['cả hai cho ý kiến', 'tranh luận về chủ đề này', 'phản biện giúp tôi', 'Theo tụi mày ChatGPT và Studio thì cách nào tốt hơn?']) {
+  assert.equal(wantsMultiAgentDebate(text), true);
+  assert.equal(shouldAutoDebate(text, ['idle'], ['idle']), true);
+}

@@ -7,6 +7,7 @@ import {
   updateTask,
 } from './db.js';
 import { toolProjectGitDiff, toolProjectTest } from './projectTools.js';
+import { isDiscussionTask } from '../src/chatMode.js';
 
 export interface AutoReviewCycleResult {
   step: 'ci_passed' | 'ci_failed' | 'awaiting_chatgpt_review' | 'gemini_working' | 'idle';
@@ -30,7 +31,7 @@ export async function checkAndTriggerAutoReview(): Promise<AutoReviewCycleResult
   const tasks = await getTasks();
 
   // Check if there are tasks awaiting ChatGPT review that need automated CI verification
-  const reviewTasks = tasks.filter((t) => t.status === 'review');
+  const reviewTasks = tasks.filter((t) => t.status === 'review' && !isDiscussionTask(t));
   const unverifiedReviewTask = reviewTasks.find((t) => !t.result || !t.result.includes('[Automated CI Check]'));
 
   if (unverifiedReviewTask) {
@@ -122,4 +123,3 @@ export async function checkAndTriggerAutoReview(): Promise<AutoReviewCycleResult
 
   return { step: 'idle', message: 'No tasks currently pending review or execution.' };
 }
-

@@ -19,8 +19,9 @@ import {
   Video,
   X,
 } from 'lucide-react';
+import { userFacingResult } from '../chatMode.js';
 import type { Message, Task } from '../types.js';
-import { buildMultiRolePlan, looksLikeQuestion, shouldAutoDebate } from '../chatRouting.js';
+import { buildMultiRolePlan, requiresAction, shouldAutoDebate, wantsMultiAgentDebate } from '../chatRouting.js';
 
 interface ResourceTarget {
   target_id: string;
@@ -83,19 +84,6 @@ function displayTarget(target: ResourceTarget) {
   return target.session_label?.trim() || target.label?.trim() || (target.provider === 'chatgpt' ? 'ChatGPT' : 'AI Studio');
 }
 
-function taskStatus(status: Task['status']) {
-  const labels: Record<Task['status'], string> = {
-    pending: 'queued',
-    assigned: 'assigned',
-    working: 'working',
-    blocked: 'blocked',
-    review: 'review',
-    completed: 'done',
-    cancelled: 'cancelled',
-  };
-  return labels[status];
-}
-
 function timeLabel(value: string) {
   try { return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
 }
@@ -123,30 +111,12 @@ function MessageRow({ message }: { message: Message; key?: React.Key }) {
       <div className={`min-w-0 max-w-[min(46rem,88%)] ${mine ? 'items-end text-right' : ''}`}>
         <div className={`mb-1 flex items-center gap-2 text-[11px] ${mine ? 'justify-end' : ''}`}>
           <span className={`font-semibold ${accent}`}>{name}</span>
-          {message.task_id && <span className="text-[10px] text-muted-foreground">{message.task_id}</span>}
           <span className="text-muted-foreground">{timeLabel(message.created_at)}</span>
         </div>
         <div className={`rounded-xl border px-3 py-2 text-left text-[13.5px] leading-relaxed ${bubble}`}>
           <div className="whitespace-pre-wrap">{message.content}</div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ResultEvent({ task }: { task: Task; key?: React.Key }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="flex animate-rise justify-center">
-      <button onClick={() => setOpen(value => !value)} className="w-full max-w-[min(46rem,92%)] rounded-lg border border-gpt/20 bg-gpt/8 px-3 py-1.5 text-left text-gpt transition-colors">
-        <span className="flex items-center gap-2 text-[12px] font-medium">
-          <Check className="size-3.5 shrink-0" />
-          <span className="truncate">{task.id} completed</span>
-          <span className="ml-auto shrink-0 text-[10px] opacity-70">{timeLabel(task.updated_at)}</span>
-          <ChevronRight className={`size-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
-        </span>
-        {open && <p className="mt-1.5 whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">{task.result}</p>}
-      </button>
     </div>
   );
 }
@@ -200,7 +170,7 @@ export const BridgeChatPanel: React.FC = () => {
 
   useEffect(() => {
     load();
-    const timer = window.setInterval(load, 2000);
+    const timer = window.setInterval(load, 1000);
     return () => window.clearInterval(timer);
   }, [activeWorkspaceId]);
 
@@ -215,36 +185,37 @@ export const BridgeChatPanel: React.FC = () => {
   const projectTaskIds = useMemo(() => new Set(projectTasks.map(task => task.id)), [projectTasks]);
 
   const feed = useMemo(() => {
-    const relevantMessages = messages
-      .filter(message => Boolean(message.task_id && projectTaskIds.has(message.task_id)))
-      .map(message => ({ kind: 'message' as const, at: message.created_at, message }));
-
-    const resultEntries = projectTasks
-      .filter(task => task.result && !relevantMessages.some(entry => entry.message.task_id === task.id && entry.message.type === 'result'))
-      .map(task => ({ kind: 'result' as const, at: task.updated_at, task }));
-
-    return [...relevantMessages, ...resultEntries]
-      .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+    const userMessages = messages
+      .filter(message => message.from === 'human' && ['task', 'question'].includes(message.type)
+        && !/^New task TASK-\d+ assigned: /.test(message.content)
+        && Boolean(message.task_id && projectTaskIds.has(message.task_id)));
+    // Tasks are the canonical answer, avoiding stale/duplicate result messages and logs.
+    const answers: Message[] = projectTasks
+      .filter(task => task.status === 'completed' && task.result)
+      .map(task => ({ id: 'answer-' + task.id, from: task.description.includes(DEBATE_MARKER) ? 'chatgpt' : task.assignee,
+        to: 'human', type: 'result', content: userFacingResult(task.result!),
+        task_id: task.id, created_at: task.updated_at }));
+    return [...userMessages, ...answers]
+      .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
       .slice(-100);
   }, [messages, projectTasks, projectTaskIds]);
 
   useEffect(() => {
     const node = feedRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [feed.length, workspace?.workspace_id]);
+  }, [feed, workspace?.workspace_id]);
 
   const targets = useMemo(() => workspace ? [...workspace.chatgpt_targets, ...workspace.studio_targets] : [], [workspace]);
 
   const chooseTarget = () => {
     if (!workspace) return null;
     if (targetId !== 'auto') return targets.find(target => target.target_id === targetId) || null;
-    const newestChat = [...workspace.chatgpt_targets].reverse()[0];
-    if ((workspace.execution_target || 'studio') === 'pc') return newestChat || null;
-    return workspace.studio_targets[0] || newestChat || null;
+    return [...workspace.chatgpt_targets].reverse().find(item => item.connection_status !== 'offline')
+      || workspace.studio_targets.find(item => item.connection_status !== 'offline') || null;
   };
 
   const targetLabel = () => {
-    if (targetId === 'auto') return `Auto · ${(workspace?.execution_target || 'studio') === 'pc' ? 'PC' : 'Studio'}`;
+    if (targetId === 'auto') return 'Auto';
     const target = targets.find(item => item.target_id === targetId);
     return target ? displayTarget(target) : 'Auto';
   };
@@ -256,11 +227,11 @@ export const BridgeChatPanel: React.FC = () => {
     const rolePlan = buildMultiRolePlan(content);
     const chatRoleTarget = [...workspace.chatgpt_targets].reverse().find(item => item.connection_status !== 'offline') || null;
     const studioRoleTarget = workspace.studio_targets.find(item => item.connection_status !== 'offline') || null;
-    if (rolePlan.length && (!chatRoleTarget || !studioRoleTarget)) {
+    if ((rolePlan.length || wantsMultiAgentDebate(content)) && (!chatRoleTarget || !studioRoleTarget)) {
       setFeedback('Multi-role cần cả ChatGPT và AI Studio đang được bind/online để mỗi vai trò có reply riêng.');
       return;
     }
-    const fastChat = !rolePlan.length && looksLikeQuestion(content);
+    const fastChat = !rolePlan.length && !requiresAction(content);
     const debateStudio = !rolePlan.length && shouldAutoDebate(
       content,
       workspace.studio_targets.map(item => item.connection_status),
@@ -334,7 +305,7 @@ export const BridgeChatPanel: React.FC = () => {
         setAttachments([]);
         if (fileInputRef.current) fileInputRef.current.value = '';
         setDeliveryState('delivered');
-        setFeedback(`${batchData.id} → ${rolePlan.map(step => step.label).join(' → ')} → ChatGPT synthesis`);
+        setFeedback('');
         await load();
         window.setTimeout(() => setDeliveryState('idle'), 1400);
         return;
@@ -382,7 +353,7 @@ export const BridgeChatPanel: React.FC = () => {
       setAttachments([]);
       if (fileInputRef.current) fileInputRef.current.value = '';
       setDeliveryState('delivered');
-      setFeedback(debateStudio ? `${taskData.id} → Debate · Studio → ChatGPT` : `${taskData.id} → ${displayTarget(target)}`);
+      setFeedback('');
       await load();
       window.setTimeout(() => setDeliveryState('idle'), 1400);
     } catch (error: any) {
@@ -398,16 +369,9 @@ export const BridgeChatPanel: React.FC = () => {
 
   return (
     <section className="flex min-h-[360px] flex-1 flex-col overflow-hidden bg-background/35">
-      {currentTask && (
-        <div className="flex shrink-0 justify-center border-b border-border px-3 py-1.5 sm:px-4">
-          <div className={`flex w-full max-w-4xl items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] font-medium ${currentTask.status === 'blocked' ? 'border-warn/25 bg-warn/8 text-warn' : currentTask.status === 'working' ? 'border-studio/20 bg-studio/8 text-studio' : 'border-border bg-surface text-muted-foreground'}`}>
-            {currentTask.status === 'working' ? <Loader2 className="size-3.5 animate-spin" /> : currentTask.status === 'blocked' ? <TriangleAlert className="size-3.5" /> : currentTask.status === 'review' ? <AlertTriangle className="size-3.5" /> : <Clock3 className="size-3.5" />}
-            <span className="font-semibold text-foreground">{currentTask.id}</span>
-            <span>· {taskStatus(currentTask.status)}</span>
-            {activeTasks.length > 1 && <span className="ml-auto text-[10px] text-muted-foreground">+{activeTasks.length - 1} queued</span>}
-          </div>
-        </div>
-      )}
+      {currentTask && <div role="status" className="mx-auto flex items-center gap-2 py-2 text-xs text-muted-foreground">
+        <Loader2 className="size-3 animate-spin" />{currentTask.status === 'blocked' ? 'Agent đang gặp trở ngại' : 'Đang trả lời…'}
+      </div>}
 
       <div ref={feedRef} className="thin-scrollbar flex-1 overflow-y-auto px-3 pb-2 sm:px-4">
         <div className="mx-auto flex max-w-4xl flex-col gap-3 py-3">
@@ -420,9 +384,7 @@ export const BridgeChatPanel: React.FC = () => {
               <div className="mt-1 text-[11px] text-muted-foreground">Type below. Your instruction and agent responses will stay in this feed.</div>
             </div>
           ) : (
-            feed.map((entry, index) => entry.kind === 'message'
-              ? <MessageRow key={entry.message.id} message={entry.message} />
-              : <ResultEvent key={`result-${entry.task.id}-${index}`} task={entry.task} />)
+            feed.map(message => <MessageRow key={message.id} message={message} />)
           )}
         </div>
       </div>
@@ -432,12 +394,12 @@ export const BridgeChatPanel: React.FC = () => {
           {pickerOpen && (
             <div className="mb-2 flex animate-rise flex-wrap gap-1.5">
               <button onClick={() => { setTargetId('auto'); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] ${targetId === 'auto' ? 'border-gpt/40 bg-gpt/10 text-gpt' : 'border-border bg-surface text-muted-foreground'}`}>
-                {(workspace?.execution_target || 'studio') === 'pc' ? <MonitorCog className="size-3.5" /> : <Sparkles className="size-3.5" />} Auto · {(workspace?.execution_target || 'studio') === 'pc' ? 'PC' : 'Studio'}
+                {(workspace?.execution_target || 'studio') === 'pc' ? <MonitorCog className="size-3.5" /> : <Sparkles className="size-3.5" />} Auto
               </button>
               {targets.map(target => (
                 <button key={target.target_id} onClick={() => { setTargetId(target.target_id); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] ${targetId === target.target_id ? 'border-gpt/40 bg-gpt/10 text-gpt' : 'border-border bg-surface text-muted-foreground hover:text-foreground'}`}>
                   {target.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
-                  {displayTarget(target)}
+                  {displayTarget(target)}<span title={target.connection_status} className={`size-1.5 rounded-full ${target.connection_status === 'offline' ? 'bg-muted-foreground' : 'bg-gpt'}`} />
                 </button>
               ))}
             </div>
@@ -470,7 +432,7 @@ export const BridgeChatPanel: React.FC = () => {
 
             <textarea
               value={text}
-              rows={1}
+              rows={3}
               onChange={event => setText(event.target.value)}
               onKeyDown={event => {
                 if (event.key === 'Enter' && !event.shiftKey) {
@@ -480,7 +442,7 @@ export const BridgeChatPanel: React.FC = () => {
               }}
               placeholder={workspace ? `Message ${workspace.project_name}...` : 'Choose a project first'}
               disabled={!workspace}
-              className="max-h-40 min-h-9 flex-1 resize-none bg-transparent px-1 py-2 text-[14px] leading-snug text-foreground outline-none placeholder:text-muted-foreground/70 disabled:opacity-40"
+              className="max-h-40 min-h-20 flex-1 resize-y bg-transparent px-1 py-2 text-[14px] leading-snug text-foreground outline-none placeholder:text-muted-foreground/70 disabled:opacity-40"
             />
 
             <button onClick={send} disabled={(!text.trim() && attachments.length === 0) || busy || !workspace} aria-label="Send" className={`grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground transition-all duration-200 hover:opacity-90 disabled:opacity-30 ${deliveryState === 'sending' ? 'scale-95' : ''}`}>

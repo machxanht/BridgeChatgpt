@@ -374,7 +374,7 @@ studioRelayRouter.post('/result', async (req: Request, res: Response) => {
       return;
     }
 
-    const updated = await updateTask(task_id, { status: blocked ? 'blocked' : 'review', result: resultPayload }, 'gemini');
+    const updated = await updateTask(task_id, { status: blocked ? 'blocked' : 'review', result: discussionMode ? String(summary) : resultPayload }, 'gemini');
     await setAgentStatus({ agent: 'gemini', status: blocked ? 'blocked' : 'idle', current_task_id: blocked ? task_id : null, message: blocked ? `${resolved.instance.agent_instance_id} blocked on ${task_id}` : `${resolved.instance.agent_instance_id} submitted ${task_id}` });
     await createMessage({
       from: 'gemini',
