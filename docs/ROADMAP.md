@@ -175,3 +175,14 @@ Not a default roadmap item. It may only be considered after explicit prior user 
 ## Fast Chat usability — 2026-09-06
 
 Implemented and locally tested: direct completion at DB/MCP boundary, no chat/debate CI, clean chat answers, Vietnamese wake instructions, ChatGPT-first Auto, explicit-only multi-agent, larger composer. Production deploy and real ChatGPT/Studio E2E remain unproven until deployment evidence is recorded. Awake wake polling requires updated extension code on PC.
+
+
+## Release result — 2026-09-06 17:28 UTC
+
+- Fix commit: 541e4147caff75669d522e3aef455a0001de07c0; PR #18 merged as b085fe3e2a61e0d236aa7b70c45d84e495fa1487.
+- GitHub Bridge CI run 34048566977 SUCCESS (includes typecheck, all tests, build, extension package and production startup smoke).
+- Deployment BLOCKED: ordinary Railway redeploy produced deployment d379c0bc-114d-42d2-ae7a-b48f217621b4 SUCCESS but its commitHash is 13f6f640719f812c915fc3a62564e4dc7d720bdf, not the merged fix. Production therefore still has old behavior.
+- Current Railway connector does not expose changing service source or deploying latest GitHub commit on the existing service. Its create_deployment tool creates a NEW service (not appropriate); redeploy reuses the old snapshot. Do not repeat redeploy expecting new source.
+- Railway CLI is unavailable on the connected Windows PC. No re-login, re-pair, browser profile reset, or Railway AI Agent was used.
+- Production browser was opened successfully and old TASK/review metadata was observed. Three real-agent E2E cases for the fix are NOT PROVEN because the fix is not deployed. PC extension 2-second poll is also NOT PROVEN installed/live.
+- Next necessary step: deploy the existing Railway service from b085fe3 (or its documentation-only successor), verify actual deployment commitHash, then submit the three specified real chat cases and record answers/latency. Do not rerun the repo audit.
