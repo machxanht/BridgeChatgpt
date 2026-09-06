@@ -62,7 +62,15 @@ async function queuePcProjectSetup(workspace: {
     node_id: node.node_id,
     action: 'command.run',
     payload: {
-      argv: ['git', 'clone', '--branch', workspace.branch || 'main', '--single-branch', workspace.repository_url, workspace.local_path],
+      // Project bootstrap is the intentional root-level exception: it creates the
+      // new Apps/<ProjectName> directory, then seeds only missing handoff docs.
+      argv: [
+        'node',
+        'Apps/BridgeChatgpt/scripts/clone-project.mjs',
+        '--repo', workspace.repository_url,
+        '--branch', workspace.branch || 'main',
+        '--target', workspace.local_path,
+      ],
       cwd: '.',
       timeout_ms: 10 * 60_000,
     },
