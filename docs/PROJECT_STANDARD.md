@@ -61,7 +61,8 @@ Must be the most useful replacement-session document and include:
 - blockers requiring human action;
 - exact next recommended step;
 - known inconsistencies between GitHub/local/deployed state;
-- last verification time/timezone when meaningful.
+- last verification time/timezone when meaningful;
+- any explicitly approved paid/quota dependency, why it exists, expected cost/quota risk, and how to disable/remove it.
 
 Never mark an item PASS unless it was actually proven.
 
@@ -89,6 +90,8 @@ Must document operational procedures such as:
 - recovery after restart/outage;
 - E2E verification steps.
 
+Routine deployment should be deterministic and free/included; do not make a provider AI Agent the normal deployment mechanism.
+
 ## 8. SECURITY.md requirements
 
 Must document:
@@ -97,6 +100,7 @@ Must document:
 - secret handling;
 - destructive-operation restrictions;
 - external service boundaries;
+- paid/quota service boundaries;
 - any project-specific safety constraints.
 
 Do not store raw secrets.
@@ -128,6 +132,7 @@ When Bridge creates or clones a new project:
 7. Bind ChatGPT/Studio resource URLs if used.
 8. Run baseline tests/build.
 9. Record baseline result in `docs/HANDOFF.md`.
+10. Record the free/included execution/deployment path and verify there is no unapproved paid/quota dependency.
 
 ## 11. Session handoff rule
 
@@ -149,3 +154,15 @@ Do not pair the same physical PC separately for each project. A single machine-s
 ## 14. Completion standard
 
 Implementation, deployment, and E2E verification are separate states. Documentation must say which one is actually complete.
+
+## 15. FREE-first / no-paid-API standard — mandatory
+
+Every Bridge-managed project inherits `docs/FREE_FIRST_POLICY.md`.
+
+- Free or lowest-cost operation is the default architecture requirement.
+- Do not add, enable, call, or depend on paid/quota APIs, token-metered AI APIs, provider AI Agents, paid automation, or similar metered services without explicit prior user approval.
+- Existing API keys, credits, environment variables, connected accounts, or technical access never imply permission to spend.
+- Prefer browser/subscription UI, local PC execution, existing tools, repository code, ordinary included platform controls, Git/GitHub, open-source/self-hosted software, and free/included services.
+- Before building a capability from scratch, search the project and parent Bridge repositories. If implementation or troubleshooting is taking materially too long, search trusted public repositories, official docs, and the internet for an existing maintained compatible solution and prefer reuse/integration when safe and appropriately licensed.
+- If the free path is blocked or materially slower, stop and present options. State the paid/quota option, why it is needed, expected cost/quota when knowable, and the free alternative. No approval means do not use it.
+- Internal REST/HTTP plumbing is allowed, but it must not silently create an external paid dependency.

@@ -44,3 +44,9 @@ The extension keeps delivered `event_id` values in `chrome.storage.local`, so th
 ## Multiple Chrome profiles
 
 An extension instance can only control tabs inside the Chrome profile where it is installed. If ChatGPT and AI Studio are deliberately split across separate Chrome profiles, install Bridge Wake in each profile or keep the targets you want automated in one profile.
+
+---
+
+## Mandatory free-first rule
+
+This browser path is intentionally preferred over metered ChatGPT/Gemini API integrations. Follow `docs/FREE_FIRST_POLICY.md`: no paid or quota-consuming API/AI Agent without explicit prior user approval. Reuse the existing extension/browser session first; if selectors or behavior break, search this repository and trusted public repos/docs/internet for a compatible maintained solution before rebuilding the wake layer from scratch.

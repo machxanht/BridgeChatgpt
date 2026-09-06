@@ -86,3 +86,9 @@ The v1 worker is deliberately constrained:
 - the local control panel binds to loopback only by default
 
 This is an executor, not a replacement for Bridge routing. Bridge remains the task/session/project controller; the PC node is the worker that performs local actions.
+
+---
+
+## Mandatory free-first rule
+
+The PC executor is the preferred execution path when it avoids metered cloud/API work. Follow `docs/FREE_FIRST_POLICY.md`: no paid or quota-consuming API/AI Agent without explicit prior user approval. Reuse local tools and existing repository capabilities first. If work starts taking too long, check this repo and trusted public repositories/docs/internet for a maintained compatible solution before adding a new paid service or rebuilding functionality from scratch.

@@ -42,6 +42,17 @@ Bridge local path: `Apps/<PROJECT_NAME>`
 
 <APPROVED_SCOPE_AND_SPECIAL_CONSTRAINTS>
 
+## Cost / quota state
+
+This project inherits the parent Bridge `docs/FREE_FIRST_POLICY.md`.
+
+- Approved paid/quota dependencies: <NONE_OR_EXPLICITLY_APPROVED_LIST>
+- Current recurring cost/quota risk: <NONE_OR_DETAILS>
+- Free/included alternative: <DETAILS>
+- Disable/removal path for any approved paid dependency: <DETAILS>
+
+No paid/quota API or provider AI Agent may be added or used without explicit prior user approval. If work is taking too long, search the project/repository first, then trusted public repos/docs/internet, and prefer reuse over rebuilding.
+
 ## Exact next action
 
 1. <NEXT_ACTION>

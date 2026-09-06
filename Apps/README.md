@@ -38,3 +38,9 @@ Apps/BridgeChatgpt/
 ├── vite.config.ts
 └── metadata.json
 ```
+
+---
+
+## Mandatory free-first rule
+
+Every project under `Apps/` inherits `docs/FREE_FIRST_POLICY.md`. Free/included/browser/local/open-source/repository paths come first. No project may add or use a paid/quota-consuming API or provider AI Agent without explicit prior user approval. If a feature or fix is taking too long, search the project/repository first and then trusted public repos/docs/internet for an existing compatible implementation before rebuilding it.

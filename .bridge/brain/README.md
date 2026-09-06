@@ -28,3 +28,9 @@ GitHub is the durable source-of-truth snapshot. Bridge runtime may keep newer ru
 ## Concurrency rule
 
 Do not make every agent overwrite a giant shared transcript. Prefer small scoped memory entries and append/merge semantics. Project task state remains separate from Project Brain.
+
+---
+
+## Mandatory free-first rule
+
+All decisions recorded here are subordinate to `docs/FREE_FIRST_POLICY.md`. Prefer free/included/browser/local/open-source/repository solutions. Do not use a paid or quota-consuming API/AI Agent without explicit prior user approval. If implementation or troubleshooting is dragging, search this repository first, then trusted public repositories/docs/internet, and reuse an existing compatible solution when practical.

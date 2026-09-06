@@ -276,5 +276,13 @@ interface Message {
 
 ---
 
+## Mandatory FREE-first / no-paid-API policy
+
+Read `docs/FREE_FIRST_POLICY.md` before changing architecture or operations. Bridge must stay free or as close to free as practical. Do not add, enable, or call a paid/quota API, token-metered AI API, provider AI Agent, or paid automation without explicit prior user approval. Prefer browser/subscription UI, local PC execution, existing repository code, Git/GitHub, ordinary included platform controls, open-source/self-hosted software, and other free/included routes.
+
+Before building a capability from scratch — and whenever troubleshooting starts taking too long — search this repository first, then trusted public repositories, official docs, and the internet for an existing maintained compatible solution. Prefer reuse/integration over reinvention when safe and appropriately licensed. No explicit approval = no paid/quota path.
+
+---
+
 ## License
 MIT

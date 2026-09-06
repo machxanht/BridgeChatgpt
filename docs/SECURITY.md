@@ -4,6 +4,8 @@
 
 Technical capability does not imply permission. Every agent, connector, executor, remote-desktop tool, browser automation path, or human-assisted workflow must stay within the scope explicitly approved by the user.
 
+The same rule applies to spending: an available API key, provider AI Agent, credit balance, connected account, or quota does not imply permission to consume it.
+
 ## Current approved local root
 
 ```text
@@ -56,6 +58,25 @@ Do not:
 
 The preferred Bridge browser profile should store its profile data inside the approved Bridge root whenever practical.
 
+## Paid/quota service permission boundary
+
+`docs/FREE_FIRST_POLICY.md` is mandatory.
+
+Do not add, enable, call, or rely on any external paid API, token-metered AI API, provider AI Agent, paid automation, or quota-consuming service without explicit prior user approval.
+
+Examples requiring approval before use:
+
+- Railway AI Agent when it consumes separate AI-agent quota;
+- OpenAI/Anthropic/Gemini or other metered LLM API calls;
+- paid automation/agent platforms;
+- a new paid connector or hosted service with usage-based billing.
+
+Prefer browser/subscription UI, local PC execution, existing repository code, ordinary included platform controls, Git/GitHub, open-source/self-hosted software, and other free/included paths. If implementation/troubleshooting is dragging, search the current repo first, then trusted public repositories/docs/internet for an existing maintained solution before considering a paid dependency.
+
+If a paid/quota path appears necessary, stop and obtain approval after disclosing what will be consumed, expected cost/quota when knowable, why free alternatives are insufficient, and how to disable/remove the dependency.
+
+Internal Bridge REST/HTTP protocol calls are allowed as plumbing; they must not be used as a loophole to introduce a billable external dependency.
+
 ## Secrets
 
 Never commit secrets to Git or Markdown.
@@ -106,4 +127,4 @@ Before any destructive action:
 
 ## Incident recovery
 
-If an agent discovers it has operated outside scope, stop further out-of-scope actions, record what was accessed/changed, and report it clearly. Do not attempt broad cleanup that could cause additional damage.
+If an agent discovers it has operated outside filesystem scope **or consumed unapproved paid/quota resources**, stop further unauthorized actions, record what was accessed/changed/consumed, and report it clearly. Do not attempt broad cleanup that could cause additional damage or spend more quota.

@@ -1,6 +1,6 @@
 # BridgeChatgpt Handoff
 
-> Primary replacement-session document. Read this after `START_HERE.md`. Update it after every substantial architecture, deployment, security, or live-state change.
+> Primary replacement-session document. Read this after `START_HERE.md`. Update it after every substantial architecture, deployment, security, cost/quota, or live-state change.
 
 ## Snapshot
 
@@ -32,10 +32,17 @@ Bridge is a monorepo-style special case: `.git`, root `package.json`, runtime fo
 - One paired PC executor serves all Bridge projects without re-pairing per project.
 - Agents, RDC, executor jobs, and browser automation must remain within approved Bridge scope unless the human explicitly grants a new scope.
 - Do not report PC work as completed while the PC has no power.
+- **FREE / lowest-cost operation is the top architecture priority.**
+- **No paid/quota API, token-metered AI API, provider AI Agent, or paid automation may be used without explicit prior user approval.** An available API key/account/credit/tool is not permission to spend.
+- Prefer browser/subscription UI, local PC execution, existing tools, repository code, ordinary included platform controls, Git/GitHub, open-source/self-hosted software, and free/included paths.
+- Before building from scratch, search the current repo. If implementation/troubleshooting is taking too long, search trusted public repos/docs/internet and reuse a maintained compatible solution when practical.
+- Routine Railway deployment must not depend on Railway AI Agent. Railway AI Agent previously consumed its separate quota during troubleshooting; future use requires explicit approval. Build a deterministic free/included deploy path instead.
+
+Canonical policy: `docs/FREE_FIRST_POLICY.md`.
 
 ## Canonical production state before final offline-prep PR #6
 
-GitHub `main`:
+GitHub `main` at that point:
 
 ```text
 e9ded0194b0c790598919e1a11f819a056b88565
@@ -55,19 +62,11 @@ Persistent DB startup verified from:
 /app/data/bridge.sqlite
 ```
 
-## Final offline-prep PR
+Later GitHub work advanced `main` beyond that Railway deployment. Before any production claim, re-read current GitHub `main` and Railway deployment metadata rather than relying on the historical SHA above.
 
-PR: `#6` — `fix: keep Bridge executor jobs at repo root`
+## Final offline-prep implementation
 
-Branch:
-
-```text
-fix/bridge-executor-cwd
-```
-
-This PR is intended to contain the last planned source changes before the PC returns.
-
-Implemented in this PR:
+PR `#6` implemented the last planned source changes before PC power return:
 
 - Bridge own jobs resolve to cwd `.`.
 - Independent project jobs resolve to `Apps/<ProjectName>`.
@@ -80,6 +79,8 @@ Implemented in this PR:
 - Regression coverage includes Bridge root cwd, independent project cwd, normalization, and path-escape rejection.
 - The project bootstrap script is syntax-checked in the normal test suite.
 - `docs/PRE_POWER_RETURN_CHECKLIST.md` defines the authoritative live-test sequence.
+
+The subsequent free-first policy work lives on branch `docs/free-first-policy` until merged. It adds `docs/FREE_FIRST_POLICY.md` and propagates the mandatory policy to every tracked Markdown document/template.
 
 ## Multi-project executor state
 
@@ -114,28 +115,39 @@ The PC is currently without power. Therefore:
 
 A command-bus fast-forward sync command already exists. Because it uses `git pull --ff-only`, it will pull the latest reachable `main` when the worker actually executes it.
 
-## Remaining work after PR #6 merges and Railway deploys its exact final SHA
+## Cost / quota state
 
-No planned source edits remain before the PC returns.
+Default allowed paid/quota dependencies: **none** unless explicitly approved by the human.
 
-Only live verification should remain:
+Current known issue:
 
-1. PC powers on and Windows login occurs if required.
-2. Background executor reconnects without manual source edits.
-3. Queued `git pull --ff-only` sync completes and local `HEAD` matches GitHub `main`.
-4. Bridge Git status/test/build succeed from repo root `.`.
-5. A second real project proves same-node multi-project routing from `Apps/<ProjectName>`.
-6. New-project template seeding is live-proven without overwriting existing docs.
-7. ChatGPT Web wake/injection/scoped-PC/result E2E is tested.
-8. Google AI Studio wake/relay/result E2E is tested.
-9. Actual evidence is recorded in this file and `docs/ROADMAP.md`.
+- Railway AI Agent separate usage quota was exhausted during troubleshooting/deployment attempts. This does not mean the Bridge service itself is down; it means the AI Agent path must not be treated as routine infrastructure.
+- Do not increase or consume that quota automatically.
+- Replace routine AI-agent-assisted deploy with a deterministic free/included Git/platform-native path before considering deployment architecture complete.
 
-Use `docs/PRE_POWER_RETURN_CHECKLIST.md` as the authoritative sequence.
+If any future paid/quota dependency is explicitly approved, record here: service, purpose, one-time vs recurring, expected cost/quota, free alternative, and disable/removal procedure.
+
+## Remaining work
+
+No planned source edit should require the powered-off PC except bugs discovered by live testing. Remaining intended work:
+
+1. Merge and CI-verify the free-first policy branch.
+2. Establish/verify a deterministic routine Railway deployment path that does not require Railway AI Agent or another paid AI API.
+3. When PC power returns, confirm background executor reconnects without manual source edits.
+4. Confirm queued `git pull --ff-only` sync completes and local `HEAD` matches GitHub `main`.
+5. Bridge Git status/test/build succeed from repo root `.`.
+6. A second real project proves same-node multi-project routing from `Apps/<ProjectName>`.
+7. New-project template seeding is live-proven without overwriting existing docs.
+8. ChatGPT Web wake/injection/scoped-PC/result E2E is tested.
+9. Google AI Studio wake/relay/result E2E is tested.
+10. Actual evidence is recorded in this file and `docs/ROADMAP.md`.
+
+Use `docs/PRE_POWER_RETURN_CHECKLIST.md` as the authoritative live-test sequence.
 
 ## Intentionally not auto-installed
 
 Browser/executor startup mechanisms that require writing Windows user/system locations outside `E:\AI\Bridge` need explicit narrow permission first. Do not use RDC to bypass this rule.
 
-## Security reminder
+## Security and cost reminder
 
-Never put raw Bridge/Railway/executor tokens, passwords, cookies, private keys, or browser credentials in Markdown. Do not use RDC or another tool outside `E:\AI\Bridge` without explicit permission.
+Never put raw Bridge/Railway/executor tokens, passwords, cookies, private keys, or browser credentials in Markdown. Do not use RDC outside `E:\AI\Bridge` without explicit permission. Do not spend API/AI-Agent quota or money without explicit prior approval.

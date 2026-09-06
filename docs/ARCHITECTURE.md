@@ -162,6 +162,12 @@ Railway uses persistent data mounted under `/app/data`. SQLite and registry/exec
 
 Production is deployed from GitHub to Railway. A successful GitHub merge is not enough to claim live deployment. Always verify the Railway deployment metadata contains the intended commit hash.
 
+Routine deploy/recovery architecture must not depend on a provider AI Agent. Deterministic free/included Git/platform controls are preferred; a paid/quota AI Agent is a last-resort path requiring explicit prior user approval.
+
+## Free-first architecture invariant
+
+`docs/FREE_FIRST_POLICY.md` is part of the architecture contract. Bridge should avoid external paid API dependencies and token-metered AI backends when browser/subscription UI, local PC execution, repository code, open-source/self-hosted components, or other free/included paths can satisfy the requirement. Before adding a new subsystem, search this repository first and, when custom implementation or troubleshooting starts dragging, search trusted public repos/docs/internet for an existing maintained compatible solution.
+
 ## Design invariants
 
 Future changes should preserve these invariants unless explicitly redesigned:
@@ -173,3 +179,4 @@ Future changes should preserve these invariants unless explicitly redesigned:
 - Browser is the selected ChatGPT/Studio wake mechanism.
 - Railway is the central control plane; the PC is the execution machine.
 - GitHub + handoff docs are the durable recovery source when chat context disappears.
+- Free/included execution is preferred; no paid/quota API or provider AI Agent without explicit prior user approval.

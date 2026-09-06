@@ -28,3 +28,9 @@ ChatGPT and Google AI Studio stay independent. Bridge Wake does not merge accoun
 ## Android limitations
 
 Android can restrict background activity launches depending on OS/vendor settings. The foreground service and Accessibility service improve reliability, but battery optimization may still need to be disabled for Bridge Wake on some tablets. ChatGPT/AI Studio can also change their accessibility tree or send controls; those selectors may require future updates without changing the Bridge wake protocol.
+
+---
+
+## Mandatory free-first rule
+
+This component follows `docs/FREE_FIRST_POLICY.md`. Prefer the existing browser/session/APK path and open-source/local tooling. Do not replace it with a paid or quota-consuming API/AI-agent integration without explicit prior user approval. If implementation or troubleshooting drags, search this repository first, then trusted public repositories/docs/internet, and reuse a compatible existing solution when practical.
