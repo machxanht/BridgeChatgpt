@@ -88,6 +88,12 @@ function validateArtifacts(artifacts: ChangedFileArtifact[]): string | null {
   return null;
 }
 
+const DEBATE_MARKER = '<!-- BRIDGE_DEBATE_V1 -->';
+
+function isDebateTask(task: any) {
+  return String(task?.description || '').includes(DEBATE_MARKER);
+}
+
 const resultContract = {
   review_requires_artifacts: true,
   conflict_safe: true,
@@ -110,14 +116,29 @@ const resultContract = {
   max_payload_bytes: MAX_ARTIFACT_BYTES,
 };
 
+function resultContractForTask(task: any) {
+  if (!isDebateTask(task)) return resultContract;
+  return {
+    ...resultContract,
+    review_requires_artifacts: false,
+    discussion_mode: true,
+    rules: [
+      'This is a discussion/debate task: do not edit files or Publish.',
+      'Put your strongest position, uncertainty, and likely counterarguments in summary.',
+      'Submit artifacts: [] and files_changed: []. ChatGPT will critique and synthesize the final answer.',
+    ],
+  };
+}
+
 function prepareTaskForStudio(task: any) {
-  if (!task) return { task: null, execution_payload: null, task_binding: null };
+  if (!task) return { task: null, execution_payload: null, task_binding: null, debate_mode: false };
   const execution = extractExecutionPayload(String(task.description || ''));
   const binding = extractTaskBinding(execution.description);
   return {
     task: { ...task, description: binding.description },
     execution_payload: execution.payload,
     task_binding: binding.binding,
+    debate_mode: isDebateTask(task),
   };
 }
 
@@ -231,6 +252,7 @@ studioRelayRouter.get('/input/:task_id', async (req: Request, res: Response) => 
       ok: true,
       agent_instance: resolved.instance,
       input_contract: studioInputContract,
+      result_contract: resultContractForTask(task),
       task: prepared.task,
       execution_payload: prepared.execution_payload,
       task_binding: prepared.task_binding,
@@ -268,7 +290,7 @@ studioRelayRouter.post('/claim', async (req: Request, res: Response) => {
       ok: true,
       agent_instance: resolved.instance,
       input_contract: studioInputContract,
-      result_contract: resultContract,
+      result_contract: resultContractForTask(claim.task),
       ...claim,
       task: prepared.task,
       execution_payload: prepared.execution_payload,
@@ -306,7 +328,8 @@ studioRelayRouter.post('/result', async (req: Request, res: Response) => {
     if (Array.isArray(rawArtifacts) && rawArtifacts.length > MAX_ARTIFACT_COUNT) { res.status(413).json({ ok: false, error: `artifact count exceeds ${MAX_ARTIFACT_COUNT}` }); return; }
     const artifacts = normalizeArtifacts(rawArtifacts);
     if (Array.isArray(rawArtifacts) && artifacts.length !== rawArtifacts.length) { res.status(400).json({ ok: false, error: 'one or more artifact paths are unsafe or protected' }); return; }
-    if (!blocked && artifacts.length === 0) { res.status(400).json({ ok: false, error: 'artifacts are required before review; Git push is not required.' }); return; }
+    const debateMode = isDebateTask(task);
+    if (!blocked && artifacts.length === 0 && !debateMode) { res.status(400).json({ ok: false, error: 'artifacts are required before review; Git push is not required.' }); return; }
     const artifactError = validateArtifacts(artifacts);
     if (artifactError) { res.status(400).json({ ok: false, error: artifactError }); return; }
 
@@ -319,7 +342,8 @@ studioRelayRouter.post('/result', async (req: Request, res: Response) => {
       tests: tests ?? null,
       files_changed: Array.isArray(files_changed) ? files_changed : artifacts.map(a => a.path),
       artifacts,
-      conflict_policy: 'ChatGPT must compare each base_sha with current GitHub before create/update/delete',
+      mode: debateMode ? 'debate' : 'artifact-review',
+      conflict_policy: debateMode ? null : 'ChatGPT must compare each base_sha with current GitHub before create/update/delete',
       submitted_at: new Date().toISOString(),
     };
     const resultPayload = JSON.stringify(resultObject, null, 2);
@@ -327,7 +351,18 @@ studioRelayRouter.post('/result', async (req: Request, res: Response) => {
 
     const updated = await updateTask(task_id, { status: blocked ? 'blocked' : 'review', result: resultPayload }, 'gemini');
     await setAgentStatus({ agent: 'gemini', status: blocked ? 'blocked' : 'idle', current_task_id: blocked ? task_id : null, message: blocked ? `${resolved.instance.agent_instance_id} blocked on ${task_id}` : `${resolved.instance.agent_instance_id} submitted ${task_id}` });
-    await createMessage({ from: 'gemini', to: 'chatgpt', type: 'review_request', content: blocked ? `${resolved.instance.agent_instance_id} blocked on ${task_id}` : `${task_id} from ${resolved.instance.agent_instance_id} has conflict-safe artifacts ready.`, task_id, finding_id: null });
+    await createMessage({
+      from: 'gemini',
+      to: 'chatgpt',
+      type: 'review_request',
+      content: blocked
+        ? `${resolved.instance.agent_instance_id} blocked on ${task_id}`
+        : debateMode
+          ? `AI Studio position for ${task_id}:\n${summary}\n\nCritique this position, add independent reasoning, then give the final answer to the user.`
+          : `${task_id} from ${resolved.instance.agent_instance_id} has conflict-safe artifacts ready.`,
+      task_id,
+      finding_id: null,
+    });
     res.json({ ok: true, agent_instance: resolved.instance, task: updated, artifact_count: artifacts.length, conflict_safe: true });
   } catch (err: any) { res.status(400).json({ ok: false, error: err.message }); }
 });
