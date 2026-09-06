@@ -152,5 +152,18 @@ const debateReviewWake = debateReview.find(item => item.reason === 'review-ready
 assert.ok(debateReviewWake);
 assert.match(debateReviewWake!.prompt, /Bridge Debate — ChatGPT final round/);
 
+const attachedTask = {
+  ...task('TASK-A', 'gemini', 'assigned', 'studio-app-1234', '2026-01-05T00:00:01.000Z'),
+  description: attachTaskBinding('Inspect this\n\n<!-- BRIDGE_ATTACHMENTS_V1\n[{"name":"sample.png","type":"image/png","size":1234,"url":"/api/attachments/public/abc"}]\nBRIDGE_ATTACHMENTS_V1 -->', {
+    version: 1,
+    workspace_id: 'workspace-demo',
+    project_id: 'project-demo',
+    agent_instance_id: 'studio-app-1234',
+  }).description,
+};
+const attachedWake = buildWakeQueueFromData(snapshot, [attachedTask]);
+assert.match(attachedWake[0].prompt, /sample\.png/);
+assert.match(attachedWake[0].prompt, /\/api\/attachments\/public\/abc/);
+
 assert.strictEqual(new Set(queue.map(item => item.event_id)).size, queue.length);
 console.log('wakeQueue.test.ts: all assertions passed');
