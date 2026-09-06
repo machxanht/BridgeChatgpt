@@ -21,7 +21,7 @@ const node = await registerExecutorNode({
   name: 'Test PC',
   workspace_id: 'workspace-proj-default',
   project_id: 'proj-default',
-  root_label: 'BridgeChatgpt',
+  root_label: 'Bridge',
   platform: 'test/test',
   capabilities: ['fs.read', 'git.status'],
 });
@@ -31,7 +31,7 @@ const job = await createExecutorJob({
   workspace_id: 'workspace-proj-default',
   project_id: 'proj-default',
   action: 'fs.read',
-  payload: { path: 'README.md' },
+  payload: { path: 'README.md', cwd: 'Apps/BridgeChatgpt' },
   created_by: 'chatgpt',
 });
 assert.equal(job.status, 'pending');
@@ -57,6 +57,34 @@ assert.equal(snapshot.nodes.length, 1);
 assert.equal(snapshot.nodes[0].connection_status, 'online');
 assert.equal(snapshot.jobs[0].job_id, job.job_id);
 assert.equal(snapshot.jobs[0].result?.content, 'ok');
+
+// Regression: one paired PC node must be reusable by another Apps project.
+const projectBJob = await createExecutorJob({
+  workspace_id: 'workspace-project-b',
+  project_id: 'project-b',
+  node_id: node.node_id,
+  action: 'git.status',
+  payload: { cwd: 'Apps/Project-B' },
+  created_by: 'human',
+});
+assert.equal(projectBJob.workspace_id, 'workspace-project-b');
+assert.equal(projectBJob.node_id, node.node_id);
+
+const claimedProjectB = await claimExecutorJob({
+  node_id: node.node_id,
+  workspace_id: node.workspace_id,
+  project_id: node.project_id,
+});
+assert.equal(claimedProjectB?.job_id, projectBJob.job_id);
+assert.equal(claimedProjectB?.workspace_id, 'workspace-project-b');
+assert.equal(claimedProjectB?.project_id, 'project-b');
+assert.equal(claimedProjectB?.payload.cwd, 'Apps/Project-B');
+
+const projectBSnapshot = await getExecutorSnapshot({ workspace_id: 'workspace-project-b', project_id: 'project-b' });
+assert.equal(projectBSnapshot.nodes.length, 1, 'machine-scoped node should be visible in every project snapshot');
+assert.equal(projectBSnapshot.nodes[0].node_id, node.node_id);
+assert.equal(projectBSnapshot.jobs.length, 1);
+assert.equal(projectBSnapshot.jobs[0].job_id, projectBJob.job_id);
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log('executorStore.test.ts passed');
