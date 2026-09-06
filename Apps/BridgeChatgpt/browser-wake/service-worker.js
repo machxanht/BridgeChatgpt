@@ -197,7 +197,7 @@ async function injectPrompt(tabId, prompt) {
       if (!composer) return { ok: false, reason: 'composer-not-found' };
 
       const currentValue = 'value' in composer ? String(composer.value || '') : String(composer.textContent || '');
-      if (currentValue.trim()) return { ok: false, reason: 'draft-present' };
+      if (currentValue.trim() && currentValue.trim() !== text.trim()) return { ok: false, reason: 'draft-present' };
 
       composer.focus();
       if (composer instanceof HTMLTextAreaElement) {
@@ -250,7 +250,10 @@ async function injectPrompt(tabId, prompt) {
       if (sendButton) {
         sendButton.click();
         await sleep(400);
-        return { ok: true, method: 'button' };
+        const remaining = 'value' in composer ? String(composer.value || '') : String(composer.textContent || '');
+        return !remaining.trim()
+          ? { ok: true, method: 'button' }
+          : { ok: false, reason: 'send-not-confirmed' };
       }
 
       for (const type of ['keydown', 'keypress', 'keyup']) {

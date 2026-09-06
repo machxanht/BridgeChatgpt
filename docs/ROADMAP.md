@@ -190,3 +190,7 @@ Implemented and locally tested: direct completion at DB/MCP boundary, no chat/de
 ### Direct answer return fallback
 
 PC helper and explicit wake instructions implemented and tested; live read-only authentication check PASS. Real ChatGPT invocation, Vietnamese answer completion and final debate answer remain unproven until observed. Do not re-audit prior passing modules.
+
+### Live chat progress
+
+TASK-12: real ChatGPT Vietnamese direct answer appeared in production without workflow wrapper (17:51:20 UTC). TASK-13 and final TASK-14 remain to verify. Wake 0.1.3 send confirmation/own-draft retry tested; running Chrome activation pending.
