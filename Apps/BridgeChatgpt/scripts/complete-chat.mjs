@@ -23,6 +23,8 @@ async function main() {
   const fileMode = encoded === '--file';
   if (!/^TASK-\d+$/.test(taskId || '')) throw new Error('Pass a task ID and answer source, or --check');
   if (fileMode && (!filePath || !path.isAbsolute(filePath))) throw new Error('Pass an absolute answer file path');
+  const expectedAnswerPath = path.resolve(`E:\\AI\\Bridge\\runtime\\bridge-chat-answer-${taskId}.txt`);
+  if (fileMode && path.resolve(filePath).toLowerCase() !== expectedAnswerPath.toLowerCase()) throw new Error('Answer file path is not allowed');
   if (!checkOnly && !fileMode && (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))) throw new Error('Invalid base64 answer');
   const answer = checkOnly ? '' : fileMode ? fs.readFileSync(filePath, 'utf8') : Buffer.from(encoded, 'base64').toString('utf8');
   const raw = execFileSync('E:\\AI\\Bridge\\runtime\\railway-cli\\node_modules\\@railway\\cli\\bin\\railway.exe', [
@@ -42,7 +44,9 @@ async function main() {
     if (!response.ok) throw new Error(`Bridge HTTP ${response.status}`);
     return response.json();
   };
-  console.log(JSON.stringify(await completeChat({ taskId, answer, checkOnly, request })));
+  const result = await completeChat({ taskId, answer, checkOnly, request });
+  if (fileMode) { try { fs.unlinkSync(filePath); } catch {} }
+  console.log(JSON.stringify(result));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
