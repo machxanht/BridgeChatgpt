@@ -5,12 +5,13 @@ If you are a new ChatGPT/AI Studio/agent session with little or no chat history,
 ## Read in this order
 
 1. `AGENTS.md` — operating contract and security boundary.
-2. `docs/HANDOFF.md` — exact current state, last known good points, unfinished work.
-3. `docs/ARCHITECTURE.md` — how Railway, PC, tablet, browser wake, ChatGPT and Studio fit together.
-4. `docs/SECURITY.md` — what the agent is and is not allowed to touch.
-5. `docs/RUNBOOK.md` — normal operation, deployment and recovery commands/verification.
-6. `docs/ROADMAP.md` — remaining work and completion criteria.
-7. `docs/PROJECT_STANDARD.md` — mandatory convention for every future project.
+2. `docs/FREE_FIRST_POLICY.md` — mandatory cost/quota/reuse policy.
+3. `docs/HANDOFF.md` — exact current state, last known good points, unfinished work.
+4. `docs/ARCHITECTURE.md` — how Railway, PC, tablet, browser wake, ChatGPT and Studio fit together.
+5. `docs/SECURITY.md` — what the agent is and is not allowed to touch.
+6. `docs/RUNBOOK.md` — normal operation, deployment and recovery commands/verification.
+7. `docs/ROADMAP.md` — remaining work and completion criteria.
+8. `docs/PROJECT_STANDARD.md` — mandatory convention for every future project.
 
 ## Canonical repository layout
 
@@ -50,6 +51,10 @@ E:\AI\Bridge
 ```
 
 Do not browse or operate outside that root without explicit new human authorization. See `docs/SECURITY.md`.
+
+## FREE-first / no-paid-API boundary
+
+Free or lowest-cost operation is a first-class requirement. No agent may add, enable, or call a paid/quota API, token-metered AI API, provider AI Agent, or paid automation without explicit prior user approval. Prefer browser/subscription UI, local PC, existing repository code, ordinary included platform controls, Git/GitHub, open-source/self-hosted solutions, and other free/included paths. If work or troubleshooting starts taking too long, search this repository first, then trusted public repositories/docs/internet for an existing compatible implementation before building more custom machinery. See `docs/FREE_FIRST_POLICY.md`.
 
 ## Source-of-truth rule
 
