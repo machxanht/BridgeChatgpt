@@ -22,18 +22,18 @@ Bridge application source:
 E:\AI\Bridge\Apps\BridgeChatgpt
 ```
 
-Important monorepo detail: `.git`, root `package.json`, runtime state folders, and project-wide docs live at `E:\AI\Bridge`, so Bridge's own executor jobs must run with cwd `.`. Independent managed projects run from `Apps/<ProjectName>`.
+Bridge is a monorepo-style special case: `.git`, root `package.json`, runtime folders, and project-wide docs live at `E:\AI\Bridge`, so Bridge's own executor jobs use cwd `.`. Independent managed projects use `Apps/<ProjectName>`.
 
 ## Human decisions that must be preserved
 
 - Use ChatGPT Web/browser integration; ChatGPT Desktop automation is out of scope.
 - Every independent project belongs under `Apps/<ProjectName>`.
 - Durable Markdown handoff is mandatory for every project.
-- One paired PC executor should serve all Bridge projects without re-pairing per project.
-- Agents, RDC, executor jobs, and browser automation must remain within the approved Bridge scope unless the human explicitly grants a new scope.
+- One paired PC executor serves all Bridge projects without re-pairing per project.
+- Agents, RDC, executor jobs, and browser automation must remain within approved Bridge scope unless the human explicitly grants a new scope.
 - Do not report PC work as completed while the PC has no power.
 
-## Canonical state before this final offline-prep PR
+## Canonical production state before final offline-prep PR #6
 
 GitHub `main`:
 
@@ -47,17 +47,17 @@ Railway deployment:
 ecd68879-3976-40ed-84a5-a10c3f9cb38f
 ```
 
-Railway status: `SUCCESS`
+Status: `SUCCESS`
 
-Railway exact commit: `e9ded0194b0c790598919e1a11f819a056b88565`
-
-Persistent DB startup was verified from:
+Persistent DB startup verified from:
 
 ```text
 /app/data/bridge.sqlite
 ```
 
-## Final offline-prep branch
+## Final offline-prep PR
+
+PR: `#6` — `fix: keep Bridge executor jobs at repo root`
 
 Branch:
 
@@ -65,86 +65,76 @@ Branch:
 fix/bridge-executor-cwd
 ```
 
-Purpose: remove the last known source-level issue before PC power returns.
+This PR is intended to contain the last planned source changes before the PC returns.
 
-Implemented:
+Implemented in this PR:
 
-- `executorCwdForWorkspace()` routes Bridge's own jobs to repo root `.`.
-- Independent projects remain scoped to `Apps/<ProjectName>`.
-- Independent project paths outside `Apps/` are rejected.
-- Regression tests cover Bridge root cwd, independent project cwd, normalization, and path escape rejection.
-- `docs/PRE_POWER_RETURN_CHECKLIST.md` defines the exact live verification sequence.
-
-CI run for this branch:
-
-```text
-34015330502
-```
-
-Result: **PASS**
-
-Verified:
-
-- Typecheck ✅
-- Tests ✅
-- Build ✅
-- Bridge Wake package ✅
-- Bridge Wake artifact upload ✅
-- Production startup smoke test ✅
+- Bridge own jobs resolve to cwd `.`.
+- Independent project jobs resolve to `Apps/<ProjectName>`.
+- Invalid project paths outside `Apps/` are rejected.
+- REST/UI executor jobs, Executor MCP jobs, and GitHub command-bus jobs all receive server-enforced project cwd.
+- Project bootstrap is the only intentional root-level exception because it must create the new `Apps/<ProjectName>` directory.
+- New project bootstrap uses `Apps/BridgeChatgpt/scripts/clone-project.mjs` to clone the repository and copy only missing files from `Apps/_TEMPLATE/`.
+- Existing project files are never overwritten by template seeding.
+- Template seeding does not automatically commit or push.
+- Regression coverage includes Bridge root cwd, independent project cwd, normalization, and path-escape rejection.
+- The project bootstrap script is syntax-checked in the normal test suite.
+- `docs/PRE_POWER_RETURN_CHECKLIST.md` defines the authoritative live-test sequence.
 
 ## Multi-project executor state
 
-Implemented and CI-tested:
+Implemented and CI-covered:
 
 - pairing is machine-scoped by `node_id`;
 - original pairing workspace/project remains metadata only;
 - the same PC node can claim jobs for another workspace/project without re-pairing;
 - project snapshots expose the shared PC while project job history remains filtered;
-- controller jobs are assigned a safe project cwd;
+- normal controller paths cannot choose an arbitrary cwd;
 - local executor path resolution still prevents escaping the approved root.
 
 ## Browser-agent static state
 
-Static review completed while the PC was off:
+Static review completed while PC was off:
 
-- Bridge Wake manifest has permissions for Railway Bridge, ChatGPT Web, and Google AI Studio;
+- Bridge Wake manifest permits Railway Bridge, ChatGPT Web, and Google AI Studio targets;
 - wake queue emits exact bound resource URLs and single-flight task instructions;
-- service worker can open/find the exact resource tab, detect a safe composer, inject a prompt, attempt send, and suppress rapid duplicate delivery;
+- service worker can open/find the exact target tab, detect a safe composer, inject a prompt, attempt send, and suppress rapid duplicate delivery;
 - Studio relay supports bound instance registration, task claiming, progress, result submission, and conflict-safe artifacts.
 
-No additional source-level blocker was identified in this static review. The remaining browser-agent work is live E2E verification with the real logged-in browser.
+No additional source-level blocker was identified in this static review. Remaining browser-agent work is live E2E verification with the real logged-in browser.
 
 ## PC state
 
-The user reported the PC lost power from approximately 07:00 UTC+7 on 2026-09-06.
-
-Until power returns:
+The PC is currently without power. Therefore:
 
 - executor offline is expected;
 - RDC offline is expected;
 - no register/claim traffic is expected;
-- the queued `git pull --ff-only` sync cannot complete.
+- the queued `git pull --ff-only` sync cannot complete yet.
 
-A command-bus fast-forward sync command already exists. Because it uses `git pull --ff-only`, it should pull whatever latest `main` exists when the worker actually executes it.
+A command-bus fast-forward sync command already exists. Because it uses `git pull --ff-only`, it will pull the latest reachable `main` when the worker actually executes it.
 
-## Remaining work after this PR merges/deploys
+## Remaining work after PR #6 merges and Railway deploys its exact final SHA
 
-Only physical-PC/browser verification should remain:
+No planned source edits remain before the PC returns.
+
+Only live verification should remain:
 
 1. PC powers on and Windows login occurs if required.
 2. Background executor reconnects without manual source edits.
 3. Queued `git pull --ff-only` sync completes and local `HEAD` matches GitHub `main`.
 4. Bridge Git status/test/build succeed from repo root `.`.
-5. A second real project runs a harmless Git status from `Apps/<ProjectName>` on the same paired PC node.
-6. ChatGPT Web wake/injection/scoped-PC/result E2E is tested.
-7. Google AI Studio wake/relay/result E2E is tested.
-8. Record actual evidence in this file and `docs/ROADMAP.md`.
+5. A second real project proves same-node multi-project routing from `Apps/<ProjectName>`.
+6. New-project template seeding is live-proven without overwriting existing docs.
+7. ChatGPT Web wake/injection/scoped-PC/result E2E is tested.
+8. Google AI Studio wake/relay/result E2E is tested.
+9. Actual evidence is recorded in this file and `docs/ROADMAP.md`.
 
-Use `docs/PRE_POWER_RETURN_CHECKLIST.md` as the authoritative test sequence.
+Use `docs/PRE_POWER_RETURN_CHECKLIST.md` as the authoritative sequence.
 
-## Still intentionally not auto-installed
+## Intentionally not auto-installed
 
-Browser or executor startup mechanisms that require writing Windows user/system locations outside `E:\AI\Bridge` need explicit narrow permission first. Do not use RDC to bypass this rule.
+Browser/executor startup mechanisms that require writing Windows user/system locations outside `E:\AI\Bridge` need explicit narrow permission first. Do not use RDC to bypass this rule.
 
 ## Security reminder
 
