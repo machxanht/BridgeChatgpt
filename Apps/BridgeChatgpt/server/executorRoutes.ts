@@ -2,6 +2,7 @@ import { NextFunction, Request, Response, Router } from 'express';
 import { isSameOriginBrowserRequest, verifyToken } from './auth.js';
 import { getProject } from './db.js';
 import { issueExecutorPairing, redeemExecutorPairing, verifyPairedExecutorToken, type PairedExecutorAuth } from './executorPairing.js';
+import { executorCwdForWorkspace } from './executorRouting.js';
 import { getResourceRegistry } from './resourceRegistry.js';
 import {
   cancelExecutorJob,
@@ -128,9 +129,10 @@ async function projectScopedPayload(workspaceIdRaw: unknown, projectIdRaw: unkno
   const registry = await getResourceRegistry(project);
   const workspace = registry.workspaces.find(item => item.workspace_id === workspaceId && item.project_id === projectId);
   if (!workspace) throw new Error(`Workspace/project not found: ${workspaceId}/${projectId}`);
-  // Controller-created jobs always run from the active project's declared Apps path.
-  // The local executor independently rejects any cwd that escapes its approved root.
-  payload.cwd = workspace.local_path;
+  // Bridge itself is monorepo-style: source is under Apps/BridgeChatgpt but Git/package.json live at repo root.
+  // Independent managed projects execute from Apps/<ProjectName>. The local executor still independently
+  // rejects any cwd that escapes its approved root.
+  payload.cwd = executorCwdForWorkspace(project.id, workspace.project_id, workspace.local_path);
   return payload;
 }
 
