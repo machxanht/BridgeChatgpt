@@ -1,10 +1,10 @@
 # BridgeChatgpt Handoff
 
-> This is the primary replacement-session document. Update it whenever a substantial architecture/deployment/state change occurs.
+> Primary replacement-session document. Update it after every substantial architecture, deployment, security, or live-state change.
 
 ## Snapshot
 
-Date: 2026-09-06 (UTC+7 context)
+Date: 2026-09-06 (UTC+7)
 
 Repository: `machxanht/BridgeChatgpt`
 
@@ -22,118 +22,171 @@ Bridge source path:
 E:\AI\Bridge\Apps\BridgeChatgpt
 ```
 
-## Current human decisions
+## Human decisions that must be preserved
 
-- Use **browser integration** for ChatGPT; do not spend time on ChatGPT Desktop automation.
-- Every project belongs under `Apps/<ProjectName>` for easy management.
-- A durable Markdown handoff is mandatory so another chat/agent can replace the current one without reconstructing history from the user.
-- The same documentation rule applies to every future project.
-- Agents/RDC/PC automation must stay within approved Bridge folders unless the human explicitly expands scope.
+- Use **ChatGPT Web/browser integration**. ChatGPT Desktop automation is intentionally out of scope.
+- Every project belongs under `Apps/<ProjectName>`.
+- Durable Markdown handoff documentation is mandatory so another chat/agent can replace the current one without asking the user to reconstruct project history.
+- The same documentation standard applies to all future projects.
+- Agents, RDC, executor jobs, and browser automation must stay within approved Bridge scope unless the human explicitly grants a new scope.
 
-## Known infrastructure state before this work branch
+## Canonical GitHub state
 
-### Railway
+PR #4 (`feat: durable handoff docs and shared multi-project PC executor`) passed full Bridge CI and was squash-merged.
 
-A production deployment had been verified `SUCCESS` for commit:
+Latest verified code baseline before this finalization commit:
+
+```text
+84d77dc0f5ab30b74481acaf3801b14b636cc6d2
+```
+
+That squash commit contains both:
+
+- the previously deployed `Apps/<ProjectName>` creation fix; and
+- the new machine-scoped multi-project PC executor + durable handoff documentation system.
+
+A previous inconsistency where GitHub `main` had regressed behind Railway was therefore repaired. Always re-check GitHub `main` rather than assuming this SHA remains current after future work.
+
+## CI proof
+
+GitHub Actions run:
+
+```text
+34014539715
+```
+
+Result: **PASS**
+
+Verified steps:
+
+- Typecheck ✅
+- Tests ✅
+- Build ✅
+- Bridge Wake package ✅
+- Bridge Wake artifact upload ✅
+- Production startup smoke test ✅
+
+## Railway state
+
+Before the finalization commit/deploy, Railway production was still verified `SUCCESS` on:
 
 ```text
 b6a1d0812aba8aa54681adc783c377da904992c1
 ```
 
-That commit ensures project creation uses `Apps/<ProjectName>` regardless of PC/Studio execution target.
+Production deployment at that point:
 
-Persistent Railway state previously loaded from:
+```text
+c1d60835-85fe-415c-994e-fbaeb0d1c23d
+```
+
+Persistent data had previously been proven to load from:
 
 ```text
 /app/data/bridge.sqlite
 ```
 
-### GitHub divergence discovered
-
-During this handoff/multi-project work, GitHub `main` was observed pointing to:
-
-```text
-1b6f22460debd74216d83b16bb6ecb9741fdf838
-```
-
-while Railway was running descendant commit `b6a1d081...`.
-
-The current feature branch was deliberately fast-forwarded to `b6a1d081...` before new work so the fix is preserved. Do not redeploy from the stale GitHub `main` state until the canonical branch is repaired/merged forward.
+The next operational step is to deploy the exact final GitHub `main` commit after this handoff/sync finalization is merged, then verify Railway `SUCCESS` using deployment `commitHash`.
 
 ## PC state
 
-The user reported the PC lost power from approximately **07:00 UTC+7 on 2026-09-06**.
+The user reported that the PC lost power from approximately **07:00 UTC+7 on 2026-09-06**.
 
-Therefore:
+Therefore, until power returns:
 
-- executor offline during this interval is expected;
-- RDC offline during this interval is expected;
-- lack of worker poll traffic does **not** imply Railway/Bridge failure.
+- executor offline is expected;
+- RDC offline is expected;
+- no executor register/claim traffic is expected;
+- queued PC work must remain pending rather than being reported as completed.
 
-Do not attempt PC live verification until power is restored.
+Do not diagnose this as a Bridge server failure.
 
-## Work implemented on the current feature branch
+## Completed implementation
 
-Branch:
+### Apps project organization
 
-```text
-feat/handoff-and-multiproject-pc
-```
+- Bridge source is under `Apps/BridgeChatgpt`.
+- Every new project registers `Apps/<ProjectName>` as its local path.
+- Project creation for both PC and Studio targets can queue a clone into the Apps shelf.
+- Independent nested `Apps/*` project repositories are ignored by the Bridge parent Git repository.
 
-### Multi-project PC executor
+### One PC executor for all projects
 
-Implemented changes include:
+Implemented and CI-tested:
 
-- executor node is treated as machine-scoped rather than requiring a new pairing per project;
-- existing pairing metadata remains for backward compatibility/audit;
-- a job can retain Project B workspace/project IDs while being assigned to a PC originally paired from Project A;
-- project snapshots expose the shared PC node while keeping job history filtered to the active project;
-- controller-created jobs force `cwd` to the workspace `local_path` (`Apps/<ProjectName>`);
-- project setup jobs are recorded against the newly created workspace/project instead of the PC's original pairing project;
-- regression test added for Project A PC → Project B job claim;
-- Bridge parent `.gitignore` ignores independent nested `Apps/*` project repos while tracking Bridge and the standard template.
+- PC pairing is treated as machine-scoped by `node_id`.
+- Original pairing workspace/project remains only as backward-compatible metadata/audit context.
+- The same PC node can be assigned jobs belonging to another workspace/project without re-pairing.
+- Project snapshots expose the same PC node while keeping each project's job history filtered.
+- Controller-created executor jobs force `cwd` to the active workspace's registered `local_path`.
+- PC-side path resolution still rejects cwd/file paths that escape the approved executor root.
+- Regression test proves a node originally registered to Project A can claim a Project B job explicitly assigned to the same node.
 
-### Durable documentation
+### Browser agent path
 
-Added/rewritten:
+Bridge Wake code can:
+
+- poll the Railway wake queue;
+- find/open the correct ChatGPT/AI Studio resource tab;
+- inject a prompt when the composer is safe;
+- attempt to send it;
+- avoid rapid duplicate delivery.
+
+Browser integration remains the selected direction.
+
+### Durable replacement-session documentation
+
+Canonical docs now include:
 
 - `START_HERE.md`
 - `AGENTS.md`
-- `docs/ARCHITECTURE.md`
-- `docs/SECURITY.md`
-- `docs/RUNBOOK.md`
-- `docs/PROJECT_STANDARD.md`
-- `docs/ROADMAP.md`
 - `docs/HANDOFF.md`
+- `docs/ARCHITECTURE.md`
+- `docs/RUNBOOK.md`
+- `docs/RECOVERY.md`
+- `docs/SECURITY.md`
+- `docs/ROADMAP.md`
+- `docs/PROJECT_STANDARD.md`
 
-Template docs under `Apps/_TEMPLATE/` are part of this same work item.
+Future-project templates live under `Apps/_TEMPLATE/`.
 
-## What is NOT yet proven
+## Still NOT live-proven
 
-At the time this handoff entry was written:
+Do not mark these PASS yet:
 
-- CI for the full feature branch has not yet been recorded as PASS here.
-- Feature branch has not yet been merged into canonical GitHub `main`.
-- Railway has not yet been verified on the final merged multi-project/handoff commit.
-- PC has not synced these changes because the PC has no power.
-- One physical PC serving a second real project has not yet been live-proven.
-- Executor reboot/power-return autostart remains unproven.
-- ChatGPT Web full E2E remains unproven.
-- AI Studio full E2E remains unproven.
-- Browser automatic startup after Windows reboot is not installed/proven; system/user startup configuration would require explicit scope permission.
+- final GitHub commit synced to the powered-off PC;
+- one real second project using the same PC executor without re-pairing;
+- executor returning automatically after real power restore + Windows login;
+- Bridge browser automatically reopening after Windows reboot;
+- full ChatGPT Web E2E: tablet → wake ChatGPT → agent → scoped PC action → result;
+- full Google AI Studio E2E;
+- automatic template seeding into a newly cloned project's own repository.
 
-## Immediate next steps
+## PC sync plan
 
-1. Finish template docs.
-2. Run GitHub CI for the feature branch.
-3. Fix any CI regression.
-4. Merge through a PR, preferably squash/clean merge.
-5. Verify GitHub `main` now includes the previously missing `b6a1d081...` Apps fix.
-6. Verify Railway deploys the exact merged commit.
-7. Queue a `git pull --ff-only` sync job for the PC so it waits while the PC is off and executes after the worker returns.
-8. When power returns, verify executor online and run one cross-project harmless job.
-9. Continue ChatGPT Web/Studio binding and E2E work.
+A GitHub command-bus sync command is being added with this handoff finalization. It queues:
 
-## Important security reminder
+```text
+git pull --ff-only
+```
 
-Do not store Bridge/Railway/executor raw token values in this file. Do not use RDC or any other tool to browse outside `E:\AI\Bridge` without explicit new permission.
+for the existing default Bridge workspace/project. Because the PC is off, the executor job may be created by Railway but cannot complete until the PC worker returns.
+
+After power returns, verify the result rather than assuming it ran.
+
+## Exact next actions
+
+1. Merge the handoff/roadmap/sync finalization into `main`.
+2. Deploy **that exact final `main` SHA** to Railway without changing variables, domain, volume, healthcheck, restart policy, or start command.
+3. Verify Railway `SUCCESS` + exact `commitHash`.
+4. Confirm the PC sync command was accepted/queued; leave it pending while the PC has no power.
+5. When the PC returns, confirm executor register/claim traffic and the queued fast-forward pull completes.
+6. Create/use a second real project and run a harmless project-scoped action to prove one PC serves both projects without re-pairing.
+7. Prove executor startup after power return/login.
+8. Bind and test ChatGPT Web E2E.
+9. Bind and test AI Studio E2E.
+10. Only with explicit new permission, decide whether browser autostart may be installed into Windows user/system startup locations.
+
+## Security reminder
+
+Never put raw Bridge/Railway/executor tokens, passwords, cookies, private keys, or browser credentials in Markdown. Do not use RDC or any other tool to operate outside `E:\AI\Bridge` without explicit permission.
