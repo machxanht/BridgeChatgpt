@@ -175,3 +175,12 @@ Focused fix on chat routing, shared DB completion, MCP, relay, wake and primary 
 - Railway CLI is unavailable on the connected Windows PC. No re-login, re-pair, browser profile reset, or Railway AI Agent was used.
 - Production browser was opened successfully and old TASK/review metadata was observed. Three real-agent E2E cases for the fix are NOT PROVEN because the fix is not deployed. PC extension 2-second poll is also NOT PROVEN installed/live.
 - Next necessary step: deploy the existing Railway service from b085fe3 (or its documentation-only successor), verify actual deployment commitHash, then submit the three specified real chat cases and record answers/latency. Do not rerun the repo audit.
+
+
+## Deployment resolved — 2026-09-06 17:41 UTC
+
+Supersedes the deployment blocker above. Railway CLI 5.49.2 installed at E:\AI\Bridge\runtime\railway-cli; whoami verified Media Khang (khangmedia.com@gmail.com) after user authorization. Clean clone at E:\AI\Bridge\runtime\release-fastchat-18 was e0f1ae16c57e3ad2c0a1f7327957374b679406a3, directly descending from fix b085fe3. CLI up uploaded this checkout to the EXISTING service/project/environment. Deployment 918d0ced-ed0b-440c-87d3-3fa9eff259cb is SUCCESS. CLI upload metadata has no commitHash; provenance is the clean checkout and successful upload, with production UI visibly showing the new Auto/composer/feed behavior. Do not claim Railway reported a Git commitHash.
+
+Production E2E submitted through actual browser UI: TASK-12 Astra question -> chatgpt pending; TASK-13 Railway question -> chatgpt pending; TASK-14 explicit multi-agent -> gemini assigned. Server wake queue contains TASK-12 ChatGPT direct-completion prompt and TASK-14 Studio debate prompt. All three still lack answers at observation time. No claim/MCP/Studio-relay requests in the inspected deployment HTTP log window. Wake polling observed at 17:39:42 and 17:40:42 UTC (roughly 60 seconds; additional 17:40:51 request was our diagnostic read). Thus real-agent answer/language/debate completion remains NOT PROVEN; installed wake transport is the next focused investigation, not repository audit or redeploy. Existing PC checkout and bindings were not reset.
+
+Routine deploy now: invoke runtime\railway-cli\node_modules\.bin\railway.cmd up from a clean, verified source checkout with explicit project 664cfde0-1227-4403-8757-f957f7b5d1de, service 12d9ceee-f56b-4c18-a8b0-243df2a55fd9, environment 3149b2cc-806d-48c8-a40e-bfcee3eea6ee, --detach. Use no AI Agent and do not rebuild old snapshot via generic redeploy.
