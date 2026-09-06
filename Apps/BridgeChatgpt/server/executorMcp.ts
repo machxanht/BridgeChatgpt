@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { verifyToken } from './auth.js';
+import { projectScopedExecutorPayload } from './executorRouting.js';
 import {
   cancelExecutorJob,
   createExecutorJob,
@@ -23,7 +24,7 @@ const EXECUTOR_MCP_TOOLS = [
   },
   {
     name: 'executor_job_create',
-    description: 'Queue a safe project-scoped job for a connected Bridge Local Executor PC. The PC enforces its own read/write/command permissions.',
+    description: 'Queue a safe project-scoped job for a connected Bridge Local Executor PC. Bridge forces cwd to the workspace project path and the PC enforces its own read/write/command permissions.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -35,7 +36,7 @@ const EXECUTOR_MCP_TOOLS = [
           type: 'string',
           enum: ['fs.list', 'fs.read', 'fs.write', 'command.run', 'git.status', 'git.diff', 'npm.test', 'npm.build'],
         },
-        payload: { type: 'object', description: 'Action payload. command.run expects {argv:[...], cwd?:"relative/path"}.' },
+        payload: { type: 'object', description: 'Action payload. Any caller-supplied cwd is replaced by the registered workspace cwd.' },
       },
       required: ['workspace_id', 'project_id', 'action'],
     },
@@ -69,16 +70,18 @@ async function executeExecutorMcpTool(name: string, args: Record<string, any>) {
         node_id: args.node_id,
         limit: args.limit,
       });
-    case 'executor_job_create':
+    case 'executor_job_create': {
+      const payload = await projectScopedExecutorPayload(args.workspace_id, args.project_id, args.payload);
       return await createExecutorJob({
         workspace_id: args.workspace_id,
         project_id: args.project_id,
         node_id: args.node_id,
         task_id: args.task_id,
         action: args.action,
-        payload: args.payload,
+        payload,
         created_by: 'mcp',
       });
+    }
     case 'executor_job_get': {
       const job = await getExecutorJob(args.job_id);
       if (!job) throw new Error(`Executor job ${args.job_id} not found`);
@@ -145,7 +148,7 @@ export async function handleExecutorMcpRequest(req: Request, res: Response) {
           protocolVersion: '2024-11-05',
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'Bridge Local Executor MCP', version: '0.1.0' },
-          instructions: 'Use executor_snapshot to find an online project-bound PC. Queue work with executor_job_create, then poll executor_job_get for the result. The PC enforces project-root isolation and local permissions.',
+          instructions: 'Use executor_snapshot to find an online PC. Queue work with executor_job_create, then poll executor_job_get for the result. Bridge enforces workspace cwd and the PC enforces approved-root isolation and local permissions.',
         },
       });
       return;
