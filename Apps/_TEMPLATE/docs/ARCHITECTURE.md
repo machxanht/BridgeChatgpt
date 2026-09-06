@@ -35,3 +35,7 @@
 ## Architectural decisions
 
 - <DECISION> — <WHY>
+
+## Mandatory free-first architecture rule
+
+Architecture must follow the parent Bridge `docs/FREE_FIRST_POLICY.md`. Prefer free/included/local/browser/open-source/repository components. Do not introduce a paid/quota API, token-metered AI backend, or provider AI Agent without explicit prior user approval. Before inventing a new component, search the project/repository and then trusted public repos/docs/internet for a maintained compatible implementation that can be reused with minimal scope.
