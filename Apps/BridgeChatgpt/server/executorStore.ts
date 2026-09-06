@@ -17,6 +17,12 @@ export type ExecutorAction = (typeof EXECUTOR_ACTIONS)[number];
 export type ExecutorJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type ExecutorConnectionStatus = 'online' | 'offline';
 
+/**
+ * workspace_id/project_id on a node are the project that originally paired the PC.
+ * They are retained for backward compatibility and audit only. A paired PC node is
+ * machine-scoped and may execute jobs for any Bridge project whose cwd remains
+ * inside that PC's approved projectRoot.
+ */
 export interface ExecutorNodeRecord {
   node_id: string;
   name: string;
@@ -248,9 +254,8 @@ export async function createExecutorJob(input: {
     if (nodeId) {
       const node = store.nodes.find((item) => item.node_id === nodeId);
       if (!node) throw new Error(`Executor node ${nodeId} not found`);
-      if (node.workspace_id !== workspaceId || node.project_id !== projectId) {
-        throw new Error(`Executor node ${nodeId} is bound to a different project`);
-      }
+      // A node is machine-scoped. Project isolation is enforced by the executor's
+      // approved projectRoot + per-job cwd, not by pairing a new token per project.
     }
     const now = new Date().toISOString();
     const job: ExecutorJobRecord = {
@@ -277,27 +282,28 @@ export async function createExecutorJob(input: {
 
 export async function claimExecutorJob(input: {
   node_id: string;
-  workspace_id: string;
-  project_id: string;
+  workspace_id?: string;
+  project_id?: string;
 }): Promise<ExecutorJobRecord | null> {
   return withWriteLock(async () => {
     const store = readStore();
     recoverStaleRunningJobs(store);
     const nodeId = safeId(input.node_id, 'node_id');
-    const workspaceId = safeId(input.workspace_id, 'workspace_id');
-    const projectId = safeId(input.project_id, 'project_id');
     const node = store.nodes.find((item) => item.node_id === nodeId);
     if (!node) throw new Error(`Executor node ${nodeId} not found`);
-    if (node.workspace_id !== workspaceId || node.project_id !== projectId) {
-      throw new Error(`Executor node ${nodeId} is bound to a different project`);
-    }
     const now = new Date().toISOString();
     node.last_seen_at = now;
     node.updated_at = now;
+
     const job = store.jobs
       .filter((item) => item.status === 'pending')
-      .filter((item) => item.workspace_id === workspaceId && item.project_id === projectId)
-      .filter((item) => !item.node_id || item.node_id === nodeId)
+      .filter((item) => {
+        if (item.node_id) return item.node_id === nodeId;
+        // Preserve legacy behavior for unassigned jobs: only the project's
+        // originally paired node may claim them. Cross-project jobs should be
+        // explicitly assigned to a machine by the Bridge controller.
+        return item.workspace_id === node.workspace_id && item.project_id === node.project_id;
+      })
       .filter((item) => node.capabilities.includes(item.action))
       .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))[0];
     if (!job) {
@@ -377,9 +383,11 @@ export async function getExecutorSnapshot(filters: {
   const workspaceId = filters.workspace_id ? safeId(filters.workspace_id, 'workspace_id') : null;
   const projectId = filters.project_id ? safeId(filters.project_id, 'project_id') : null;
   const nodeId = filters.node_id ? safeId(filters.node_id, 'node_id') : null;
+
+  // PC nodes are machine-scoped and are intentionally visible in every project
+  // snapshot. Jobs remain filtered by workspace/project so each project keeps a
+  // clean job history.
   const nodes = store.nodes
-    .filter((node) => !workspaceId || node.workspace_id === workspaceId)
-    .filter((node) => !projectId || node.project_id === projectId)
     .filter((node) => !nodeId || node.node_id === nodeId)
     .map<ExecutorNodeView>((node) => ({
       ...node,

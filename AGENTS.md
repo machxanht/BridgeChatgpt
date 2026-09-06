@@ -1,112 +1,167 @@
-# AGENTS.md — Agent Collaboration Guidelines & Roles
+# AGENTS.md — Bridge Operating Contract
 
-This document defines the roles, operational boundaries, and collaboration protocols for AI agents participating in the **Bridge** Shared AI Workspace.
+This file is mandatory reading for every ChatGPT, Google AI Studio, Gemini, Codex, human operator, or other agent that works on this repository.
 
----
+## 0. Start here — no exceptions
 
-## 1. System Architecture
+Before making changes, read these files in order:
 
+1. `START_HERE.md`
+2. `docs/HANDOFF.md`
+3. `docs/ARCHITECTURE.md`
+4. `docs/SECURITY.md`
+5. `docs/RUNBOOK.md`
+6. `docs/ROADMAP.md`
+7. `docs/PROJECT_STANDARD.md`
+
+Do not reconstruct project state from chat memory alone. GitHub `main` + the handoff documents are the durable source of truth. When live infrastructure can be checked, verify it before claiming that something is online, deployed, synced, or completed.
+
+## 1. Current Bridge model
+
+Bridge is a control plane for multiple independent projects stored on the Windows PC under:
+
+```text
+E:\AI\Bridge\Apps\<ProjectName>
 ```
-                 Shared Project (Filesystem + Git)
-                                 |
-                          Bridge Remote MCP
-                                 |
-              +------------------+------------------+
-              |                                     |
-          ChatGPT                                Gemini 3.7 Flash
-          Reviewer & Architect                   Coder & Executor
-              |                                     |
-              +------------------+------------------+
-                                 |
-                      Shared SQLite State
-                (Tasks • Findings • Messages)
+
+`Apps/BridgeChatgpt` is the Bridge application itself. Other `Apps/<ProjectName>` folders are independent nested repositories and are intentionally ignored by the Bridge repository.
+
+The major components are:
+
+- **Railway** — always-on Bridge server/control plane, persistent state, task routing, project registry.
+- **Windows PC** — execution machine. One paired PC executor serves all approved projects under the Bridge root.
+- **Tablet** — main operator UI.
+- **ChatGPT Web / Google AI Studio Web** — optional natural-language agents, bound per project by resource URL.
+- **Bridge Wake browser extension** — opens/binds the correct browser tabs and injects queued prompts.
+- **GitHub** — durable source, review/CI, and optional command bus.
+
+## 2. Filesystem and security boundary
+
+The approved Bridge root is currently:
+
+```text
+E:\AI\Bridge
 ```
 
----
+Agents must not read, search, write, delete, move, or execute filesystem-affecting operations outside approved Bridge roots unless the human explicitly grants a new scope.
 
-## 2. Gemini Agent Guidelines (Coder / Executor / Tester)
+Rules:
 
-### Your Role
-You are the **coding and execution agent** for the workspace.
+- `Apps/<ProjectName>` is the only normal home for projects.
+- Project jobs must execute with `cwd` equal to that project's registered `local_path`.
+- The PC executor must reject paths that escape its approved root.
+- Do not use broad recursive delete/reset/clean operations without task-specific authorization.
+- Do not copy browser cookies, credentials, secrets, or unrelated user files.
+- Technical capability never implies permission.
 
-You are responsible for:
-1. **Reading the project**: Exploring workspace structure, inspecting source code, and understanding existing architecture.
-2. **Executing assigned tasks**: Receiving structured tasks assigned to `gemini` via Bridge MCP tools.
-3. **Editing project files**: Modifying files, creating new modules, refactoring, and fixing bugs.
-4. **Running tests**: Executing the project test suite via `project_test` or native runner and verifying passing exit codes.
-5. **Inspecting failures**: Debugging errors, compilation issues, and test regressions.
-6. **Fixing implementation issues**: Correcting identified flaws according to task acceptance criteria.
-7. **Reporting changed files**: Documenting all modified files in the task result report.
-8. **Reporting test results**: Including test command output and timing in task completion reports.
-9. **Reporting blockers**: Promptly updating task status to `blocked` and notifying ChatGPT/Human if requirements are ambiguous or external dependencies fail.
-10. **Communicating through Bridge**: Using `message_send`, `task_update`, and `agent_status` to maintain synchronized shared state.
+See `docs/SECURITY.md` for the complete policy.
 
----
+## 3. Multi-project PC executor rule
 
-### Strict Execution Rules for Gemini
+A physical PC is paired once. It is **not** re-paired per project.
 
-- **Explicit Assignment Required**: Gemini must **NOT** randomly modify the project simply because another agent created a finding. A task must be explicitly created and assigned to Gemini (`assignee: "gemini"`) before Gemini modifies project files.
-- **Do not silently ignore tasks**: Regularly check `task_list` for pending or assigned tasks.
+Node pairing metadata may retain the workspace/project that originally created the token for backward compatibility, but authorization is machine-scoped by `node_id`. Project isolation is achieved by:
 
-#### Before Starting Work:
-1. Call `task_get` to inspect the full task description, requirements, and acceptance criteria.
-2. Call `finding_get` on any `related_finding` to understand the root cause identified by ChatGPT.
-3. Call `project_git_status` and `project_git_diff` to verify the baseline working tree state.
-4. Update `agent_status` to `working` with the active `current_task_id`.
-5. Update `task_update` to set `status: "working"`.
+1. assigning the job to a specific PC node;
+2. retaining the job's real `workspace_id` and `project_id`;
+3. forcing the job `cwd` to the workspace `local_path` (`Apps/<ProjectName>`);
+4. enforcing the executor root boundary on the PC.
 
-#### While Working:
-- Make deliberate, scoped edits strictly targeted at the task goals.
-- Run tests (`project_test`) to verify fixes and ensure zero regressions.
+Any future change that reintroduces “one PC token per project” is a regression unless explicitly approved.
 
-#### After Completing Work:
-1. Call `project_git_status` and `project_git_diff` to confirm the exact changeset.
-2. Call `project_test` to capture fresh test output.
-3. Call `task_update` to set `status: "review"` (or `"completed"`) and provide a thorough `result` report containing:
-   - Summary of changes implemented
-   - List of changed files
-   - Test execution results and pass status
-   - Any unresolved edge cases or follow-up suggestions
-4. Call `message_send` to notify ChatGPT that the task is ready for review.
-5. Update `agent_status` back to `idle`.
+## 4. Project documentation standard
 
----
+Every project must have durable Markdown handoff documentation. New projects should copy the structure from `Apps/_TEMPLATE/`.
 
-## 3. ChatGPT Agent Guidelines (Reviewer / Architect / Task Manager)
+Minimum required documents:
 
-### Your Role
-You are the **reviewer, architect, analyst, and task manager** for the workspace.
+```text
+<project>/
+├── START_HERE.md
+└── docs/
+    ├── HANDOFF.md
+    ├── ARCHITECTURE.md
+    ├── RUNBOOK.md
+    ├── SECURITY.md
+    └── ROADMAP.md
+```
 
-You are responsible for:
-- Inspecting the project structure and source code (`project_list_files`, `project_read_file`, `project_search`).
-- Reviewing Git diffs and commit history (`project_git_diff`, `project_git_log`).
-- Inspecting automated test results (`project_test`).
-- Identifying bugs, architecture flaws, and security concerns (`finding_create`).
-- Creating structured tasks assigned to Gemini with clear file context and acceptance criteria (`task_create`).
-- Reviewing Gemini's completed work and verifying solutions against the code and tests (`task_update`, `finding_update`).
-- Requesting follow-up tasks if quality standards are not met.
+The documents must contain enough information for a new agent with no prior chat context to continue safely.
 
-### Strict Boundaries for ChatGPT
-- **Do NOT directly edit project files.** ChatGPT operates through read and review tools. File modifications are executed by Gemini.
-- When an issue is identified:
-  1. Create a finding with exact file, line number, severity, and description (`finding_create`).
-  2. Create a task assigned to `gemini` referencing the finding (`task_create`).
-- After Gemini reports completion:
-  1. Call `project_git_diff` to review the actual diff.
-  2. Call `project_test` to verify test passes.
-  3. If correct: Mark the task `completed` and the finding `verified`.
-  4. If incorrect: Mark the task `blocked` or create a follow-up task detailing what remains broken.
+### Required handoff content
 
----
+At minimum record:
 
-## 4. Bridge MCP Remote Server Protocol
+- project goal and current architecture;
+- exact repository/branch and latest known good commit;
+- live environments and deployment identifiers where relevant;
+- local project path;
+- completed work;
+- unfinished work and blockers;
+- test/build/deploy commands;
+- recovery procedure;
+- security/permission boundaries;
+- known dangerous operations or irreversible steps;
+- next recommended action.
 
-All tools are served over **Streamable HTTP** at:
-`POST /mcp`
+Never put raw secrets, tokens, passwords, cookies, API keys, or private credentials in Markdown.
 
-Authentication is enforced via:
-`Authorization: Bearer <BRIDGE_MCP_TOKEN>`
+## 5. End-of-session rule
 
-Available tools:
-- **Project Tools**: `project_info`, `project_list_files`, `project_read_file`, `project_search`, `project_git_status`, `project_git_diff`, `project_git_log`, `project_test`
-- **Collaboration Tools**: `task_create`, `task_list`, `task_get`, `task_update`, `finding_create`, `finding_list`, `finding_get`, `message_send`, `message_list`, `agent_status`, `workspace_state`, `activity_list`
+Before ending a substantial work session or handing work to another agent:
+
+1. Verify the actual Git diff/state.
+2. Run the relevant typecheck/tests/build.
+3. Update `docs/HANDOFF.md` with what changed.
+4. Update `docs/ROADMAP.md` statuses.
+5. Update `START_HERE.md` only when the canonical entrypoint/state changes.
+6. Record exact commit/deployment IDs when they are known.
+7. Clearly mark anything that is **not proven**.
+8. Push/merge documentation with the code it describes whenever possible.
+
+A task is not “done” merely because source code exists. If the feature requires Railway, PC, browser, Studio, or ChatGPT integration, live proof must be recorded before marking E2E complete.
+
+## 6. Git and deployment rules
+
+- Prefer a feature branch + CI + pull request for structural changes.
+- Do not claim Railway is on the latest source until the deployment `commitHash` is verified.
+- Avoid force pushes unless recovering a documented branch-state problem and the human has approved the recovery.
+- Do not rely on stale Railway source metadata; use deployment metadata for the actually running commit.
+- Keep the Bridge root clean: nested projects under `Apps/*` are independent repos and must remain ignored by the Bridge repo.
+
+## 7. Agent roles
+
+Roles are capabilities, not hard-coded product identities.
+
+### ChatGPT / reviewer / architect
+
+May analyze architecture, review diffs, create tasks, coordinate work, and — when authorized tools allow it — make scoped repository changes. It must respect the same filesystem and documentation rules as every other agent.
+
+### AI Studio / coding agent
+
+May implement assigned work, test it, and report results. It must read the handoff before editing and must not assume it owns the PC filesystem.
+
+### PC executor
+
+Executes only supported, scoped actions inside its approved root. It is an execution worker, not a natural-language agent.
+
+## 8. Communication quality
+
+When reporting status, separate:
+
+- **PASS / proven live**
+- **implemented but not live-proven**
+- **not done**
+- **blocked / requires human action**
+
+Do not hide uncertainty behind “done”. Do not repeatedly re-test already proven steps unless a new change could have invalidated them.
+
+## 9. Recovery entrypoint
+
+If chat context is lost, do this first:
+
+```text
+Read START_HERE.md → docs/HANDOFF.md → docs/ROADMAP.md
+```
+
+Then verify GitHub `main` and live Railway deployment before changing anything.

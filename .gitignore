@@ -7,6 +7,16 @@ coverage/
 .env*
 !.env.example
 
+# Apps is the PC project shelf. Bridge tracks only itself + standards/templates.
+# Other Apps/<Project> folders are independent nested repositories and must not
+# pollute the BridgeChatgpt working tree.
+Apps/*
+!Apps/README.md
+!Apps/BridgeChatgpt/
+!Apps/BridgeChatgpt/**
+!Apps/_TEMPLATE/
+!Apps/_TEMPLATE/**
+
 # Bridge persisted runtime state
 data/*.sqlite
 data/batches.json

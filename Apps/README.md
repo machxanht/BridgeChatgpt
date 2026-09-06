@@ -16,7 +16,8 @@ Rules:
 
 - Every new Bridge project gets a readable local path: `Apps/<ProjectName>`.
 - Project paths must stay under `Apps/`.
-- For a new PC-target project, Bridge queues a safe `git clone` into that folder when an online PC executor is available.
+- Every new project, whether its execution target is PC or Studio, is queued for a safe `git clone` into its `Apps/<ProjectName>` folder whenever an online PC executor is available.
+- If the PC is offline, the project keeps its `Apps/<ProjectName>` path and waits for PC setup instead of being placed elsewhere.
 - Runtime state does not belong here; it lives under `runtime/` or persisted `data/`.
 - Build/test artifacts do not belong here; they live under `artifacts/` or are ignored.
 
