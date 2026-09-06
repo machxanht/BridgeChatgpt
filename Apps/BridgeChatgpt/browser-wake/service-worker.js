@@ -16,6 +16,8 @@ const DEFAULTS = {
 };
 
 let running = false;
+const targetOpenAttempts = new Map();
+const TARGET_OPEN_RETRY_MS = 60_000;
 
 async function settings() {
   const raw = await chrome.storage.local.get(null);
@@ -88,13 +90,26 @@ function targetTabMatches(tab, event) {
 async function ensureTargetTab(event, focusOnWake) {
   const tabs = await chrome.tabs.query({});
   let tab = tabs.find(item => targetTabMatches(item, event));
-  if (!tab) tab = await chrome.tabs.create({ url: event.resource_url, active: Boolean(focusOnWake) });
+  let created = false;
+  if (!tab) {
+    const lastAttempt = Number(targetOpenAttempts.get(event.resource_id) || 0);
+    if (Date.now() - lastAttempt < TARGET_OPEN_RETRY_MS) return null;
+    targetOpenAttempts.set(event.resource_id, Date.now());
+    tab = await chrome.tabs.create({ url: event.resource_url, active: Boolean(focusOnWake) });
+    created = true;
+  }
   if (!tab.id) throw new Error(`Could not open target ${event.resource_id}`);
   if (focusOnWake) {
     await chrome.tabs.update(tab.id, { active: true });
     if (typeof tab.windowId === 'number') try { await chrome.windows.update(tab.windowId, { focused: true }); } catch {}
   }
-  return (await waitForTabComplete(tab.id)) || tab;
+  const finalTab = (await waitForTabComplete(tab.id)) || await chrome.tabs.get(tab.id).catch(() => null);
+  if (!finalTab || !targetTabMatches(finalTab, event)) {
+    if (created && finalTab?.id) try { await chrome.tabs.remove(finalTab.id); } catch {}
+    return null;
+  }
+  targetOpenAttempts.delete(event.resource_id);
+  return finalTab;
 }
 
 async function pollBridgeWakeQueue(bridgeTabId) {
@@ -149,7 +164,7 @@ async function runWakeCycle(trigger = 'alarm') {
     for (const [key, timestamp] of Object.entries(delivered)) if (now - Number(timestamp) > 7 * 24 * 60 * 60 * 1000) delete delivered[key];
     for (const event of events.slice(0,10)) {
       const lastDelivered = Number(delivered[event.event_id] || 0); if (lastDelivered && now - lastDelivered < redeliveryMs) continue;
-      const tab = await ensureTargetTab(event, config.focusOnWake); if (!tab.id) continue; const result = await injectPrompt(tab.id, event.prompt);
+      const tab = await ensureTargetTab(event, config.focusOnWake); if (!tab?.id) { await appendLog(`Skipped ${event.resource_id} for ${event.task_id}: target-unavailable`); continue; } const result = await injectPrompt(tab.id, event.prompt);
       if (result?.ok) { delivered[event.event_id] = Date.now(); wakeCount += 1; await appendLog(`Woke ${event.provider === 'chatgpt' ? 'ChatGPT' : 'AI Studio'} ${event.resource_id} for ${event.task_id} (${event.reason})`); }
       else await appendLog(`Skipped ${event.resource_id} for ${event.task_id}: ${result?.reason || 'unknown'}`);
     }
