@@ -1,0 +1,4 @@
+Bridge Railway deploy trigger
+feature: project setup status + retry
+source parent: 5ddf3d7e0a5bf9638354bf33f3f1a7ecd559c4b0
+created: 2026-09-06T08:17:00Z
