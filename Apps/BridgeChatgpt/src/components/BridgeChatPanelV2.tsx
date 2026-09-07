@@ -1,28 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUp, Boxes, Brain, ChevronDown, Loader2, MonitorCog, Sparkles, User, Users } from 'lucide-react';
+import { ArrowUp, Boxes, Brain, ChevronDown, Loader2, Sparkles, User, Users } from 'lucide-react';
 import type { AgentQuotaUsage, Message, Task } from '../types.js';
 
 interface ResourceTarget {
   target_id: string;
   provider: 'chatgpt' | 'google-ai-studio';
-  resource_id: string;
-  resource_url: string;
-  workspace_id: string;
-  project_id: string;
-  label: string;
   agent_instance_id: string;
-  connection_status: 'registered' | 'active' | 'idle' | 'offline';
-  last_seen_at: string | null;
-  session_label?: string | null;
 }
 
 interface ResourceWorkspace {
   workspace_id: string;
   project_id: string;
   project_name: string;
-  repository_url: string;
-  branch: string;
-  execution_target?: 'pc' | 'studio';
   studio_targets: ResourceTarget[];
   chatgpt_targets: ResourceTarget[];
 }
@@ -59,7 +48,7 @@ function isLegacyDeployTask(task: Task) {
 }
 
 function displayTarget(target: ResourceTarget) {
-  return target.session_label?.trim() || target.label?.trim() || (target.provider === 'chatgpt' ? 'ChatGPT' : 'AI Studio');
+  return target.provider === 'chatgpt' ? 'Sol 5.6' : 'Gemini 3.8 Flash';
 }
 
 function timeLabel(value: string) {
@@ -71,7 +60,7 @@ function MessageRow({ message }: { message: Message; key?: React.Key }) {
   const studio = message.from === 'gemini';
   const gpt = message.from === 'chatgpt';
   const Icon = mine ? User : studio ? Boxes : Brain;
-  const name = mine ? 'You' : studio ? 'AI Studio' : gpt ? 'ChatGPT' : 'Bridge';
+  const name = mine ? 'You' : studio ? 'Gemini 3.8 Flash' : gpt ? 'Sol 5.6' : 'Bridge';
   const accent = mine ? 'text-human' : studio ? 'text-studio' : gpt ? 'text-gpt' : 'text-muted-foreground';
   const bubble = mine
     ? 'border-human/25 bg-human/10'
@@ -182,13 +171,11 @@ export const BridgeChatPanelV2: React.FC = () => {
     if (!workspace) return null;
     if (targetId !== 'auto') return targets.find(target => target.target_id === targetId) || null;
     const newestChat = [...workspace.chatgpt_targets].reverse()[0];
-    return (workspace.execution_target || 'studio') === 'pc'
-      ? newestChat || null
-      : workspace.studio_targets[0] || newestChat || null;
+    return newestChat || workspace.studio_targets[0] || null;
   };
 
   const targetLabel = () => {
-    if (targetId === 'auto') return 'Auto · Both';
+    if (targetId === 'auto') return 'Auto · Sol + Gemini';
     const target = targets.find(item => item.target_id === targetId);
     return target ? displayTarget(target) : 'Auto';
   };
@@ -200,7 +187,7 @@ export const BridgeChatPanelV2: React.FC = () => {
       ? [workspace.chatgpt_targets.at(-1), workspace.studio_targets[0]].filter(Boolean) as ResourceTarget[]
       : [chooseTarget()].filter(Boolean) as ResourceTarget[];
     if (!selectedTargets.length) {
-      setFeedback('Bind AI Studio hoặc ChatGPT để giao task.');
+      setFeedback('ChatGPT hoặc Gemini chưa sẵn sàng.');
       return;
     }
 
@@ -244,7 +231,6 @@ export const BridgeChatPanelV2: React.FC = () => {
     }
   };
 
-  const executionTarget = workspace?.execution_target || 'studio';
   const activeTasks = projectTasks.filter(task => !['completed', 'cancelled'].includes(task.status));
 
   return (
@@ -257,19 +243,18 @@ export const BridgeChatPanelV2: React.FC = () => {
               Bridge Chat
             </div>
             <div className="mt-0.5 truncate text-[10.5px] text-muted-foreground">
-              {workspace ? `${workspace.project_name} · ${activeTasks.length} active task${activeTasks.length === 1 ? '' : 's'}` : 'Choose a project'}
+              {workspace ? `${workspace.project_name} · ${activeTasks.length} đang xử lý` : 'Chọn project'}
             </div>
           </div>
 
-          <div className="hidden md:flex items-center gap-2 text-[10.5px] text-muted-foreground">
-            <span className="rounded-full border border-border bg-surface px-2.5 py-1">Sol · ChatGPT</span>
-            <span className="rounded-full border border-border bg-surface px-2.5 py-1">Gemini 3.8 Flash · {quota.gemini ? `${quota.gemini.requests_count} req` : 'ready'}</span>
-            <span className="rounded-full border border-border bg-surface px-2.5 py-1">Codex · quota hết · reset 09/09 13:24</span>
+          <div className="hidden sm:flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+            <span className="rounded-full border border-border bg-surface px-2 py-1">Sol 5.6</span>
+            <span className="rounded-full border border-border bg-surface px-2 py-1">Gemini 3.8 Flash · {quota.gemini ? `${quota.gemini.requests_count} req` : 'ready'}</span>
           </div>
 
-          <button onClick={() => setTargetId('auto')} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] font-medium transition-colors ${targetId === 'auto' ? 'border-gpt/35 bg-gpt/10 text-gpt' : 'border-border bg-surface text-muted-foreground hover:text-foreground'}`}>
+          <button onClick={() => { setTargetId('auto'); setPickerOpen(false); }} className={`hidden sm:inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] font-medium transition-colors ${targetId === 'auto' ? 'border-gpt/35 bg-gpt/10 text-gpt' : 'border-border bg-surface text-muted-foreground hover:text-foreground'}`}>
             <Users className="size-3.5" />
-            Auto · Both
+            Auto · Sol + Gemini
           </button>
         </div>
       </div>
@@ -277,26 +262,12 @@ export const BridgeChatPanelV2: React.FC = () => {
       <div ref={feedRef} className="thin-scrollbar flex-1 overflow-y-auto px-3 sm:px-4">
         <div className="mx-auto flex max-w-5xl flex-col gap-3 py-4">
           {!workspace ? (
-            <div className="py-20 text-center text-[13px] text-muted-foreground">Choose a project to start.</div>
+            <div className="py-20 text-center text-[13px] text-muted-foreground">Chọn project để bắt đầu.</div>
           ) : feed.length === 0 ? (
             <div className="mx-auto mt-8 w-full max-w-2xl rounded-3xl border border-border/80 bg-surface/70 p-7 text-center shadow-panel backdrop-blur">
-              <div className={`mx-auto grid size-12 place-items-center rounded-2xl border ${executionTarget === 'pc' ? 'border-human/30 bg-human/10 text-human' : 'border-studio/30 bg-studio/10 text-studio'}`}>
-                {executionTarget === 'pc' ? <MonitorCog className="size-6" /> : <Boxes className="size-6" />}
-              </div>
-              <div className="mt-4 text-lg font-semibold text-foreground">{workspace.project_name}</div>
-              <div className="mt-1 text-[12px] text-muted-foreground">
-                {executionTarget === 'pc' ? 'PC Local Executor selected · Studio remains optional' : 'AI Studio selected · PC remains available'}
-              </div>
-              <div className="mt-5 grid gap-2 sm:grid-cols-2">
-                <div className="rounded-2xl border border-border bg-background/70 p-3 text-left">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gpt">ChatGPT</div>
-                  <div className="mt-1 text-[12px] font-medium">{workspace.chatgpt_targets[0] ? displayTarget(workspace.chatgpt_targets[0]) : 'Chưa bind'}</div>
-                </div>
-                <div className="rounded-2xl border border-border bg-background/70 p-3 text-left">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-studio">AI Studio</div>
-                  <div className="mt-1 text-[12px] font-medium">{workspace.studio_targets[0] ? displayTarget(workspace.studio_targets[0]) : 'Chưa bind'}</div>
-                </div>
-              </div>
+              <div className="mx-auto flex w-fit gap-2"><Brain className="size-7 text-gpt" /><Boxes className="size-7 text-studio" /></div>
+              <div className="mt-4 text-lg font-semibold text-foreground">Sol 5.6 + Gemini 3.8 Flash</div>
+              <div className="mt-1 text-[12px] text-muted-foreground">Auto gửi cho cả hai · hoặc chọn riêng một agent ở ô chat.</div>
             </div>
           ) : feed.map(message => <MessageRow key={message.id} message={message} />)}
         </div>
@@ -308,7 +279,7 @@ export const BridgeChatPanelV2: React.FC = () => {
             <div className="mb-2 flex flex-wrap gap-1.5 rounded-2xl border border-border bg-surface/95 p-2 shadow-panel">
               <button onClick={() => { setTargetId('auto'); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] ${targetId === 'auto' ? 'border-gpt/35 bg-gpt/10 text-gpt' : 'border-border text-muted-foreground'}`}>
                 <Users className="size-3.5" />
-                Auto · Both
+                Auto · Sol + Gemini
               </button>
               {targets.map(target => (
                 <button key={target.target_id} onClick={() => { setTargetId(target.target_id); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] ${targetId === target.target_id ? 'border-gpt/35 bg-gpt/10 text-gpt' : 'border-border text-muted-foreground hover:text-foreground'}`}>
@@ -322,7 +293,7 @@ export const BridgeChatPanelV2: React.FC = () => {
           <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface p-2 shadow-panel focus-within:ring-2 focus-within:ring-ring/60">
             <button onClick={() => setPickerOpen(value => !value)} className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-surface-2 px-3 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground">
               {targetId === 'auto' ? <Users className="size-3.5" /> : chooseTarget()?.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
-              <span className="hidden max-w-36 truncate sm:inline">{targetLabel()}</span>
+              <span className="max-w-40 truncate">{targetLabel()}</span>
               <ChevronDown className={`size-3 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
             </button>
 
@@ -336,12 +307,12 @@ export const BridgeChatPanelV2: React.FC = () => {
                   send();
                 }
               }}
-              placeholder={workspace ? `Message ${workspace.project_name}...` : 'Choose a project first'}
+              placeholder={workspace ? `Nhắn ${workspace.project_name}...` : 'Chọn project trước'}
               disabled={!workspace}
               className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-[14px] leading-snug text-foreground outline-none placeholder:text-muted-foreground/70 disabled:opacity-40"
             />
 
-            <button onClick={send} disabled={!text.trim() || busy || !workspace} aria-label="Send" className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground transition-all hover:opacity-90 disabled:opacity-30">
+            <button onClick={send} disabled={!text.trim() || busy || !workspace} aria-label="Gửi" className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground transition-all hover:opacity-90 disabled:opacity-30">
               {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
             </button>
           </div>
