@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUp, Boxes, Brain, ChevronDown, Loader2, MonitorCog, Sparkles, User } from 'lucide-react';
-import type { Message, Task } from '../types.js';
+import { ArrowUp, Boxes, Brain, ChevronDown, Loader2, MonitorCog, Sparkles, User, Users } from 'lucide-react';
+import type { AgentQuotaUsage, Message, Task } from '../types.js';
 
 interface ResourceTarget {
   target_id: string;
@@ -109,14 +109,16 @@ export const BridgeChatPanelV2: React.FC = () => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [quota, setQuota] = useState<Record<string, AgentQuotaUsage>>({});
   const feedRef = useRef<HTMLDivElement | null>(null);
 
   const load = async () => {
     try {
-      const [registryResponse, taskResponse, messageResponse] = await Promise.all([
+      const [registryResponse, taskResponse, messageResponse, missionResponse] = await Promise.all([
         fetch('/api/resource-registry', { cache: 'no-store' }),
         fetch('/api/tasks?limit=300', { cache: 'no-store' }),
         fetch('/api/messages?limit=300', { cache: 'no-store' }),
+        fetch('/api/mission-control', { cache: 'no-store' }),
       ]);
       if (!registryResponse.ok) return;
       const registry = await registryResponse.json();
@@ -127,6 +129,10 @@ export const BridgeChatPanelV2: React.FC = () => {
       if (current && current.workspace_id !== activeWorkspaceId) setActiveWorkspaceId(current.workspace_id);
       if (taskResponse.ok) setTasks(await taskResponse.json());
       if (messageResponse.ok) setMessages(await messageResponse.json());
+      if (missionResponse.ok) {
+        const mission = await missionResponse.json();
+        setQuota(Object.fromEntries((mission.agents || []).map((agent: any) => [agent.id, agent.quota])));
+      }
     } catch {
       // Keep the last good UI while polling retries.
     }
@@ -182,7 +188,7 @@ export const BridgeChatPanelV2: React.FC = () => {
   };
 
   const targetLabel = () => {
-    if (targetId === 'auto') return (workspace?.execution_target || 'studio') === 'pc' ? 'Auto · PC' : 'Auto · Studio';
+    if (targetId === 'auto') return 'Auto · Both';
     const target = targets.find(item => item.target_id === targetId);
     return target ? displayTarget(target) : 'Auto';
   };
@@ -190,11 +196,11 @@ export const BridgeChatPanelV2: React.FC = () => {
   const send = async () => {
     const content = text.trim();
     if (!content || !workspace || busy) return;
-    const target = chooseTarget();
-    if (!target) {
-      setFeedback((workspace.execution_target || 'studio') === 'pc'
-        ? 'Bind ChatGPT để xử lý lệnh tự nhiên trên PC. Local Executor vẫn chạy lệnh trực tiếp trong System Details.'
-        : 'Bind AI Studio hoặc ChatGPT để giao task.');
+    const selectedTargets = targetId === 'auto'
+      ? [workspace.chatgpt_targets.at(-1), workspace.studio_targets[0]].filter(Boolean) as ResourceTarget[]
+      : [chooseTarget()].filter(Boolean) as ResourceTarget[];
+    if (!selectedTargets.length) {
+      setFeedback('Bind AI Studio hoặc ChatGPT để giao task.');
       return;
     }
 
@@ -202,38 +208,34 @@ export const BridgeChatPanelV2: React.FC = () => {
     setFeedback('');
     try {
       const firstLine = content.split('\n').map(line => line.trim()).find(Boolean) || content;
-      const taskResponse = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine,
-          description: `${content}\n\n${BINDING_START}\n${JSON.stringify({ version: 1, workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`,
-          priority: 'high',
-          assignee: target.provider === 'chatgpt' ? 'chatgpt' : 'gemini',
-          workspace_id: workspace.workspace_id,
-          project_id: workspace.project_id,
-          agent_instance_id: target.agent_instance_id,
-          related_files: [],
-        }),
-      });
-      const taskData = await taskResponse.json().catch(() => ({}));
-      if (!taskResponse.ok) throw new Error(taskData.error || 'Không tạo được task');
-
-      const messageResponse = await fetch('/api/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from: 'human',
-          to: target.provider === 'chatgpt' ? 'chatgpt' : 'gemini',
-          type: 'task',
-          content,
-          task_id: taskData.id,
-        }),
-      });
-      if (!messageResponse.ok) throw new Error('Task đã tạo nhưng không ghi được chat feed');
-
+      const created: string[] = [];
+      for (const target of selectedTargets) {
+        const taskResponse = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine,
+            description: `${content}\n\n${BINDING_START}\n${JSON.stringify({ version: 1, workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`,
+            priority: 'high',
+            assignee: target.provider === 'chatgpt' ? 'chatgpt' : 'gemini',
+            workspace_id: workspace.workspace_id,
+            project_id: workspace.project_id,
+            agent_instance_id: target.agent_instance_id,
+            related_files: [],
+          }),
+        });
+        const taskData = await taskResponse.json().catch(() => ({}));
+        if (!taskResponse.ok) throw new Error(taskData.error || 'Không tạo được task');
+        const messageResponse = await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from: 'human', to: target.provider === 'chatgpt' ? 'chatgpt' : 'gemini', type: 'task', content, task_id: taskData.id }),
+        });
+        if (!messageResponse.ok) throw new Error('Task đã tạo nhưng không ghi được chat feed');
+        created.push(`${taskData.id} → ${displayTarget(target)}`);
+      }
       setText('');
-      setFeedback(`${taskData.id} → ${displayTarget(target)}`);
+      setFeedback(created.join(' · '));
       await load();
     } catch (error: any) {
       setFeedback(`Lỗi: ${error?.message || 'không gửi được'}`);
@@ -259,9 +261,15 @@ export const BridgeChatPanelV2: React.FC = () => {
             </div>
           </div>
 
+          <div className="hidden md:flex items-center gap-2 text-[10.5px] text-muted-foreground">
+            <span className="rounded-full border border-border bg-surface px-2.5 py-1">Sol · ChatGPT</span>
+            <span className="rounded-full border border-border bg-surface px-2.5 py-1">Gemini 3.8 Flash · {quota.gemini ? `${quota.gemini.requests_count} req` : 'ready'}</span>
+            <span className="rounded-full border border-border bg-surface px-2.5 py-1">Codex · quota hết · reset 09/09 13:24</span>
+          </div>
+
           <button onClick={() => setTargetId('auto')} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] font-medium transition-colors ${targetId === 'auto' ? 'border-gpt/35 bg-gpt/10 text-gpt' : 'border-border bg-surface text-muted-foreground hover:text-foreground'}`}>
-            {executionTarget === 'pc' ? <MonitorCog className="size-3.5" /> : <Boxes className="size-3.5" />}
-            {executionTarget === 'pc' ? 'PC Local' : 'AI Studio'}
+            <Users className="size-3.5" />
+            Auto · Both
           </button>
         </div>
       </div>
@@ -299,8 +307,8 @@ export const BridgeChatPanelV2: React.FC = () => {
           {pickerOpen && (
             <div className="mb-2 flex flex-wrap gap-1.5 rounded-2xl border border-border bg-surface/95 p-2 shadow-panel">
               <button onClick={() => { setTargetId('auto'); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] ${targetId === 'auto' ? 'border-gpt/35 bg-gpt/10 text-gpt' : 'border-border text-muted-foreground'}`}>
-                {executionTarget === 'pc' ? <MonitorCog className="size-3.5" /> : <Sparkles className="size-3.5" />}
-                Auto · {executionTarget === 'pc' ? 'PC' : 'Studio'}
+                <Users className="size-3.5" />
+                Auto · Both
               </button>
               {targets.map(target => (
                 <button key={target.target_id} onClick={() => { setTargetId(target.target_id); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] ${targetId === target.target_id ? 'border-gpt/35 bg-gpt/10 text-gpt' : 'border-border text-muted-foreground hover:text-foreground'}`}>
@@ -313,7 +321,7 @@ export const BridgeChatPanelV2: React.FC = () => {
 
           <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface p-2 shadow-panel focus-within:ring-2 focus-within:ring-ring/60">
             <button onClick={() => setPickerOpen(value => !value)} className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-surface-2 px-3 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground">
-              {targetId === 'auto' ? (executionTarget === 'pc' ? <MonitorCog className="size-3.5" /> : <Sparkles className="size-3.5" />) : chooseTarget()?.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
+              {targetId === 'auto' ? <Users className="size-3.5" /> : chooseTarget()?.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
               <span className="hidden max-w-36 truncate sm:inline">{targetLabel()}</span>
               <ChevronDown className={`size-3 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
             </button>

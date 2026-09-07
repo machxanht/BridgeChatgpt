@@ -46,6 +46,58 @@ export function incrementAgentMetrics(agent: string, delta: Partial<AgentMetrics
   runtimeAgentMetrics[normalized].tests_executed += delta.tests_executed || 0;
 }
 
+/**
+ * Returns a lightweight snapshot of the current runtime-measured usage for all
+ * known agents.  This is what /api/quota serves directly without building the
+ * full MissionControlData payload.
+ *
+ * NOTE: These numbers are measured by Bridge itself (request-counting, token
+ * counting from API responses, test-runner calls). The upstream providers do
+ * NOT expose their quota/rate-limit state via any API that Bridge has access to,
+ * so provider_reported_quota is always false and provider_quota_text says so
+ * explicitly. Do NOT fabricate provider numbers.
+ */
+export interface QuotaSnapshot {
+  generated_at: string;
+  provider_note: string;
+  agents: Array<{
+    id: string;
+    requests_count: number;
+    input_tokens: number;
+    output_tokens: number;
+    tests_executed: number;
+    provider_reported_quota: false;
+  }>;
+}
+
+const KNOWN_AGENTS = ['chatgpt', 'gemini', 'human'] as const;
+
+export function getRuntimeQuota(): QuotaSnapshot {
+  return {
+    generated_at: new Date().toISOString(),
+    provider_note:
+      'Antigravity CLI 1.1.27 (agentapi) does not expose provider quota or rate-limit data. ' +
+      'The numbers below are self-measured by Bridge (request counting, token tallying from ' +
+      'API responses). They reset on server restart and do not reflect upstream provider limits.',
+    agents: KNOWN_AGENTS.map((id) => {
+      const m = runtimeAgentMetrics[id] ?? {
+        requests_count: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        tests_executed: 0,
+      };
+      return {
+        id,
+        requests_count: m.requests_count,
+        input_tokens: m.input_tokens,
+        output_tokens: m.output_tokens,
+        tests_executed: m.tests_executed,
+        provider_reported_quota: false as const,
+      };
+    }),
+  };
+}
+
 export function buildWorkflowStages(
   task: Task | null,
   stageHint = '',

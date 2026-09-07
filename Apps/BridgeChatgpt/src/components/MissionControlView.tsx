@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  BarChart2,
   Brain,
   Bot,
   CheckCircle2,
@@ -18,7 +19,7 @@ import {
   XCircle,
   Zap,
 } from 'lucide-react';
-import { AgentDisplayInfo, MissionControlData, TargetAgentType, WorkspaceState } from '../types.js';
+import { AgentDisplayInfo, AgentQuotaUsage, MissionControlData, TargetAgentType, WorkspaceState } from '../types.js';
 
 interface Props {
   state: WorkspaceState;
@@ -93,6 +94,60 @@ function formatLocalTime(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
   return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+/** Inline quota/usage panel for a single agent card. */
+function QuotaPanel({ quota }: { quota: AgentQuotaUsage }) {
+  const hasAnyActivity =
+    quota.requests_count > 0 ||
+    quota.input_tokens > 0 ||
+    quota.output_tokens > 0 ||
+    quota.tests_executed > 0;
+
+  return (
+    <div className="mt-3 rounded-xl border border-white/8 bg-black/20 px-3 py-2.5 space-y-1.5">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+        <BarChart2 className="w-3 h-3 text-cyan-500/70" />
+        Quota / Usage (session này)
+      </div>
+
+      {hasAnyActivity ? (
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+          <div className="flex justify-between items-baseline gap-1">
+            <span className="text-[10px] text-slate-500">Requests</span>
+            <span className="text-[11px] font-mono text-slate-200">{formatNumber(quota.requests_count)}</span>
+          </div>
+          <div className="flex justify-between items-baseline gap-1">
+            <span className="text-[10px] text-slate-500">Tests</span>
+            <span className="text-[11px] font-mono text-slate-200">{formatNumber(quota.tests_executed)}</span>
+          </div>
+          <div className="flex justify-between items-baseline gap-1">
+            <span className="text-[10px] text-slate-500">Tokens in</span>
+            <span className="text-[11px] font-mono text-slate-200">{formatNumber(quota.input_tokens)}</span>
+          </div>
+          <div className="flex justify-between items-baseline gap-1">
+            <span className="text-[10px] text-slate-500">Tokens out</span>
+            <span className="text-[11px] font-mono text-slate-200">{formatNumber(quota.output_tokens)}</span>
+          </div>
+        </div>
+      ) : (
+        <div className="text-[10px] text-slate-500 italic">Chưa có hoạt động trong session này.</div>
+      )}
+
+      {/* Honest disclaimer: provider quota is not exposed by Antigravity CLI */}
+      <div className="pt-1 border-t border-white/5 text-[10px] text-slate-600 leading-4">
+        Số liệu trên do Bridge tự đo. Antigravity CLI 1.1.27 không cung cấp
+        API quota/rate-limit của provider — giới hạn thật xem trực tiếp trên
+        dashboard ChatGPT / Google AI Studio.
+      </div>
+    </div>
+  );
 }
 
 export const MissionControlView: React.FC<Props> = ({
@@ -396,7 +451,10 @@ export const MissionControlView: React.FC<Props> = ({
                   </div>
                 )}
 
+                <QuotaPanel quota={agent.quota} />
+
                 {stoppable && <button onClick={() => onStopAgent(agent.id)} className="mt-3 text-xs text-rose-300"><Square className="w-3 inline" /> Dừng {agent.name}</button>}
+
               </div>
             );
           })}

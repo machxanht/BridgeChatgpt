@@ -48,6 +48,7 @@ import { requireAuth } from './auth.js';
 import {
   buildMissionControlData,
   cancelCurrentTask,
+  getRuntimeQuota,
   pauseAllAgents,
   resumeAllAgents,
   stopSingleAgent,
@@ -85,7 +86,16 @@ apiRouter.get('/mission-control', async (req: Request, res: Response) => {
   }
 });
 
-// ---------------- ORCHESTRATOR EMERGENCY CONTROLS ----------------
+// ---------------- QUOTA / RATE-LIMIT SNAPSHOT ----------------
+// Returns self-measured runtime usage (requests, tokens, tests) for each agent.
+// Provider quota/rate-limit is NOT available: the Antigravity CLI 1.1.27 (agentapi)
+// exposes only new-conversation / send-message / get-metadata commands and has no
+// quota or rate-limit sub-command.  We surface what we honestly know and flag it.
+apiRouter.get('/quota', (_req: Request, res: Response) => {
+  res.json(getRuntimeQuota());
+});
+
+
 apiRouter.post('/orchestrator/pause-all', async (req: Request, res: Response) => {
   try {
     const result = await pauseAllAgents();
