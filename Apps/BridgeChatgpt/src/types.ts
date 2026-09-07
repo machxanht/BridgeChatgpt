@@ -1,5 +1,5 @@
-export type AgentType = 'chatgpt' | 'gemini' | 'human' | 'system';
-export type TargetAgentType = 'chatgpt' | 'gemini' | 'human' | 'system' | 'all';
+export type AgentType = 'chatgpt' | 'gemini' | 'sonnet' | 'opus' | 'codex' | 'astra' | 'human' | 'system';
+export type TargetAgentType = 'chatgpt' | 'gemini' | 'sonnet' | 'opus' | 'codex' | 'astra' | 'human' | 'system' | 'all';
 
 export type TaskStatus = 'pending' | 'assigned' | 'working' | 'blocked' | 'review' | 'completed' | 'cancelled';
 export type TaskPriority = 'urgent' | 'high' | 'medium' | 'low';
@@ -24,7 +24,6 @@ export interface AgentDisplayInfo {
   last_active_at?:string|null;
   status_explanation?:string;
   recovery_action?:string|null;
-  /** Safe display-only identity label supplied by runtime configuration. Never contains API keys/tokens. */
   account_label?:string;
   account_source?:'runtime_config'|'session'|'not_available';
   quota:AgentQuotaUsage;
