@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "project": "BridgeChatgpt",
+  "github": {
+    "repo": "machxanht/BridgeChatgpt",
+    "branch": "main"
+  },
+  "mirrors": {
+    "pc": {
+      "workspace_path": "E:\\AI\\Bridge\\Apps\\BridgeChatgpt"
+    },
+    "studio": {
+      "app_id": "15c1d80d-6265-47e1-bdf2-e30fb7bf430c",
+      "url": "https://aistudio.google.com/u/1/apps/15c1d80d-6265-47e1-bdf2-e30fb7bf430c"
+    }
+  },
+  "agents": {
+    "chatgpt": {
+      "conversation_id": "6a9e55a5-3f44-83ec-9a4e-c533c4427bae",
+      "url": "https://chatgpt.com/g/g-p-6a97c37259608191819318b840bd10e3-bridge/c/6a9e55a5-3f44-83ec-9a4e-c533c4427bae"
+    },
+    "studio": {
+      "app_id": "15c1d80d-6265-47e1-bdf2-e30fb7bf430c"
+    }
+  }
+}
