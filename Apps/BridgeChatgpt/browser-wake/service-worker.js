@@ -155,6 +155,61 @@ async function injectPrompt(tabId, prompt) {
   return results?.[0]?.result || { ok: false, reason: 'script-no-result' };
 }
 
+function isFastChatEvent(event) {
+  return event?.provider === 'chatgpt' && String(event?.prompt || '').startsWith('Bridge Fast Chat');
+}
+
+function fastChatPrompt(prompt) {
+  const lines = String(prompt || '').split('\n').filter(line => !/task_update|Remote Desktop Commander|complete-chat\.mjs|Chỉ coi là đã gửi khi helper/i.test(line));
+  lines.push('Bridge Wake tự đồng bộ câu trả lời về Bridge. Chỉ trả lời trực tiếp cho người dùng; không gọi tool chỉ để gửi kết quả về Bridge.');
+  return lines.join('\n');
+}
+
+async function readChatGptReplyState(tabId) {
+  const results = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: () => {
+    const nodes = [...document.querySelectorAll('[data-message-author-role="assistant"]')];
+    const last = nodes[nodes.length - 1];
+    const descriptor = button => [button.getAttribute?.('aria-label') || '', button.getAttribute?.('title') || '', button.textContent || ''].join(' ');
+    const busy = [...document.querySelectorAll('button')].some(button => /stop generating|stop response|cancel response|dừng tạo|dừng phản hồi|stop generation/i.test(descriptor(button)));
+    return { count: nodes.length, text: String(last?.innerText || last?.textContent || '').trim(), busy };
+  }});
+  return results?.[0]?.result || { count: 0, text: '', busy: false };
+}
+
+async function waitForChatGptReply(tabId, baseline, timeoutMs = 120000) {
+  const startedAt = Date.now();
+  let candidate = '';
+  let stableSince = 0;
+  while (Date.now() - startedAt < timeoutMs) {
+    const state = await readChatGptReplyState(tabId);
+    const changed = Boolean(state.text) && (state.count > Number(baseline?.count || 0) || state.text !== String(baseline?.text || ''));
+    if (changed && !state.busy) {
+      if (state.text !== candidate) { candidate = state.text; stableSince = Date.now(); }
+      else if (Date.now() - stableSince >= 700) return { ok: true, text: candidate };
+    } else {
+      candidate = '';
+      stableSince = 0;
+    }
+    await new Promise(resolve => setTimeout(resolve, 350));
+  }
+  return { ok: false, reason: 'reply-timeout' };
+}
+
+async function completeBridgeFastChat(bridgeTabId, taskId, answer) {
+  const results = await chrome.scripting.executeScript({ target: { tabId: bridgeTabId }, world: 'MAIN', args: [taskId, answer], func: async (id, text) => {
+    try {
+      const response = await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
+        method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ status: 'completed', result: text, agent: 'chatgpt' }),
+      });
+      const data = await response.json().catch(() => ({}));
+      return { ok: response.ok, status: response.status, data };
+    } catch (error) { return { ok: false, status: 0, error: String(error) }; }
+  }});
+  const result = results?.[0]?.result;
+  return result?.ok ? { ok: true } : { ok: false, reason: result?.data?.error || result?.error || `Bridge task HTTP ${result?.status || 'unknown'}` };
+}
+
 async function runWakeCycle(trigger = 'alarm') {
   if (running) return { ok: false, reason: 'already-running' }; running = true; let wakeCount = 0;
   try {
@@ -164,9 +219,22 @@ async function runWakeCycle(trigger = 'alarm') {
     for (const [key, timestamp] of Object.entries(delivered)) if (now - Number(timestamp) > 7 * 24 * 60 * 60 * 1000) delete delivered[key];
     for (const event of events.slice(0,10)) {
       const lastDelivered = Number(delivered[event.event_id] || 0); if (lastDelivered && now - lastDelivered < redeliveryMs) continue;
-      const tab = await ensureTargetTab(event, config.focusOnWake); if (!tab?.id) { await appendLog(`Skipped ${event.resource_id} for ${event.task_id}: target-unavailable`); continue; } const result = await injectPrompt(tab.id, event.prompt);
-      if (result?.ok) { delivered[event.event_id] = Date.now(); wakeCount += 1; await appendLog(`Woke ${event.provider === 'chatgpt' ? 'ChatGPT' : 'AI Studio'} ${event.resource_id} for ${event.task_id} (${event.reason})`); }
-      else await appendLog(`Skipped ${event.resource_id} for ${event.task_id}: ${result?.reason || 'unknown'}`);
+      const tab = await ensureTargetTab(event, config.focusOnWake); if (!tab?.id) { await appendLog(`Skipped ${event.resource_id} for ${event.task_id}: target-unavailable`); continue; }
+      const fastChat = isFastChatEvent(event);
+      const baseline = fastChat ? await readChatGptReplyState(tab.id) : null;
+      const result = await injectPrompt(tab.id, fastChat ? fastChatPrompt(event.prompt) : event.prompt);
+      if (result?.ok) {
+        delivered[event.event_id] = Date.now(); wakeCount += 1;
+        await appendLog(`Woke ${event.provider === 'chatgpt' ? 'ChatGPT' : 'AI Studio'} ${event.resource_id} for ${event.task_id} (${event.reason})`);
+        if (fastChat) {
+          const reply = await waitForChatGptReply(tab.id, baseline);
+          if (reply?.ok) {
+            const completed = await completeBridgeFastChat(bridgeTab.id, event.task_id, reply.text);
+            if (completed?.ok) await appendLog(`Returned ChatGPT reply for ${event.task_id}`);
+            else await appendLog(`Return failed for ${event.task_id}: ${completed?.reason || 'unknown'}`);
+          } else await appendLog(`Return failed for ${event.task_id}: ${reply?.reason || 'reply-timeout'}`);
+        }
+      } else await appendLog(`Skipped ${event.resource_id} for ${event.task_id}: ${result?.reason || 'unknown'}`);
     }
     await chrome.storage.local.set({ deliveredEvents: delivered, lastRunAt: new Date().toISOString(), lastWakeCount: wakeCount, lastError: '' });
     await chrome.action.setBadgeText({ text: wakeCount ? String(wakeCount) : '' }); return { ok: true, wakeCount, eventCount: events.length };
