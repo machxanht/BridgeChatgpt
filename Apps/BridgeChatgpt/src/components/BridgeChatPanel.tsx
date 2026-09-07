@@ -223,6 +223,7 @@ export const BridgeChatPanel: React.FC = () => {
     const content = text.trim() || (attachments.length ? 'Analyze the attached file(s).' : '');
     if (!content || !workspace || busy) return;
     const chosenTarget = chooseTarget();
+    const autoBoth = targetId === 'auto';
     const rolePlan = buildMultiRolePlan(content);
     const chatRoleTarget = [...workspace.chatgpt_targets].reverse().find(item => item.connection_status !== 'offline') || null;
     const studioRoleTarget = workspace.studio_targets.find(item => item.connection_status !== 'offline') || null;
@@ -238,9 +239,7 @@ export const BridgeChatPanel: React.FC = () => {
     ) ? workspace.studio_targets.find(item => item.connection_status !== 'offline') || null : null;
     const target = debateStudio || chosenTarget;
     if (!rolePlan.length && !target) {
-      setFeedback((workspace.execution_target || 'studio') === 'pc'
-        ? 'PC mode cần bind ChatGPT conversation để xử lý lệnh tự nhiên. Local Executor vẫn dùng được trong System Details.'
-        : 'Project này chưa có AI Studio/ChatGPT session để giao việc.');
+      setFeedback('Project này chưa có Sol 5.6/Gemini session khả dụng.');
       return;
     }
 
