@@ -8,7 +8,7 @@ import type {
   WorkspaceState,
 } from '../types.js';
 import { ProjectRouterV2 } from './ProjectRouterV2.js';
-import { BridgeChatPanel } from './BridgeChatPanel.js';
+import { BridgeChatPanelV2 } from './BridgeChatPanelV2.js';
 import { BridgeMiniStatus } from './BridgeMiniStatus.js';
 
 interface WorkspaceViewProps {
@@ -36,7 +36,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ state }) => {
       <div className="flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-background">
         <ProjectRouterV2 />
         <BridgeMiniStatus state={state} />
-        <BridgeChatPanel />
+        <BridgeChatPanelV2 />
       </div>
     );
   }
