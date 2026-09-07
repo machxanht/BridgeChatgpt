@@ -76,12 +76,12 @@ export const BridgeMiniStatus: React.FC<{ state: WorkspaceState }> = ({ state })
       <span className="inline-flex shrink-0 items-center gap-1.5 text-muted-foreground">
         <Brain className="size-3.5 text-gpt" />
         <span className={`size-1.5 rounded-full ${chatgpt?.connection_status === 'active' ? 'animate-pulse-dot bg-gpt' : chatgpt?.connection_status === 'offline' || !chatgpt ? 'bg-muted-foreground' : 'bg-gpt/70'}`} />
-        ChatGPT {targetStatus(chatgpt)}
+        Sol 5.6 {targetStatus(chatgpt)}
       </span>
       <span className="inline-flex shrink-0 items-center gap-1.5 text-muted-foreground">
         <Boxes className="size-3.5 text-studio" />
         <span className={`size-1.5 rounded-full ${studio?.connection_status === 'active' ? 'animate-pulse-dot bg-studio' : studio?.connection_status === 'offline' || !studio ? 'bg-muted-foreground' : 'bg-studio/70'}`} />
-        Studio {targetStatus(studio)}
+        Gemini 3.8 Flash {targetStatus(studio)}
       </span>
       {!workspace && (
         <span className="ml-auto text-[10px] text-muted-foreground/70">{state.project?.project_name || 'Bridge'}</span>

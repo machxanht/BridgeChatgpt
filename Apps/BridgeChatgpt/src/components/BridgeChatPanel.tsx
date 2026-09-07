@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { userFacingResult } from '../chatMode.js';
 import type { Message, Task } from '../types.js';
-import { buildMultiRolePlan, requiresAction, shouldAutoDebate, wantsMultiAgentDebate } from '../chatRouting.js';
+import { buildMultiRolePlan, requiresAction } from '../chatRouting.js';
 
 interface ResourceTarget {
   target_id: string;
@@ -42,7 +42,6 @@ interface ResourceWorkspace {
   project_name: string;
   repository_url: string;
   branch: string;
-  execution_target?: 'pc' | 'studio';
   studio_targets: ResourceTarget[];
   chatgpt_targets: ResourceTarget[];
 }
@@ -52,7 +51,6 @@ const BINDING_START = '<!-- BRIDGE_TASK_BINDING_V1';
 const BINDING_END = 'BRIDGE_TASK_BINDING_V1 -->';
 const ATTACHMENT_START = '<!-- BRIDGE_ATTACHMENTS_V1';
 const ATTACHMENT_END = 'BRIDGE_ATTACHMENTS_V1 -->';
-const DEBATE_MARKER = '<!-- BRIDGE_DEBATE_V1 -->';
 const CHAT_MARKER = '<!-- BRIDGE_CHAT_V1 -->';
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -191,7 +189,7 @@ export const BridgeChatPanel: React.FC = () => {
     // Tasks are the canonical answer, avoiding stale/duplicate result messages and logs.
     const answers: Message[] = projectTasks
       .filter(task => task.status === 'completed' && task.result)
-      .map(task => ({ id: 'answer-' + task.id, from: task.description.includes(DEBATE_MARKER) ? 'chatgpt' : task.assignee,
+      .map(task => ({ id: 'answer-' + task.id, from: task.assignee,
         to: 'human', type: 'result', content: userFacingResult(task.result!),
         task_id: task.id, created_at: task.updated_at }));
     return [...userMessages, ...answers]
@@ -224,20 +222,15 @@ export const BridgeChatPanel: React.FC = () => {
     if (!content || !workspace || busy) return;
     const chosenTarget = chooseTarget();
     const autoBoth = targetId === 'auto';
-    const rolePlan = buildMultiRolePlan(content);
+    const rolePlan = autoBoth ? [] : buildMultiRolePlan(content);
     const chatRoleTarget = [...workspace.chatgpt_targets].reverse().find(item => item.connection_status !== 'offline') || null;
     const studioRoleTarget = workspace.studio_targets.find(item => item.connection_status !== 'offline') || null;
-    if ((rolePlan.length || wantsMultiAgentDebate(content)) && (!chatRoleTarget || !studioRoleTarget)) {
-      setFeedback('Multi-role cần cả Sol 5.6 và Gemini 3.8 Flash đang online.');
+    if ((autoBoth || rolePlan.length) && (!chatRoleTarget || !studioRoleTarget)) {
+      setFeedback('Auto cần cả Sol 5.6 và Gemini 3.8 Flash đang online.');
       return;
     }
-    const fastChat = !rolePlan.length && !requiresAction(content);
-    const debateStudio = !rolePlan.length && shouldAutoDebate(
-      content,
-      workspace.studio_targets.map(item => item.connection_status),
-      workspace.chatgpt_targets.map(item => item.connection_status),
-    ) ? workspace.studio_targets.find(item => item.connection_status !== 'offline') || null : null;
-    const target = debateStudio || chosenTarget;
+    const fastChat = !autoBoth && !rolePlan.length && !requiresAction(content);
+    const target = chosenTarget;
     if (!rolePlan.length && !target) {
       setFeedback('Project này chưa có Sol 5.6/Gemini session khả dụng.');
       return;
@@ -256,6 +249,22 @@ export const BridgeChatPanel: React.FC = () => {
       }
       const attachmentBlock = uploaded.length ? `\n\n${ATTACHMENT_START}\n${JSON.stringify(uploaded)}\n${ATTACHMENT_END}` : '';
       const firstLine = content.split('\n').map(line => line.trim()).find(Boolean) || content;
+
+      if (autoBoth) {
+        const autoTargets = [chatRoleTarget!, studioRoleTarget!];
+        for (const autoTarget of autoTargets) {
+          const taskResponse = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+            title: firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine,
+            description: `${content}${attachmentBlock}\n\n${CHAT_MARKER}\nFast Chat: trả lời trực tiếp, không audit/build nếu không được yêu cầu.\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: autoTarget.agent_instance_id })}\n${BINDING_END}`,
+            priority: 'high', assignee: autoTarget.provider === 'chatgpt' ? 'chatgpt' : 'gemini', workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: autoTarget.agent_instance_id, related_files: [],
+          }) });
+          const taskData = await taskResponse.json().catch(() => ({}));
+          if (!taskResponse.ok) throw new Error(taskData.error || 'Không tạo được Auto task');
+          const messageResponse = await fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'human', to: autoTarget.provider === 'chatgpt' ? 'chatgpt' : 'gemini', type: 'task', content, task_id: taskData.id }) });
+          if (!messageResponse.ok) throw new Error('Auto task đã tạo nhưng không ghi được chat feed');
+        }
+        setText(''); setAttachments([]); if (fileInputRef.current) fileInputRef.current.value = ''; setDeliveryState('delivered'); setFeedback(''); await load(); window.setTimeout(() => setDeliveryState('idle'), 1400); return;
+      }
 
       if (rolePlan.length) {
         const roleKeys = rolePlan.map((_, index) => `ROLE-${index + 1}`);
@@ -312,11 +321,9 @@ export const BridgeChatPanel: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine,
-          description: debateStudio
-            ? `${content}${attachmentBlock}\n\n${DEBATE_MARKER}\nAI Studio đưa ra quan điểm mạnh nhất trước, nêu điểm chưa chắc và phản biện có thể có. Không sửa file, không build/test, không Publish. Trả kết quả dạng tóm tắt với artifacts: [].\nChatGPT nhận kết quả Studio, phản biện độc lập rồi trả lời cuối cùng cho người dùng bằng tiếng Việt.\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`
-            : fastChat
-              ? `${content}${attachmentBlock}\n\n${CHAT_MARKER}\nĐây là Fast Chat, không phải coding workflow. Trả lời trực tiếp bằng tiếng Việt; không audit repo, không sửa file, không chạy build/test trừ khi yêu cầu gốc nói rõ phải thực hiện hành động.\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`
-              : `${content}${attachmentBlock}\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`,
+          description: fastChat
+            ? `${content}${attachmentBlock}\n\n${CHAT_MARKER}\nĐây là Fast Chat, không phải coding workflow. Trả lời trực tiếp bằng tiếng Việt; không audit repo, không sửa file, không chạy build/test trừ khi yêu cầu gốc nói rõ phải thực hiện hành động.\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`
+            : `${content}${attachmentBlock}\n\n${BINDING_START}\n${JSON.stringify({ workspace_id: workspace.workspace_id, project_id: workspace.project_id, agent_instance_id: target.agent_instance_id })}\n${BINDING_END}`,
           priority: 'high',
           assignee: target.provider === 'chatgpt' ? 'chatgpt' : 'gemini',
           workspace_id: workspace.workspace_id,

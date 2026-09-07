@@ -7,7 +7,6 @@ interface ResourceTarget {
   provider: 'chatgpt' | 'google-ai-studio';
   agent_instance_id: string;
 }
-type AgentChoice = 'auto' | 'chatgpt' | 'gemini';
 
 interface ResourceWorkspace {
   workspace_id: string;
@@ -95,7 +94,7 @@ export const BridgeChatPanelV2: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
-  const [targetId, setTargetId] = useState<AgentChoice>('auto');
+  const [targetId, setTargetId] = useState('auto');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -174,7 +173,7 @@ export const BridgeChatPanelV2: React.FC = () => {
     return newestChat || workspace.studio_targets[0] || null;
   };
 
-  const targetLabel = () => ({ auto: 'Auto · Sol + Gemini', chatgpt: 'Sol 5.6', gemini: 'Gemini 3.8 Flash' }[targetId]);
+  const targetLabel = () => targetId === 'chatgpt' ? 'Sol 5.6' : targetId === 'gemini' ? 'Gemini 3.8 Flash' : 'Auto · Sol + Gemini';
 
   const send = async () => {
     const content = text.trim();
@@ -277,7 +276,7 @@ export const BridgeChatPanelV2: React.FC = () => {
                 <Users className="size-3.5" />
                 Auto · Sol + Gemini
               </button>
-              {(['chatgpt', 'gemini'] as AgentChoice[]).map(id => (
+              {(['chatgpt', 'gemini'] as const).map(id => (
                 <button key={id} onClick={() => { setTargetId(id); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] ${targetId === id ? 'border-gpt/35 bg-gpt/10 text-gpt' : 'border-border text-muted-foreground hover:text-foreground'}`}>
                   {id === 'chatgpt' ? 'Sol 5.6' : 'Gemini 3.8 Flash'}
                 </button>
