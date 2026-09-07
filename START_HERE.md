@@ -56,6 +56,12 @@ Do not browse or operate outside that root without explicit new human authorizat
 
 Free or lowest-cost operation is a first-class requirement. No agent may add, enable, or call a paid/quota API, token-metered AI API, provider AI Agent, or paid automation without explicit prior user approval. Prefer browser/subscription UI, local PC, existing repository code, ordinary included platform controls, Git/GitHub, open-source/self-hosted solutions, and other free/included paths. If work or troubleshooting starts taking too long, search this repository first, then trusted public repositories/docs/internet for an existing compatible implementation before building more custom machinery. See `docs/FREE_FIRST_POLICY.md`.
 
+## Fast-path rule
+
+For ordinary, small, or obvious operations, use the normal direct path and finish the action without deep investigation or overthinking. Read only the exact state/file needed, perform the operation, run proportional required verification, and stop. Do not turn routine GitHub writes, simple edits, syncs, or one-to-three-file changes into architecture research, repo-wide audits, repeated confirmation, or speculative debugging. Only switch to deep research/analysis when the user explicitly asks for it or the task is genuinely complex, high-risk, ambiguous, or blocked after the normal path fails.
+
+GitHub is the canonical source of truth for Bridge code and non-secret project/session configuration. Writes go to GitHub first. PC and AI Studio workspaces sync FROM GitHub before operating on tasks; workspace copies are mirrors, not competing sources of truth. Secrets remain outside GitHub.
+
 ## Source-of-truth rule
 
 Never assume the latest chat message equals live state. Before claiming completion:
