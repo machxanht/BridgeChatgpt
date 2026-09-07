@@ -55,22 +55,15 @@ export const BridgeMiniStatus: React.FC<{ state: WorkspaceState }> = ({ state })
         const current = workspaces.find(item => item.workspace_id === wanted) || workspaces[0] || null;
         setWorkspace(current);
         if (current && current.workspace_id !== activeWorkspaceId) setActiveWorkspaceId(current.workspace_id);
-
-      } catch {
-        // Keep the previous project status while polling retries.
-      }
+      } catch {}
     };
     load();
     const timer = window.setInterval(load, 4500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
+    return () => { cancelled = true; window.clearInterval(timer); };
   }, [activeWorkspaceId]);
 
   const chatgpt = workspace?.chatgpt_targets[0];
   const studio = workspace?.studio_targets[0];
-
   return (
     <div className="no-scrollbar flex shrink-0 items-center gap-3 overflow-x-auto border-y border-border bg-surface/40 px-3 py-1.5 text-[11.5px] sm:px-4">
       <span className="inline-flex shrink-0 items-center gap-1.5 text-muted-foreground">
