@@ -7,6 +7,7 @@ interface ResourceTarget {
   provider: 'chatgpt' | 'google-ai-studio';
   agent_instance_id: string;
 }
+type AgentChoice = 'auto' | 'chatgpt' | 'gemini';
 
 interface ResourceWorkspace {
   workspace_id: string;
@@ -94,7 +95,7 @@ export const BridgeChatPanelV2: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
-  const [targetId, setTargetId] = useState('auto');
+  const [targetId, setTargetId] = useState<AgentChoice>('auto');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -165,20 +166,15 @@ export const BridgeChatPanelV2: React.FC = () => {
     if (node) node.scrollTop = node.scrollHeight;
   }, [feed.length, workspace?.workspace_id]);
 
-  const targets = useMemo(() => workspace ? [...workspace.chatgpt_targets, ...workspace.studio_targets] : [], [workspace]);
-
   const chooseTarget = () => {
     if (!workspace) return null;
-    if (targetId !== 'auto') return targets.find(target => target.target_id === targetId) || null;
+    if (targetId === 'chatgpt') return workspace.chatgpt_targets.at(-1) || null;
+    if (targetId === 'gemini') return workspace.studio_targets[0] || null;
     const newestChat = [...workspace.chatgpt_targets].reverse()[0];
     return newestChat || workspace.studio_targets[0] || null;
   };
 
-  const targetLabel = () => {
-    if (targetId === 'auto') return 'Auto · Sol + Gemini';
-    const target = targets.find(item => item.target_id === targetId);
-    return target ? displayTarget(target) : 'Auto';
-  };
+  const targetLabel = () => ({ auto: 'Auto · Sol + Gemini', chatgpt: 'Sol 5.6', gemini: 'Gemini 3.8 Flash' }[targetId]);
 
   const send = async () => {
     const content = text.trim();
@@ -281,10 +277,9 @@ export const BridgeChatPanelV2: React.FC = () => {
                 <Users className="size-3.5" />
                 Auto · Sol + Gemini
               </button>
-              {targets.map(target => (
-                <button key={target.target_id} onClick={() => { setTargetId(target.target_id); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] ${targetId === target.target_id ? 'border-gpt/35 bg-gpt/10 text-gpt' : 'border-border text-muted-foreground hover:text-foreground'}`}>
-                  {target.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
-                  {displayTarget(target)}
+              {(['chatgpt', 'gemini'] as AgentChoice[]).map(id => (
+                <button key={id} onClick={() => { setTargetId(id); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] ${targetId === id ? 'border-gpt/35 bg-gpt/10 text-gpt' : 'border-border text-muted-foreground hover:text-foreground'}`}>
+                  {id === 'chatgpt' ? 'Sol 5.6' : 'Gemini 3.8 Flash'}
                 </button>
               ))}
             </div>
@@ -292,7 +287,7 @@ export const BridgeChatPanelV2: React.FC = () => {
 
           <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface p-2 shadow-panel focus-within:ring-2 focus-within:ring-ring/60">
             <button onClick={() => setPickerOpen(value => !value)} className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-surface-2 px-3 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground">
-              {targetId === 'auto' ? <Users className="size-3.5" /> : chooseTarget()?.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
+              {targetId === 'auto' ? <Users className="size-3.5" /> : targetId === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
               <span className="max-w-40 truncate">{targetLabel()}</span>
               <ChevronDown className={`size-3 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
             </button>

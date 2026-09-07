@@ -11,7 +11,6 @@ import {
   File as FileIcon,
   Image as ImageIcon,
   Loader2,
-  MonitorCog,
   Paperclip,
   Sparkles,
   TriangleAlert,
@@ -81,7 +80,7 @@ function parseBinding(description: string) {
 }
 
 function displayTarget(target: ResourceTarget) {
-  return target.session_label?.trim() || target.label?.trim() || (target.provider === 'chatgpt' ? 'ChatGPT' : 'AI Studio');
+  return target.provider === 'chatgpt' ? 'Sol 5.6' : 'Gemini 3.8 Flash';
 }
 
 function timeLabel(value: string) {
@@ -93,7 +92,7 @@ function MessageRow({ message }: { message: Message; key?: React.Key }) {
   const studio = message.from === 'gemini';
   const gpt = message.from === 'chatgpt';
   const Icon = mine ? User : studio ? Boxes : Brain;
-  const name = mine ? 'You' : studio ? 'AI Studio' : gpt ? 'ChatGPT' : 'Bridge';
+  const name = mine ? 'You' : studio ? 'Gemini 3.8 Flash' : gpt ? 'Sol 5.6' : 'Bridge';
   const accent = mine ? 'text-human' : studio ? 'text-studio' : gpt ? 'text-gpt' : 'text-muted-foreground';
   const bubble = mine
     ? 'border-human/25 bg-human/10'
@@ -215,7 +214,7 @@ export const BridgeChatPanel: React.FC = () => {
   };
 
   const targetLabel = () => {
-    if (targetId === 'auto') return 'Auto';
+    if (targetId === 'auto') return 'Auto · Sol + Gemini';
     const target = targets.find(item => item.target_id === targetId);
     return target ? displayTarget(target) : 'Auto';
   };
@@ -228,7 +227,7 @@ export const BridgeChatPanel: React.FC = () => {
     const chatRoleTarget = [...workspace.chatgpt_targets].reverse().find(item => item.connection_status !== 'offline') || null;
     const studioRoleTarget = workspace.studio_targets.find(item => item.connection_status !== 'offline') || null;
     if ((rolePlan.length || wantsMultiAgentDebate(content)) && (!chatRoleTarget || !studioRoleTarget)) {
-      setFeedback('Multi-role cần cả ChatGPT và AI Studio đang được bind/online để mỗi vai trò có reply riêng.');
+      setFeedback('Multi-role cần cả Sol 5.6 và Gemini 3.8 Flash đang online.');
       return;
     }
     const fastChat = !rolePlan.length && !requiresAction(content);
@@ -237,10 +236,7 @@ export const BridgeChatPanel: React.FC = () => {
       workspace.studio_targets.map(item => item.connection_status),
       workspace.chatgpt_targets.map(item => item.connection_status),
     ) ? workspace.studio_targets.find(item => item.connection_status !== 'offline') || null : null;
-    const fastChatTarget = fastChat && !debateStudio && targetId === 'auto'
-      ? [...workspace.chatgpt_targets].reverse().find(item => item.connection_status !== 'offline') || null
-      : null;
-    const target = debateStudio || fastChatTarget || chosenTarget;
+    const target = debateStudio || chosenTarget;
     if (!rolePlan.length && !target) {
       setFeedback((workspace.execution_target || 'studio') === 'pc'
         ? 'PC mode cần bind ChatGPT conversation để xử lý lệnh tự nhiên. Local Executor vẫn dùng được trong System Details.'
@@ -380,8 +376,8 @@ export const BridgeChatPanel: React.FC = () => {
           ) : feed.length === 0 ? (
             <div className="py-16 text-center">
               <Sparkles className="mx-auto size-7 text-gpt/50" />
-              <div className="mt-2 text-[13px] font-medium text-foreground">{workspace.project_name} is ready</div>
-              <div className="mt-1 text-[11px] text-muted-foreground">Type below. Your instruction and agent responses will stay in this feed.</div>
+              <div className="mt-2 text-[13px] font-medium text-foreground">Sol 5.6 + Gemini 3.8 Flash</div>
+              <div className="mt-1 text-[11px] text-muted-foreground">Auto chọn agent phù hợp; mở nút agent để chọn riêng.</div>
             </div>
           ) : (
             feed.map(message => <MessageRow key={message.id} message={message} />)
@@ -394,7 +390,7 @@ export const BridgeChatPanel: React.FC = () => {
           {pickerOpen && (
             <div className="mb-2 flex animate-rise flex-wrap gap-1.5">
               <button onClick={() => { setTargetId('auto'); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] ${targetId === 'auto' ? 'border-gpt/40 bg-gpt/10 text-gpt' : 'border-border bg-surface text-muted-foreground'}`}>
-                {(workspace?.execution_target || 'studio') === 'pc' ? <MonitorCog className="size-3.5" /> : <Sparkles className="size-3.5" />} Auto
+                <Sparkles className="size-3.5" /> Auto · Sol + Gemini
               </button>
               {targets.map(target => (
                 <button key={target.target_id} onClick={() => { setTargetId(target.target_id); setPickerOpen(false); }} className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] ${targetId === target.target_id ? 'border-gpt/40 bg-gpt/10 text-gpt' : 'border-border bg-surface text-muted-foreground hover:text-foreground'}`}>
@@ -425,7 +421,7 @@ export const BridgeChatPanel: React.FC = () => {
           <div className="flex items-end gap-2 rounded-2xl border border-border bg-surface p-2 shadow-panel focus-within:ring-2 focus-within:ring-ring/60">
             <button type="button" onClick={() => fileInputRef.current?.click()} aria-label="Attach image, video, or file" className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-muted-foreground transition-colors hover:text-foreground"><Paperclip className="size-4" /></button>
             <button onClick={() => setPickerOpen(value => !value)} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-surface-2 px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground">
-              {targetId === 'auto' ? ((workspace?.execution_target || 'studio') === 'pc' ? <MonitorCog className="size-3.5" /> : <Sparkles className="size-3.5" />) : chooseTarget()?.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
+              {targetId === 'auto' ? <Sparkles className="size-3.5" /> : chooseTarget()?.provider === 'chatgpt' ? <Brain className="size-3.5" /> : <Boxes className="size-3.5" />}
               <span className="hidden max-w-36 truncate sm:inline">{targetLabel()}</span>
               <ChevronDown className={`size-3 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
             </button>
