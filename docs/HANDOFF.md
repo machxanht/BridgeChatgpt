@@ -1,5 +1,17 @@
 # BridgeChatgpt Handoff
 
+## Codex/Astra service preparation — 2026-09-09 (installation pending)
+
+The requested service upgrade is **not live-complete**. Current installed runner remains c7ded398 and advertises only Gemini/Sonnet/Opus; confirmed with authenticated /api/chat/agents after restoring the three-model qualification file. No Railway change is needed for this runner-only update.
+
+Actual offline Codex sandbox initialization and write/read/owned cleanup succeeded in the real default Apps/BridgeChatgpt workspace. Its exact synthetic native capability SID was granted Modify only on that workspace; the protected ACL backup and runtime/runner-control/codex-workspace-proof.json retain evidence. Codex's primary cwd SID is in workspace_by_cwd, not writable_root_by_path; see upstream windows-sandbox-rs/src/cap.rs. Profile trust was also added for that exact workspace (backup in BridgeAgent .codex), but trust does not fix exec's separate Git-discovery check.
+
+Two service submissions failed before generation with `Not inside a trusted directory and --skip-git-repo-check was not specified.` Neither reached a model. Evidence: codex-service-before-trust-failed.json and codex-service-before-git-check-failed.json in protected runner-control, plus corresponding native stderr/exit/cleanup records. No successful native model generation occurred in this turn. Do not blindly resubmit through the old installed bundle.
+
+The source adapter now uses --skip-git-repo-check for fresh/resumed Codex and Astra while retaining workspace-write, approval never, restricted identity, AppContainer and WFP. Bridge validates the exact workspace; parent .git visibility is not its confinement boundary. Pinned CLI fresh/resume help parsing, typecheck, runner build, PowerShell syntax and all 31 isolated suites passed (runtime/completion-validation-suite-QSzkPN). Corrected installed runtime/live Codex/Astra completion is still unproven.
+
+Prepared user-run Administrator entrypoint: Apps/BridgeChatgpt/pc-executor/upgrade-codex-astra.ps1. It refuses a busy runner, backs up config/task, builds/installs a new immutable source release, runs offline capability provisioning, then sends at most one actual turn per model and checks fresh-login history. On error it restores the prior task/config. It does not self-elevate; the previous automatic elevated installer was blocked by policy and must not be retried through a task/elevation trampoline. No elevated upgrade was attempted in this turn. Pending verification receipts prevent accidental duplicate submissions. Run this entrypoint manually, then inspect its actual output/receipts before reporting success.
+
 ## Live send/result proof — 2026-09-09 03:44 UTC+7
 
 The user completed installation. `Bridge Native Runner v2` is running from `runner-c7ded398edd3` and returns to waiting after work. It authorizes only workspace-proj-default / proj-default at Apps/BridgeChatgpt and advertises Gemini/Sonnet/Opus. Do not repeat installation or Google login.

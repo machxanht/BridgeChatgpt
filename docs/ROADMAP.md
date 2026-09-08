@@ -1,5 +1,9 @@
 # Bridge Roadmap and Completion Matrix
 
+## Codex/Astra service upgrade — prepared, not installed (2026-09-09)
+
+PASS: exact default workspace offline sandbox read/write and owned cleanup; native capability grant; adapter fix for Git discovery; typecheck/runner build/31 isolated suites and pinned CLI argument parsing. PENDING: manual Administrator execution of pc-executor/upgrade-codex-astra.ps1, then live Codex/Astra completion and history receipts. Current service intentionally retains only the three working AGY routes. Two pre-generation Git-check failures consumed no native generation; do not repeat old-bundle submissions. See HANDOFF for the one-command upgrade and rollback behavior. This does not close resume/coding/multi-workspace/extension/fault/soak gates.
+
 ## Narrow live integration passed — 2026-09-09 03:44 UTC+7
 
 PASS: installed/running Windows task; configured and deployed current server; real cookie/CSRF API send → Gemini on PC → correct conversation result; job cleanup; fresh-session history reload. One native request, 12.241 seconds. See HANDOFF and runtime/runner-control/server-release-proof.json. Browser sign-in page is visually verified; browser click-send was not automated. Current service advertises three AGY models for the default BridgeChatgpt workspace. Full nine-phase completion remains open.

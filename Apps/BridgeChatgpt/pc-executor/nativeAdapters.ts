@@ -35,7 +35,10 @@ export function buildNativeLaunch(input: NativeRequest): LaunchSpec {
   ] : [];
   return {
     executable: input.executable, cwd: input.cwd, outputFile: input.outputFile,
-    args: ['-c', 'sandbox_mode="workspace-write"', '-c', 'approval_policy="never"', ...windows, '-C', input.cwd, 'exec', ...(nativeSession ? ['resume', nativeSession] : []), '-m', route.native_model, '--json', '-o', input.outputFile, '-'],
+    // The installed policy validates the exact workspace before launch. Its parent
+    // .git is deliberately outside native read scope; Git discovery is not the
+    // security boundary. Keep workspace-write and the OS confinement unchanged.
+    args: ['-c', 'sandbox_mode="workspace-write"', '-c', 'approval_policy="never"', ...windows, '-C', input.cwd, 'exec', ...(nativeSession ? ['resume', nativeSession] : []), '--skip-git-repo-check', '-m', route.native_model, '--json', '-o', input.outputFile, '-'],
     stdin: input.content + '\n',
   };
 }

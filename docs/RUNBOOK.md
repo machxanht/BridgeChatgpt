@@ -1,5 +1,17 @@
 # Bridge Operations Runbook
 
+## Pending Codex/Astra upgrade — 2026-09-09
+
+In an Administrator PowerShell window, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "E:\AI\Bridge\Apps\BridgeChatgpt\pc-executor\upgrade-codex-astra.ps1"
+```
+
+This is a prepared procedure, not an already successful installation. It requires clean committed source and an idle installed runner. It backs up task/config, installs the corrected bundle, grants only the exact workspace's Codex capability, performs offline write/read and cleanup, enables the five qualified native routes, then sends one small real Bridge request per Codex/Astra. It verifies a fresh authenticated history reload. No Google login, API key, server redeployment or subscription change is involved. On failure it restores the old service configuration and retains evidence; do not keep rerunning it without reading the error.
+
+Success ends with `PASS: Codex and Astra completed through Bridge; fresh-login history verified.` Read protected runtime/runner-control/codex-service-e2e.json and astra-service-e2e.json. Existing pending/terminal receipts deliberately block automatic resubmission; inspect them first. Current live service still advertises Gemini/Sonnet/Opus only until this upgrade succeeds. The prior elevated installation was blocked by automatic review; this script never self-elevates or changes a task to work around that rejection.
+
 ## Current native chat installation — 2026-09-09
 
 Open https://bridgechatgpt-production.up.railway.app and sign in using the protected local file `E:\AI\Bridge\runtime\runner-control\bridge-sign-in.txt`. Select BridgeChatgpt + Gemini 3.8 Flash. The old localhost Google-login portal is closed; native Google login is already persisted.

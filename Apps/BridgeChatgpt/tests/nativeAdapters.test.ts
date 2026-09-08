@@ -16,6 +16,12 @@ assert(codex.args.includes('gpt-6-astra'));assert(codex.args.includes(sessionId)
 assert(codex.args.includes('sandbox_mode="workspace-write"'));
 assert(codex.args.indexOf('sandbox_mode="workspace-write"')<codex.args.indexOf('exec'),'resume receives global permission config');
 assert(codex.args.includes('approval_policy="never"'),'headless tools cannot request an unsandboxed retry');
+for(const agentId of ['codex','astra'] as const)for(const resume of [undefined,sessionId]){
+  const launch=buildNativeLaunch({agentId,cwd,content:'hello',sessionId:resume,outputFile:path.join(cwd,'final.txt'),executable:path.join(cwd,'codex.exe')});
+  assert(launch.args.includes('--skip-git-repo-check'),'approved workspaces need not expose parent Git metadata');
+  assert(launch.args.includes('sandbox_mode="workspace-write"'),'Git discovery override must retain the sandbox');
+  assert(!launch.args.includes('--dangerously-bypass-approvals-and-sandbox'));
+}
 if(process.platform==='win32')assert(codex.args.includes('windows.sandbox="unelevated"'));
 const failedTools=[
   {type:'thread.started',thread_id:sessionId},
