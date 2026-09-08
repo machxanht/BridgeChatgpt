@@ -1,5 +1,15 @@
 # BridgeChatgpt Handoff
 
+## Live send/result proof — 2026-09-09 03:44 UTC+7
+
+The user completed installation. `Bridge Native Runner v2` is running from `runner-c7ded398edd3` and returns to waiting after work. It authorizes only workspace-proj-default / proj-default at Apps/BridgeChatgpt and advertises Gemini/Sonnet/Opus. Do not repeat installation or Google login.
+
+Browser password/public origin are configured, controller credential preserved, GitHub command bus and Gemini API worker disabled. Removing obsolete bun.lock fixed Railway's frozen-lock build failure. Successful deployment `766a96bd-3a82-4ed6-9687-cffd27e02411` used the tracked Git archive of `f711e4890513f3ae7a28e4a731a37c2aa72ba874` (CI passed). CLI uploads have no Railway commitHash: evidence records archive SHA256 `87d4228f5228c123f430ddcf8d3618a6e2f9ce6971af06a223a8a41fd06d7d94` and exact deployed/local frontend JS equality instead. /ready returns true.
+
+One real cookie/CSRF-authenticated Bridge API turn completed in 12.241 seconds: TURN-6485178a-922f-4455-b9f2-20bbe1231bbe, conversation CONV-2e5053b8-24ef-46cf-ae9a-a96a27f132f1, Gemini answer BRIDGE_E2E_OK, native session 4c110ffa-520f-4d85-80c8-9188335f70ad. Job cleanup is confirmed. A fresh sign-in fetched the same two messages and session. Receipts: runtime/runner-control/server-e2e-result.json and server-release-proof.json. Only one model request was used; no fixture answer was inserted.
+
+The actual new browser page displays Sign in to Bridge. Credentials are in protected local runtime/runner-control/bridge-sign-in.txt; never commit them. User can choose BridgeChatgpt + Gemini 3.8 Flash. Submission was exercised through the real authenticated HTTP API, not automated browser click-send. Installed Codex/Astra and browser Sol are not advertised by this service yet. Multiple-workspace permissions, coding/resume, extension and full fault/soak/nine-phase gates remain unfinished. Earlier blocked-installation/server-old statements below are historical.
+
 ## Runner installation work — 2026-09-09
 
 Source checkpoint `4de7129f37fa974e6cba463c444ed4537d64c098` passed 31 isolated suites, typecheck, app build, runner bundle build and PowerShell syntax validation. The attempted elevated installation command was rejected by automatic tool review with `blocked by policy`; the combined command did not execute. Do not retry elevation through another mechanism. Prepare the protected config draft and let the user run the reviewed installer in an Administrator terminal. No scheduled task or installed release has yet been created by this change, and production has not been deployed. This is an execution-policy blocker, not a Google login problem. Native login remains verified and must not be repeated.

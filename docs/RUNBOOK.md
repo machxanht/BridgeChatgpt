@@ -1,5 +1,13 @@
 # Bridge Operations Runbook
 
+## Current native chat installation — 2026-09-09
+
+Open https://bridgechatgpt-production.up.railway.app and sign in using the protected local file `E:\AI\Bridge\runtime\runner-control\bridge-sign-in.txt`. Select BridgeChatgpt + Gemini 3.8 Flash. The old localhost Google-login portal is closed; native Google login is already persisted.
+
+Scheduled task `Bridge Native Runner v2` starts a hidden protected runner at user logon. Inspect runtime/runner-control/runner-status.json and task state before restarting; idle state is waiting. Do not start another proxy on port 43892. Current service allows only the default workspace and advertises Gemini/Sonnet/Opus. See HANDOFF for live proof and remaining limitations.
+
+Current deployment: 766a96bd-3a82-4ed6-9687-cffd27e02411, a CLI upload of tracked f711e489 source using npm. CLI deployment metadata has no commitHash; verify the recorded archive digest and frontend build match in server-release-proof.json. Never commit sign-in credentials.
+
 ## Local Phase 2 auth checkpoint (not deployed)
 
 Before eventual promotion, configure `BRIDGE_PUBLIC_ORIGIN` to the exact external HTTPS origin (no trailing slash/path) and `BRIDGE_BROWSER_PASSWORD` to a separate random credential of at least 32 characters. Do not reuse `BRIDGE_MCP_TOKEN` as the browser password. Do not write either credential into source, logs, documentation or browser storage. Keep existing machine pairing; no per-project re-pairing is needed.

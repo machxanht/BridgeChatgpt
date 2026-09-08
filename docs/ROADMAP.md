@@ -1,5 +1,9 @@
 # Bridge Roadmap and Completion Matrix
 
+## Narrow live integration passed — 2026-09-09 03:44 UTC+7
+
+PASS: installed/running Windows task; configured and deployed current server; real cookie/CSRF API send → Gemini on PC → correct conversation result; job cleanup; fresh-session history reload. One native request, 12.241 seconds. See HANDOFF and runtime/runner-control/server-release-proof.json. Browser sign-in page is visually verified; browser click-send was not automated. Current service advertises three AGY models for the default BridgeChatgpt workspace. Full nine-phase completion remains open.
+
 ## Active runner installation work — 2026-09-09
 
 Validation passed (31 isolated suites, typecheck, app/runner builds, PowerShell syntax). Automatic tool review rejected the elevated installer with `blocked by policy`; installation/live service/E2E remain pending. Do not loop on alternate elevation methods or consume native model quota diagnosing this rejection.
