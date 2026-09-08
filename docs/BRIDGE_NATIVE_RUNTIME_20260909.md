@@ -2,6 +2,14 @@
 
 This is the current source/PC checkpoint on `codex/bridge-completion`. It supersedes earlier statements that administrator execution is unavailable, that no v2 extension/service loop exists, or that only a Job Object was implemented. **This is not a production/native-model E2E completion report.**
 
+## Canonicalization diagnosis after manual administrator setup
+
+The user ran the direct ancestor metadata installer successfully at `2026-09-08T18:27:20.0981599Z`; `native-ancestor-metadata-result.json` now says installed=true. This supersedes the partial-rollout status below. Codex was retried and still failed before generation.
+
+A real Win32 probe inside BridgeAgent + AppContainer opens `.codex` successfully, but `GetFinalPathNameByHandle` returns ERROR_ACCESS_DENIED for DOS/GUID volume names. NT volume names and names without a volume succeed for the same handles. Evidence: `runtime/agent-tasks/runner-io-probe/canonical-stdout.txt`; the field named `access` in its final version is the volume-name flag (0/1 fail, 2/4 succeed). This isolates the remaining failure to volume-name translation rather than login or opening the profile directory. It matches [Microsoft MXC issue #694](https://github.com/microsoft/mxc/issues/694).
+
+Prepared, **not applied/qualified**, a narrow package-only query grant for the Object Manager directory `\GLOBAL??`, its C:/E:/MountPointManager symbolic links, and read access to the mount-manager device. Candidate helper: `runtime/runner-control/WindowsPathQueryAccess.cs`; installer: `install-native-path-query.ps1`. The C# helper compiles and can read all five existing security descriptors; no grants were applied by this candidate yet. Installer saves original descriptors before writes, prints a dated `native-path-query-result.json`, and requires an administrator token. After application, rerun the Win32 probe, actual Codex attempt and negative confinement tests before claiming a fix. Device/object ACL lifetime across reboot remains unqualified. AGY's blocked localhost IPC remains a separate issue.
+
 ## Post-login qualification — 2026-09-09 01:20 UTC+7
 
 Both native sign-ins are complete. AGY's interactive UI reached its prompt under BridgeAgent with the included Google AI Pro account. A separate `agy models` process under BridgeAgent exited 0 and returned `gemini-3.8-flash-high`, `claude-sonnet-4-6`, and `claude-opus-4-6-thinking`. Evidence: `runtime/agent-tasks/agy-models-status.json` and `agy-models.txt`. Do not restart OAuth for the filesystem/network startup errors below.

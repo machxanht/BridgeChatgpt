@@ -2,6 +2,8 @@
 
 ## Current continuation — 2026-09-09 UTC+7
 
+Manual ancestor setup now succeeded, but Codex still fails. A confined Win32 probe isolates DOS/GUID volume-name translation denial while NT-name translation and opening the profile work. A package-only mount-manager/Object Manager query installer is prepared, not yet applied or qualified. Read the newest [canonicalization diagnosis](BRIDGE_NATIVE_RUNTIME_20260909.md) before proposing further directory grants or another OAuth login.
+
 Post-login update: both native sign-ins are complete and AGY `models` confirms all three requested IDs under BridgeAgent. Confined headless startup still fails: AGY needs an internal localhost listener blocked by current policy; Codex fails CODEX_HOME canonicalization. The [post-login checkpoint](BRIDGE_NATIVE_RUNTIME_20260909.md) records ACL changes/backups, failed-start/clean-shutdown evidence and regression results. No native final answer, E2E completion, merge or deployment is claimed. Do not restart OAuth for these startup errors.
 
 See [native runtime checkpoint](BRIDGE_NATIVE_RUNTIME_20260909.md) for the current source and live Windows evidence. AppContainer filesystem denial and package-scoped WFP/proxy confinement now pass the documented real parent/subprocess and HTTPS probes. Administrator execution works. Runner service/recovery and v2 extension source are implemented, but production policy provisioning, native sign-in/model qualification, legacy coordination, browser installation and release E2E remain unfinished. **No production-ready or deployed-native claim is made.** Older contradictory statements below are historical.
