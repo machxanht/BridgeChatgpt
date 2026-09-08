@@ -1,5 +1,9 @@
 # Bridge Roadmap and Completion Matrix
 
+## Google/native chat gate passed — 2026-09-09 03:07 UTC+7
+
+PASS: persisted confined Google login, followed by three fresh normal headless native runs for Gemini 3.8 Flash High, Claude Sonnet 4.6 and Claude Opus 4.6 Thinking. All returned BRIDGE_NATIVE_OK with exact-model receipts, exit 0 and owned-job cleanup. The last post-login failures were missing exact proxy hosts for eligibility and the profile picture; those are fixed. **No more user OAuth input is needed.** Native coding/resume, production runner provisioning, extension and final E2E/soak/deployment remain open.
+
 ## OAuth input correction — 2026-09-09 02:55 UTC+7
 
 DONE: replace the incorrect stdin code transport with private ConPTY authentication, verify an intentionally invalid code reaches Google, reject stale/duplicate/foreign-origin submissions, redact/remove submitted codes and confirm job cleanup. The portal now exposes the 60-second deadline and distinguishes received input from CLI delivery. PENDING: user refreshes the existing local form and completes one fresh Google login; verify actual authentication and new-process persistence. This does not complete the remaining production runner/extension/E2E gates.

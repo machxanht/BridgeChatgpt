@@ -1,5 +1,21 @@
 # Native runtime continuation — 2026-09-09 UTC+7
 
+## 03:07 UTC+7 — Google login persists; three fresh native model runs pass
+
+The user's subsequent failure was not another missing authorization code: the CLI reported `Eligibility check failed` with HTTP 403. The proxy omitted `daily-cloudcode-pa.googleapis.com` (`/v1internal:loadCodeAssist`), then `lh3.googleusercontent.com` for the profile image. The local portal's exact-host allowlist now includes both. A bounded diagnostic records only proxy hostnames/allow decisions and timestamps, not URLs, request headers or credentials. Existing public-IP and matching TLS SNI checks remain.
+
+A fresh ConPTY CLI invocation returned `BRIDGE_AUTH_OK`, `status: SUCCESS`, exit 0 and `input_delivered: false`. It reused the user's saved login. Three subsequent new normal headless adapter invocations inside BridgeAgent + AppContainer + OwnedJob all passed:
+
+| Agent | Native model | Session | Result |
+| --- | --- | --- | --- |
+| Gemini | gemini-3.8-flash-high | d8d07e13-ee01-437a-807c-2b1535271797 | BRIDGE_NATIVE_OK |
+| Sonnet | claude-sonnet-4-6 | 33b8a0d3-3554-48bb-960f-5db4d6425600 | BRIDGE_NATIVE_OK |
+| Opus | claude-opus-4-6-thinking | 1b113833-a584-44a7-8040-6b9058059da1 | BRIDGE_NATIVE_OK |
+
+All three had native/launcher exit 0 and confirmed job cleanup. Evidence: `runtime/runner-control/agy-auth-model-matrix.json`, 2026-09-08T20:07:10Z through 20:07:30Z. They use the normal native adapter and file-based NDJSON transport, not the authentication terminal. No new authorization code, fallback model or API key was supplied. This proves saved login works across fresh processes now; it does not yet prove token refresh after expiry or the native coding/resume/full E2E gates.
+
+The portal distinguishes HTTP 403 and eligibility errors from input-code errors. Syntax validation and provider-proxy tests pass. Earlier login-pending statements below are historical; **do not ask the user to log in again**.
+
 ## 02:55 UTC+7 — Windows OAuth input fixed; real login pending
 
 The user reported more than ten failed code submissions. The previous portal sent codes to a named stdin pipe; AGY only reported authentication timeout after 60 seconds. The earlier PIPE_OK diagnostic proved the pipe, not AGY's authentication input. The official [AGY changelog for 1.1.2](https://github.com/google-antigravity/antigravity-cli/blob/main/CHANGELOG.md) documents controlling-terminal input via CONIN$ on Windows.

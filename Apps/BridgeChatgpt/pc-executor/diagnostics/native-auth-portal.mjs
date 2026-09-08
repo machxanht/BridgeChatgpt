@@ -18,6 +18,8 @@ const state=()=>{
  let kind=null;
  if(/invalid_grant|Malformed auth code/i.test(log))kind='invalid_code';
  else if(/authentication timed out/i.test(log))kind='timeout';
+ else if(/Forbidden/i.test(log))kind='network_forbidden';
+ else if(/Eligibility check failed/i.test(log))kind='eligibility_error';
  else if(/Error: authentication failed/i.test(log))kind='provider_error';
  else if(read('helper-error.txt')||read('launcher-error.txt')||result?.error)kind='launcher_error';
  else if(result&&result.exit_code!==0)kind='cli_error';
@@ -28,14 +30,18 @@ const html=`<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="vie
 const key=${JSON.stringify(nonce)};let session='';const status=document.querySelector('#status'),start=document.querySelector('#start'),send=document.querySelector('#send'),field=document.querySelector('#code'),link=document.querySelector('#google');
 async function call(path,data){const r=await fetch(path,{method:data?'POST':'GET',headers:{'X-Bridge-Local':key,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});const v=await r.json();if(!r.ok)throw Error(v.error);return v;}
 async function refresh(){try{const s=await call('/status');if(session!==s.session){session=s.session;field.value='';}start.disabled=s.running;send.disabled=!s.running||s.submitted||!s.url||s.remaining===0;field.disabled=send.disabled;link.style.display=s.url?'inline-block':'none';if(s.url)link.href=s.url;
-const errors={invalid_code:'Google đã nhận mã nhưng từ chối: mã sai, đã dùng hoặc không thuộc phiên này. Bấm Bắt đầu và lấy mã mới từ liên kết mới.',timeout:s.delivered?'CLI đã nhận mã nhưng phiên đăng nhập hết hạn. Chưa xác nhận đăng nhập thành công.':'Phiên 60 giây đã hết trước khi CLI xử lý mã. Không gửi lại mã cũ.',provider_error:'CLI đã báo lỗi xác thực từ nhà cung cấp. Dừng thử lại và báo mình kiểm tra.',launcher_error:'Lỗi khởi động terminal. Dừng gửi mã; cần sửa runner.',cli_error:'CLI kết thúc với lỗi. Dừng gửi mã để kiểm tra.'};
+const errors={network_forbidden:'Kết nối dịch vụ bị từ chối (403). Không gửi thêm mã; cần kiểm tra proxy hoặc phản hồi dịch vụ.',eligibility_error:'Không hoàn tất kiểm tra quyền sử dụng tài khoản. Không gửi thêm mã; cần kiểm tra lỗi CLI.',invalid_code:'Google đã nhận mã nhưng từ chối: mã sai, đã dùng hoặc không thuộc phiên này. Bấm Bắt đầu và lấy mã mới từ liên kết mới.',timeout:s.delivered?'CLI đã nhận mã nhưng phiên đăng nhập hết hạn. Chưa xác nhận đăng nhập thành công.':'Phiên 60 giây đã hết trước khi CLI xử lý mã. Không gửi lại mã cũ.',provider_error:'CLI đã báo lỗi xác thực từ nhà cung cấp. Dừng thử lại và báo mình kiểm tra.',launcher_error:'Lỗi khởi động terminal. Dừng gửi mã; cần sửa runner.',cli_error:'CLI kết thúc với lỗi. Dừng gửi mã để kiểm tra.'};
 if(s.kind)status.textContent=errors[s.kind];else if(s.result?.exit_code===0)status.textContent='CLI đã hoàn tất. Nhắn “đã gửi mã” để kiểm tra khả năng giữ phiên.';else if(s.delivered&&s.running)status.textContent='Đã chuyển mã vào terminal CLI. Đang chờ Google xác nhận…';else if(s.submitted&&s.running)status.textContent='Đã nhận mã tại trang Bridge. Đang chuyển vào terminal…';else if(s.url)status.textContent='Phiên đang chờ mã — còn khoảng '+s.remaining+' giây.';else if(s.running)status.textContent='Đang khởi động terminal…';else status.textContent='Bấm Bắt đầu để tạo phiên đăng nhập.';
 }catch{status.textContent='Mất kết nối trang đăng nhập cục bộ. Không gửi mã; báo mình mở lại dịch vụ.';send.disabled=true;start.disabled=true;}}
 start.onclick=async()=>{start.disabled=true;try{await call('/start',{});await refresh();}catch(e){status.textContent=e.message;start.disabled=false;}};
 send.onclick=async()=>{send.disabled=true;try{await call('/code',{code:field.value,session});field.value='';await refresh();}catch(e){status.textContent=e.message;}};
 refresh();setInterval(refresh,1000);
 </script></html>`;
-const proxy=await startProviderProxy(['oauth2.googleapis.com','accounts.google.com','www.googleapis.com','cloudcode-pa.googleapis.com','daily-cloudcode-pa.sandbox.googleapis.com','antigravity.google','antigravity-unleash.goog'],43892);
+const proxyEvents=[];
+const proxy=await startProviderProxy(['oauth2.googleapis.com','accounts.google.com','www.googleapis.com','cloudcode-pa.googleapis.com','daily-cloudcode-pa.googleapis.com','daily-cloudcode-pa.sandbox.googleapis.com','lh3.googleusercontent.com','antigravity.google','antigravity-unleash.goog'],43892,event=>{
+ proxyEvents.push({...event,time:new Date().toISOString()});if(proxyEvents.length>100)proxyEvents.shift();
+ fs.writeFileSync('E:/AI/Bridge/runtime/runner-control/native-auth-proxy-hosts.json',JSON.stringify(proxyEvents));
+});
 const server=http.createServer(async(req,res)=>{
  res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Content-Security-Policy',"frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
  const send=(code,value)=>{res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(value));};

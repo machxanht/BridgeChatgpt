@@ -1,5 +1,9 @@
 # BridgeChatgpt Handoff
 
+## Google login verified — 2026-09-09 03:07 UTC+7
+
+**Do not request another Google code.** The user's login was persisted. Subsequent CLI failures were proxy allowlist omissions: `daily-cloudcode-pa.googleapis.com` for eligibility and `lh3.googleusercontent.com` for the profile image. Both exact hosts are now allowed; no wildcard or TLS interception was added. A fresh confined authentication process returned BRIDGE_AUTH_OK with exit 0 and no submitted input. Three new normal headless runner processes then returned BRIDGE_NATIVE_OK on Gemini 3.8 Flash High, Claude Sonnet 4.6 and Claude Opus 4.6 Thinking, with exact model receipts and confirmed owned-job cleanup. Evidence: `runtime/runner-control/agy-auth-model-matrix.json`. Earlier login-pending statements below are historical. Native coding/resume and production runner/extension/full E2E gates remain unfinished.
+
 ## OAuth input correction — 2026-09-09 02:55 UTC+7
 
 The local Google form previously sent authorization codes to stdin, but AGY Windows print-mode authentication reads its controlling terminal. The user's repeated submissions timed out after 60 seconds. Authentication now uses a private ConPTY while retaining BridgeAgent, AppContainer and OwnedJob. An intentionally invalid code reached Google and returned `invalid_grant / Malformed auth code`. Stale-session, duplicate and foreign-origin submissions are rejected; code redaction/removal and job cleanup passed. The portal now shows the deadline and separate submitted/delivered/provider-error states. Refresh the existing local page before using one fresh Google code. Real authentication and fresh-process persistence remain unproven. See the native runtime checkpoint below.
