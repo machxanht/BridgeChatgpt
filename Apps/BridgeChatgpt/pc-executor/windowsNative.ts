@@ -14,6 +14,8 @@ export interface WindowsLaunchPolicy {
   containerSid: string;
   /** Must validate actual OS policy and pinned executable before returning. */
   authorize(turn: ClaimedTurn): Promise<{cwd: string; executable: string}>;
+  /** Grant only this attempt's output directory before the native child starts. */
+  prepareTask(task: string): Promise<void>;
 }
 function readBounded(file: string, max: number) {
   if (fs.lstatSync(file).isSymbolicLink() || fs.statSync(file).size > max) throw new Error('Native output is invalid or too large');
@@ -27,6 +29,7 @@ export async function launchWindowsNative(turn: ClaimedTurn, policy: WindowsLaun
     if (!path.isAbsolute(directory) || fs.lstatSync(directory).isSymbolicLink()) throw new Error('Native root must be an absolute real directory');
   }
   const task = fs.mkdtempSync(path.join(policy.taskRoot, 'run-'));
+  await policy.prepareTask(task);
   const finalFile = path.join(task, 'final.txt');
   const launch = buildNativeLaunch({agentId: turn.agent_id, content: turn.content, cwd: approved.cwd,
     executable: approved.executable, outputFile: finalFile, sessionId: turn.native_session_id});

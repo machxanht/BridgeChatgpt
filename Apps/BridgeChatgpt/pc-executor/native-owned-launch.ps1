@@ -4,6 +4,7 @@ param(
   [Parameter(Mandatory=$true)][string]$ReleaseRoot
 )
 $ErrorActionPreference='Stop'
+$env:PSModulePath="$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules"
 Add-Type -Path (Join-Path $ReleaseRoot 'WindowsJob.cs')
 Add-Type -TypeDefinition 'public static class BridgeCancelInput { public static System.Threading.Tasks.Task<string> Read() { return System.Threading.Tasks.Task.Run(() => System.Console.ReadLine()); } }'
 $request=Get-Content -LiteralPath $RequestPath -Raw -Encoding UTF8 | ConvertFrom-Json

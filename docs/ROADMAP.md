@@ -1,5 +1,9 @@
 # Bridge Roadmap and Completion Matrix
 
+## Active runner installation work — 2026-09-09
+
+Implemented for validation: bundled runner entrypoint, pinned configuration and native/release hashes, OS WFP/access checks, per-attempt output directory preparation, protected credential loading and hidden scheduled-task installation. First configuration binds one explicit project/workspace; general workspace lifecycle remains unfinished. Next: install, verify the actual service, configure the candidate control plane and prove a real send/result/resume path. Avoid repeated native generations until that path is ready.
+
 ## Google/native chat gate passed — 2026-09-09 03:07 UTC+7
 
 PASS: persisted confined Google login, followed by three fresh normal headless native runs for Gemini 3.8 Flash High, Claude Sonnet 4.6 and Claude Opus 4.6 Thinking. All returned BRIDGE_NATIVE_OK with exact-model receipts, exit 0 and owned-job cleanup. The last post-login failures were missing exact proxy hosts for eligibility and the profile picture; those are fixed. **No more user OAuth input is needed.** Native coding/resume, production runner provisioning, extension and final E2E/soak/deployment remain open.

@@ -47,6 +47,8 @@ jobs:
           Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsPathQueryAccess.cs
       - name: Build
         run: npm run build
+      - name: Build native runner
+        run: npm run build:runner
       - name: Package Bridge Wake extension
         if: runner.os == 'Linux'
         run: |

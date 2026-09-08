@@ -1,5 +1,9 @@
 # BridgeChatgpt Handoff
 
+## Runner installation work — 2026-09-09
+
+The user reauthorized completing all remaining work and explicitly requires avoiding repeated speculative debugging and unnecessary native calls. The current change adds a bundled runner entrypoint, exact-origin/executable/release integrity checks, protected credential loading, an OS policy/access verifier, attempt-output ACL preparation and a hidden logon scheduled-task installer. The initial installed configuration intentionally permits one explicit workspace/project pair; other claims are rejected. Multi-workspace permission lifecycle and final release gates are still open. Source validation is in progress; this paragraph is not installation or E2E proof. Production was inspected: running deployment `5a5e19f5-d57b-498f-b41e-e7a943dae105`, commit `a77ad4ef274f1b57b42da433ecb09ed5d2ce6a61`, lacks browser password/public-origin configuration and runs the older UI. A controller credential was stored only as DPAPI ciphertext in the protected runner-control directory. No model call was needed for this investigation.
+
 ## Google login verified — 2026-09-09 03:07 UTC+7
 
 **Do not request another Google code.** The user's login was persisted. Subsequent CLI failures were proxy allowlist omissions: `daily-cloudcode-pa.googleapis.com` for eligibility and `lh3.googleusercontent.com` for the profile image. Both exact hosts are now allowed; no wildcard or TLS interception was added. A fresh confined authentication process returned BRIDGE_AUTH_OK with exit 0 and no submitted input. Three new normal headless runner processes then returned BRIDGE_NATIVE_OK on Gemini 3.8 Flash High, Claude Sonnet 4.6 and Claude Opus 4.6 Thinking, with exact model receipts and confirmed owned-job cleanup. Evidence: `runtime/runner-control/agy-auth-model-matrix.json`. Earlier login-pending statements below are historical. Native coding/resume and production runner/extension/full E2E gates remain unfinished.
