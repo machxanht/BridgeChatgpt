@@ -42,3 +42,7 @@ This is the current source/PC checkpoint on `codex/bridge-completion`. It supers
 ## Policy verification and rollback
 
 Use the reviewed `pc-executor/install-windows-confinement.ps1` from an immutable release under an administrator token. `-Mode Verify` checks the six actual filters and the package loopback exception. `-Mode Rollback` requires the installation manifest, removes the added exception first, then removes only the six verified Bridge filter objects and Bridge sublayer. Stop Bridge-owned native work before rollback. Retain original ACL manifests, outbox and evidence. Do not delete or rewrite unrelated firewall rules or change host-wide defaults.
+
+## Native sign-in correction
+
+The user completed Codex device authorization. A fresh isolated-identity status probe confirms identity BridgeAgent, HOME C:\Users\BridgeAgent, CODEX_HOME C:\Users\BridgeAgent\.codex, codex_authenticated=true (runtime/agent-tasks/native-profile-check.json). AGY initially failed because Start-Process -Credential retained the operator HOME. native-environment.ps1 now derives the home directory from the actual token SID/ProfileList, resets profile/cache variables and clears inherited API credentials. native-child.ps1 uses it, and a corrected AGY login window was started separately. Windows native IO regression passes. AGY authentication and model E2E are still unverified.

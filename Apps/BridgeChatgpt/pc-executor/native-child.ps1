@@ -1,5 +1,6 @@
 param([Parameter(Mandatory=$true)][string]$RequestPath)
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'native-environment.ps1')
 [Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $OutputEncoding=[Text.UTF8Encoding]::new($false)
