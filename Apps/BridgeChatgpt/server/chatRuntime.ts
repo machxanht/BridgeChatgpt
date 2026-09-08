@@ -161,7 +161,7 @@ export async function claimNextTurn(runtime:RuntimeClaims,agentIds:BridgeAgentId
   if(requestId&&!/^[a-zA-Z0-9._:-]{8,160}$/.test(requestId))throw new Error('Invalid claim request ID');
   if(requestId){
     const d=await getDb();
-    const previous=one(d,`SELECT a.*,t.id AS turn_id,t.conversation_id,t.agent_id,t.workspace_id,t.project_id,t.user_content,c.native_session_id FROM chat_claim_requests r JOIN chat_attempts a ON a.id=r.attempt_id JOIN chat_turns t ON t.id=a.turn_id JOIN chat_conversations c ON c.id=t.conversation_id WHERE r.runtime_jti=? AND r.request_id=?`,[runtime.jti,requestId]);
+    const previous=one(d,`SELECT a.*,t.id AS turn_id,t.conversation_id,t.agent_id,t.workspace_id,t.project_id,t.user_content,c.native_session_id FROM chat_claim_requests r JOIN chat_attempts a ON a.id=r.attempt_id JOIN chat_turns t ON t.id=a.turn_id JOIN chat_conversations c ON c.id=t.conversation_id WHERE a.owner=? AND r.request_id=?`,[runtime.sub,requestId]);
     if(previous){
       if(previous.status!=='working'||Date.parse(previous.lease_expires_at)<=Date.now()||!allowed.has(previous.agent_id))throw Object.assign(new Error('Previous claim is no longer active'),{statusCode:409});
       const route=getAgentRoute(previous.agent_id);
@@ -206,6 +206,29 @@ function signClaim(runtime:RuntimeClaims,claimed:Omit<ClaimedTurn,'attempt_token
   const ttl=Math.min(runtime.exp-Date.now(),Math.max(1,Date.parse(claimed.deadline_at)-Date.now()+60_000));
   const attempt_token=issueRuntimeToken('attempt',runtime.sub,ttl,{attempt_id:claimed.attempt_id,turn_id:claimed.turn_id,epoch:claimed.epoch,transport:claimed.transport,parent_jti:runtime.jti});
   return {...claimed,attempt_token};
+}
+
+/** Reissue capability for one owned attempt after a coordinator restart.
+ * This never claims new work, changes an epoch, or permits replaying native input.
+ */
+export async function recoverOwnedAttempt(runtime:RuntimeClaims,attemptId:string){
+  await ensureChatSchema();
+  if(!['runner','browser'].includes(runtime.scope))throw Object.assign(new Error('Runtime credential required'),{statusCode:403});
+  await recoverExpiredTurns();
+  const d=await getDb();
+  const row=one(d,`SELECT a.*,t.conversation_id,t.agent_id,t.workspace_id,t.project_id,t.user_content,t.transport,t.current_attempt_id,c.native_session_id FROM chat_attempts a JOIN chat_turns t ON t.id=a.turn_id JOIN chat_conversations c ON c.id=t.conversation_id WHERE a.id=?`,[attemptId]);
+  const transport=runtime.scope==='browser'?'browser':'cli';
+  if(!row||row.owner!==runtime.sub||row.transport!==transport||row.current_attempt_id!==row.id)
+    throw Object.assign(new Error('Foreign or superseded attempt'),{statusCode:403});
+  const route=getAgentRoute(row.agent_id);
+  const turn:ClaimedTurn={attempt_id:row.id,turn_id:row.turn_id,conversation_id:row.conversation_id,
+    agent_id:route.id,native_model:route.native_model,runner:route.runner,transport:route.transport,
+    workspace_id:row.workspace_id,project_id:row.project_id,content:row.user_content,native_session_id:row.native_session_id,
+    lease_expires_at:row.lease_expires_at,deadline_at:row.deadline_at,epoch:row.epoch,
+    attempt_token:issueRuntimeToken('attempt',runtime.sub,Math.min(300000,runtime.exp-Date.now()),
+      {attempt_id:row.id,turn_id:row.turn_id,epoch:row.epoch,transport,parent_jti:runtime.jti})};
+  return {turn,status:row.status,result_hash:row.result_hash,
+    receipt:transport==='browser'?one(d,'SELECT * FROM browser_receipts WHERE attempt_id=?',[row.id]):null};
 }
 
 function validateAttempt(d:Database,claims:RuntimeClaims){

@@ -1,5 +1,10 @@
 # Phase 2 Windows boundary setup manifest
 
+## Current continuation — 2026-09-09 UTC+7
+
+See [native runtime checkpoint](BRIDGE_NATIVE_RUNTIME_20260909.md) for the current source and live Windows evidence. AppContainer filesystem denial and package-scoped WFP/proxy confinement now pass the documented real parent/subprocess and HTTPS probes. Administrator execution works. Runner service/recovery and v2 extension source are implemented, but production policy provisioning, native sign-in/model qualification, legacy coordination, browser installation and release E2E remain unfinished. **No production-ready or deployed-native claim is made.** Older contradictory statements below are historical.
+
+
 Status: **AUTHORIZED; BLOCKED on Windows administrator execution.** The user explicitly authorized creation of `BridgeAgentRestricted`, required ACL/process/network isolation and negative tests on 2026-09-08. The scope below remains narrow. No setup has been applied; this manifest is not evidence that Windows isolation works.
 
 ## Continuation preflight — 2026-09-08 13:09 UTC

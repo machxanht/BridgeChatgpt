@@ -48,6 +48,8 @@ assert.equal(contenders.filter(Boolean).length,1);
 const claim=contenders.find(Boolean)!;
 const winningRuntime=contenders[0]?runner:other;
 assert.equal((await chat.claimNextTurn(winningRuntime,['codex'],claimRequest))!.attempt_id,claim.attempt_id,'lost claim response can be recovered without rerunning');
+const renewedOwner=auth.verifyRuntimeToken(auth.issueRuntimeToken('runner',winningRuntime.sub,60000))!;
+assert.equal((await chat.claimNextTurn(renewedOwner,['codex'],claimRequest))!.attempt_id,claim.attempt_id,'claim response recovery survives runtime-token renewal without a second native turn');
 assert.equal(await chat.claimNextTurn(other,['astra']),null,'shared checkout write lock spans model lanes');
 await assert.rejects(db.updateTask(a.turn.task_id,{status:'completed',result:'bypass'}),/attempt capability/);
 await assert.rejects(chat.completeAttempt(attempt(claim),''),/non-empty/);
@@ -90,6 +92,12 @@ await chat.updateBrowserReceipt(browserAttempt,{stage:'answer_observed',native_a
 await chat.completeAttempt(browserAttempt,'browser final','native-browser-session');
 
 const token=auth.issueRuntimeToken('runner','revoked-runner',60_000);
+const refreshedBrowser=auth.verifyRuntimeToken(auth.issueRuntimeToken('browser',browser.sub,60000))!;
+const recoveredBrowser=await chat.recoverOwnedAttempt(refreshedBrowser,browserClaim.attempt_id);
+assert.equal(recoveredBrowser.status,'completed');
+assert.equal(recoveredBrowser.turn.epoch,browserClaim.epoch);
+assert.equal((await chat.completeAttempt(attempt(recoveredBrowser.turn),'browser final','native-browser-session')).idempotent,true,'restart can acknowledge a committed result with a fresh capability');
+await assert.rejects(chat.recoverOwnedAttempt(other,browserClaim.attempt_id),/Foreign/);
 const parent=auth.verifyRuntimeToken(token)!;
 const descendant=auth.issueRuntimeToken('attempt',parent.sub,30_000,{parent_jti:parent.jti});
 assert(auth.revokeRuntimeToken(token));assert.equal(auth.verifyRuntimeToken(token),null);

@@ -1,5 +1,10 @@
 # Bridge implementation execution record
 
+## Current continuation — 2026-09-09 UTC+7
+
+See [native runtime checkpoint](BRIDGE_NATIVE_RUNTIME_20260909.md) for the current source and live Windows evidence. AppContainer filesystem denial and package-scoped WFP/proxy confinement now pass the documented real parent/subprocess and HTTPS probes. Administrator execution works. Runner service/recovery and v2 extension source are implemented, but production policy provisioning, native sign-in/model qualification, legacy coordination, browser installation and release E2E remain unfinished. **No production-ready or deployed-native claim is made.** Older contradictory statements below are historical.
+
+
 ## Current checkpoint — 2026-09-08 23:40 UTC+7
 
 Delivery: implementation checkpoint commit `5d3a98e344e39d309db91d61367f9b70ac6c6e07` is pushed on `codex/bridge-completion`. [Draft PR #27](https://github.com/machxanht/BridgeChatgpt/pull/27) is open and explicitly not qualified to merge/deploy. CI was in progress when this delivery record was written; local/native results below must not be mistaken for a GitHub CI result. Tracked source is committed; pre-existing untracked runtime notes/answer files are preserved and excluded from the commit.

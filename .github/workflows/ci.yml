@@ -34,10 +34,13 @@ jobs:
         run: npm run lint
       - name: Tests
         run: npm run test:isolated
-      - name: Compile Windows process lifetime primitive
+      - name: Compile Windows confinement primitives
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsJob.cs
+        run: |
+          Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsJob.cs
+          Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsAppContainer.cs
+          Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsNetworkPolicy.cs
       - name: Build
         run: npm run build
       - name: Package Bridge Wake extension

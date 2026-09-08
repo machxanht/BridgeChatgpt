@@ -6,6 +6,7 @@ import { verifyBrowserSession } from './browserSession.js';
 import { verifyToken } from './auth.js';
 import { recordRuntimeHeartbeat, runtimeAgentAvailable, runtimeSnapshot } from './runtimeStatus.js';
 import { runtimeIsDraining } from './runtimeLifecycle.js';
+import { recoverOwnedAttempt } from './chatRuntime.js';
 
 export const chatRouter=Router();
 export const runtimeRouter=Router();
@@ -93,6 +94,12 @@ runtimeRouter.post('/claim',async(req,res)=>{
     }while(true);
     res.status(204).end();
   }catch(err:any){res.status(status(err)).json({error:err.message});}
+});
+runtimeRouter.post('/recover',async(req,res)=>{
+  const token=runtimeBearer(req),claims=verifyRuntimeToken(token,'runner')||verifyRuntimeToken(token,'browser');
+  if(!claims){res.status(401).json({error:'Runtime credential required'});return;}
+  try{res.json(await recoverOwnedAttempt(claims,String(req.body?.attempt_id||'')));}
+  catch(err:any){res.status(status(err)).json({error:err.message});}
 });
 runtimeRouter.post('/cleanup',async(req,res)=>{
   const token=runtimeBearer(req),claims=verifyRuntimeToken(token,'runner')||verifyRuntimeToken(token,'browser');

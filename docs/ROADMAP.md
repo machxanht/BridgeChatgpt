@@ -1,5 +1,10 @@
 # Bridge Roadmap and Completion Matrix
 
+## Current continuation — 2026-09-09 UTC+7
+
+See [native runtime checkpoint](BRIDGE_NATIVE_RUNTIME_20260909.md) for the current source and live Windows evidence. AppContainer filesystem denial and package-scoped WFP/proxy confinement now pass the documented real parent/subprocess and HTTPS probes. Administrator execution works. Runner service/recovery and v2 extension source are implemented, but production policy provisioning, native sign-in/model qualification, legacy coordination, browser installation and release E2E remain unfinished. **No production-ready or deployed-native claim is made.** Older contradictory statements below are historical.
+
+
 ## Current completion gates — 2026-09-08 23:40 UTC+7
 
 The authoritative current 1–9 matrix is [BRIDGE_IMPLEMENTATION_STATUS.md](BRIDGE_IMPLEMENTATION_STATUS.md). Security/conversation/ownership/UI/native-contract work is implemented in part on `codex/bridge-completion`; **no phase 9 release qualification or native E2E completion is claimed**. Phase 2 has a measured filesystem isolation FAIL (restricted child reads/writes outside root), not a missing user authorization. Windows job descendant cleanup passes; provider sign-in and shell network isolation remain. Finish these gates before enabling the dispatcher or promoting. Historical “phases 3–9 not started” entries below are obsolete for source status and must not drive a rollback of the new work.
