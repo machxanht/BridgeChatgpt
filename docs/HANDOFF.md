@@ -2,6 +2,8 @@
 
 ## Active implementation checkpoint — 2026-09-08 23:40 UTC+7
 
+Implementation commit `5d3a98e344e39d309db91d61367f9b70ac6c6e07` is pushed, with [draft PR #27](https://github.com/machxanht/BridgeChatgpt/pull/27). The subsequent documentation commit records this delivery. No main merge or production deployment occurred. Verify PR CI separately; it does not replace the failing Windows/native gates.
+
 Work is on `codex/bridge-completion`, baseline/main `c352655c299d2c750cadbf5ee47642b843d8714c` verified with GitHub. The user authorized all nine phases and PC scope. Current source includes scoped auth, durable conversation/runtime APIs, fenced claims/leases, an active conversation-first UI, native adapter/outbox contracts and a Windows owned Job Object primitive. See [the current phase matrix and evidence](BRIDGE_IMPLEMENTATION_STATUS.md). Typecheck/build and isolated regression checkpoints pass; browser UI was tested using explicitly labelled local fixture data.
 
 **NOT READY FOR RELEASE.** Actual `BridgeAgent` child reads/writes a harmless file outside Bridge: required filesystem denial FAIL. Network policy is not enforced; isolated AGY identity requires native OAuth login. The available browser does not expose Sol 5.6. Replacement runtime dispatcher, unified legacy executor coordination, V2 extension transport and native A–L/fault/soak qualification remain unfinished. No deploy/merge has been performed. Do not infer native success from fixture tests or the Job Object's successful process cleanup.

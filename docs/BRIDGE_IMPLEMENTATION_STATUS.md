@@ -2,6 +2,8 @@
 
 ## Current checkpoint — 2026-09-08 23:40 UTC+7
 
+Delivery: implementation checkpoint commit `5d3a98e344e39d309db91d61367f9b70ac6c6e07` is pushed on `codex/bridge-completion`. [Draft PR #27](https://github.com/machxanht/BridgeChatgpt/pull/27) is open and explicitly not qualified to merge/deploy. CI was in progress when this delivery record was written; local/native results below must not be mistaken for a GitHub CI result. Tracked source is committed; pre-existing untracked runtime notes/answer files are preserved and excluded from the commit.
+
 This section supersedes the historical continuation below. The user authorized implementation of all nine phases and use of the PC. There is no outstanding scope-approval question. Work is on `codex/bridge-completion`, based on `c352655c299d2c750cadbf5ee47642b843d8714c`; live `git ls-remote origin refs/heads/main` confirmed that baseline during this checkpoint. **The nine-phase objective is NOT complete and this candidate is NOT qualified for production.**
 
 | Phase | Current evidence | Remaining release gate |
