@@ -1,5 +1,7 @@
 # Bridge Roadmap and Completion Matrix
 
+Post-login qualification (2026-09-09): native sign-ins and AGY exact model listing are proven. Native generation remains blocked by AGY internal localhost IPC and Codex profile canonicalization under confinement. Runtime presence during active turns and bounded proxy hostname diagnostics are tested. Directory metadata grants have a tested helper but production provisioning remains partial. Runner wiring, legacy arbitration, extension installation/DOM qualification, model E2E and release/soak gates remain open. See [current evidence](BRIDGE_NATIVE_RUNTIME_20260909.md).
+
 ## Current continuation — 2026-09-09 UTC+7
 
 See [native runtime checkpoint](BRIDGE_NATIVE_RUNTIME_20260909.md) for the current source and live Windows evidence. AppContainer filesystem denial and package-scoped WFP/proxy confinement now pass the documented real parent/subprocess and HTTPS probes. Administrator execution works. Runner service/recovery and v2 extension source are implemented, but production policy provisioning, native sign-in/model qualification, legacy coordination, browser installation and release E2E remain unfinished. **No production-ready or deployed-native claim is made.** Older contradictory statements below are historical.

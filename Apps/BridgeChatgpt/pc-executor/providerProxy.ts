@@ -47,7 +47,8 @@ export function clientHelloHost(data:Buffer):string|null {
   return null;
 }
 
-export async function startProviderProxy(allowedHosts:readonly string[],port=43892){
+export async function startProviderProxy(allowedHosts:readonly string[],port=43892,
+  observe?:(event:{host:string;allowed:boolean})=>void){
   const allowed=new Set(allowedHosts);
   if(!allowed.size||[...allowed].some(host=>!/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(host)))throw new Error('Explicit provider hostname allowlist required');
   const sockets=new Set<Socket>();
@@ -59,6 +60,8 @@ export async function startProviderProxy(allowedHosts:readonly string[],port=438
   server.on('connect',(req,connection,head)=>{
     const client=connection as Socket;
     const match=/^([a-z0-9.-]+):443$/.exec(req.url||'');
+    // Hostnames only: never record headers, credentials, paths, or TLS content.
+    if(match&&match[1].length<=253){try{observe?.({host:match[1],allowed:allowed.has(match[1])});}catch{ /* Diagnostics cannot change enforcement. */ }}
     if(!match||!allowed.has(match[1])||sockets.size>64){client.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;}
     const hostname=match[1];let chunks:Buffer[]=[],bytes=0,checking=false;
     client.setTimeout(10000,()=>client.destroy());

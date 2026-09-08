@@ -24,6 +24,14 @@ export function runtimeAgentAvailable(agent: BridgeAgentId): boolean {
   return [...heartbeats.values()].some(item => item.expires_at>now && item.agents.includes(agent));
 }
 
+/** A validated active attempt proves liveness, but cannot add model capabilities. */
+export function touchRuntimeHeartbeat(transport: string | undefined, subject: string) {
+  const current = heartbeats.get(`${transport}:${subject}`);
+  if (!current) return;
+  current.last_seen_at = new Date().toISOString();
+  current.expires_at = Date.now() + 45_000;
+}
+
 export function runtimeSnapshot() {
   const now=Date.now();
   for (const [key,item] of heartbeats) if(item.expires_at<=now) heartbeats.delete(key);

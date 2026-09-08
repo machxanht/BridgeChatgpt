@@ -41,6 +41,7 @@ jobs:
           Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsJob.cs
           Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsAppContainer.cs
           Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsNetworkPolicy.cs
+          Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsDirectoryMetadata.cs
       - name: Build
         run: npm run build
       - name: Package Bridge Wake extension

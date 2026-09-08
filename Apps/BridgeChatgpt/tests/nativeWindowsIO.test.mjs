@@ -22,5 +22,24 @@ if(process.platform!=='win32'){
   const observed=JSON.parse(fs.readFileSync(request.stdout,'utf8').replace(/^\uFEFF/,''));
   assert.equal(observed.first,first);assert.equal(observed.second,second);assert.equal(observed.stdin,input);
   assert.equal(JSON.parse(fs.readFileSync(request.result,'utf8').replace(/^\uFEFF/,'')).exit_code,0);
+  const metadataProbe=path.join(folder,'metadata.ps1');
+  fs.writeFileSync(metadataProbe,`param([string]$Source,[string]$Root)
+$ErrorActionPreference='Stop'
+$env:PSModulePath="$env:SystemRoot\\System32\\WindowsPowerShell\\v1.0\\Modules"
+Add-Type -Path $Source
+$sid='S-1-15-2-2031389295-489431135-2461900177-1913706768-3870177427-4052891927-2660065647'
+$before=(Get-Acl -LiteralPath (Join-Path $Root 'echo.ps1')).Sddl
+[Bridge.Native.DirectoryMetadata]::Grant($Root,$sid)
+$first=(Get-Acl -LiteralPath $Root).Sddl
+[Bridge.Native.DirectoryMetadata]::Grant($Root,$sid)
+$after=(Get-Acl -LiteralPath (Join-Path $Root 'echo.ps1')).Sddl
+if($before -ne $after){throw 'Metadata grant changed a child ACL'}
+if($first -ne (Get-Acl -LiteralPath $Root).Sddl){throw 'Metadata grant is not idempotent'}
+if(!$first.Contains('(A;;0x1200a8;;;'+$sid+')')){throw 'Expected non-inheritable metadata-only ACE missing'}
+Write-Output 'metadata PASS'
+`);
+  const metadata=execFileSync(shell,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',metadataProbe,
+    '-Source',path.resolve('Apps/BridgeChatgpt/pc-executor/WindowsDirectoryMetadata.cs'),'-Root',folder],{env,timeout:30000,windowsHide:true,encoding:'utf8'});
+  assert.match(metadata,/metadata PASS/);
   console.log('nativeWindowsIO.test.mjs: real Windows argv quoting and UTF-8 stdin/stdout PASS');
 }

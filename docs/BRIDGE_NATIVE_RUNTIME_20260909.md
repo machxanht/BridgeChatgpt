@@ -2,6 +2,25 @@
 
 This is the current source/PC checkpoint on `codex/bridge-completion`. It supersedes earlier statements that administrator execution is unavailable, that no v2 extension/service loop exists, or that only a Job Object was implemented. **This is not a production/native-model E2E completion report.**
 
+## Post-login qualification — 2026-09-09 01:20 UTC+7
+
+Both native sign-ins are complete. AGY's interactive UI reached its prompt under BridgeAgent with the included Google AI Pro account. A separate `agy models` process under BridgeAgent exited 0 and returned `gemini-3.8-flash-high`, `claude-sonnet-4-6`, and `claude-opus-4-6-thinking`. Evidence: `runtime/agent-tasks/agy-models-status.json` and `agy-models.txt`. Do not restart OAuth for the filesystem/network startup errors below.
+
+Actual headless attempts under BridgeAgent + AppContainer + OwnedJob fail **before model generation**:
+
+- AGY cannot listen on `127.0.0.1:0`: the installed blanket listen denial conflicts with native internal IPC. No proxy CONNECT was observed. Narrow internal IPC support must be designed and qualified; do not remove general localhost/network denial.
+- Codex cannot canonicalize `C:\Users\BridgeAgent\.codex`: Access Denied, including with an extended Windows path. A confined PowerShell metadata probe can inspect the specific profile directories, but Codex still cannot start.
+- Both owned launchers reported finished=true and cleanup_confirmed=true; native exit_code=1. Cleanup succeeded; no answer was generated.
+- Protected reports/drivers: `runtime/runner-control/agy-native-probe-report.json`, `codex-native-probe-report.json`, `agy-live-probe.mjs`, `codex-live-probe.mjs`. Native stderr: `runtime/agent-tasks/runner-io-probe/*-stderr.txt`. No controller token, operator credential copy, paid API or fallback model was used.
+
+Native profile grants were applied by their owner: package Modify/low integrity on BridgeAgent's `.gemini`, `.codex` and own Temp; non-inheritable RX on the native profile/AppData/Local ancestors; RX on the AGY release directory. Original descriptors: `runtime/runner-control/native-profile-owner-acl-before.json` and `native-profile-ancestor-acl-before.json`.
+
+Ancestor provisioning is **partial**. Backup: `runtime/runner-control/native-ancestor-metadata-before.json`. Latest inspection found the non-inheritable package metadata ACE `0x1200a8` on `C:\`, `C:\Users`, `E:\`, `E:\AI`; `E:\AI\Bridge` still matched its original descriptor. The Set-Acl approach was stopped: do not use it on drive roots because it can walk descendants. New `WindowsDirectoryMetadata.cs` uses a direct handle descriptor update, retaining existing ACEs and adding metadata/traverse rights only. Actual fixture tests verify exact rights, idempotence and unchanged child ACLs. Final root rollout has not succeeded; the last elevation request returned cancellation. Do not treat old result JSON as current OS proof.
+
+The existing parent/subprocess boundary probe was rerun after the grants: outside_read=false, outside_write=false, direct_connect=false, disallowed_loopback=false, can_listen=false, inside_write=true, proxy_connect=true. No qualification process remains active; network rules were not weakened.
+
+Source fixes: durable successful attempt heartbeats preserve an already advertised runtime's presence during long turns; stale attempts cannot refresh presence or add model capabilities. Proxy diagnostics expose only bounded hostnames and allowlist decisions, and diagnostic failures cannot change enforcement. All 30 isolated entrypoints passed (`runtime/completion-validation-suite-Qlw2T4`). The later directory-metadata Windows regression and production build also passed. Latest CI and deployment remain separate gates. No production update occurred.
+
 ## Implemented and measured
 
 - `runnerCore.ts`: durable-before-launch journal contract, lease/cancel handling, process-tree cleanup before completion, immutable outbox replay after lost acknowledgements, and an in-process fence when cleanup is unproven.

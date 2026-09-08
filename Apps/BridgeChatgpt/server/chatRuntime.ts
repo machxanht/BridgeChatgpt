@@ -4,6 +4,7 @@ import { getDb, getProject, runDurableTransaction } from './db.js';
 import { getWorkspaceRegistry } from './workspaceRegistry.js';
 import { getAgentRoute, type BridgeAgentId, type BridgeTransport } from './agentRegistry.js';
 import { issueRuntimeToken, type RuntimeClaims } from './runtimeAuth.js';
+import { touchRuntimeHeartbeat } from './runtimeStatus.js';
 
 export type TurnStatus = 'pending'|'working'|'completed'|'failed'|'cancelled';
 export interface CreateTurnInput {
@@ -241,7 +242,7 @@ function validateAttempt(d:Database,claims:RuntimeClaims){
 
 export async function heartbeatAttempt(claims:RuntimeClaims,nativeSessionId?:string|null){
   await ensureChatSchema();
-  return runDurableTransaction(d=>{
+  const result=await runDurableTransaction(d=>{
     const row=validateAttempt(d,claims),now=Date.now();
     if(row.status!=='working'||row.turn_status!=='working'||Date.parse(row.deadline_at)<=now||Date.parse(row.lease_expires_at)<=now)throw Object.assign(new Error('Attempt is no longer active'),{statusCode:409});
     const lease=new Date(Math.min(now+45_000,Date.parse(row.deadline_at))).toISOString(),updated=new Date(now).toISOString();
@@ -253,6 +254,8 @@ export async function heartbeatAttempt(claims:RuntimeClaims,nativeSessionId?:str
     addEvent(d,row.conversation_id,row.turn_id,'turn.heartbeat',{attempt_id:row.id,lease_expires_at:lease});
     return {ok:true,lease_expires_at:lease,deadline_at:row.deadline_at};
   });
+  touchRuntimeHeartbeat(claims.transport,claims.sub);
+  return result;
 }
 
 export async function completeAttempt(claims:RuntimeClaims,answer:string,nativeSessionId?:string|null){
