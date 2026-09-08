@@ -44,8 +44,19 @@ namespace Bridge.Native {
       return "\""+System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace(text,@"(\\*)""","$1$1\\\""),@"(\\+)$","$1$1")+"\"";
     }
     public static ContainerProcess Start(string name,string executable,string[] arguments,string cwd,string input,string output,string error) {
+      return StartCore(name,executable,arguments,cwd,input,output,error,IntPtr.Zero);
+    }
+    // Only the trusted authentication host uses its private console. Normal
+    // model execution keeps CREATE_NO_WINDOW and redirected stdin unchanged.
+    public static ContainerProcess StartAuthConsole(string name,string executable,string[] arguments,string cwd,string output,string error,IntPtr pseudoConsole) {
+      if(pseudoConsole==IntPtr.Zero)throw new ArgumentException("Pseudo console required");
+      return StartCore(name,executable,arguments,cwd,"CONIN$",output,error,pseudoConsole);
+    }
+    static ContainerProcess StartCore(string name,string executable,string[] arguments,string cwd,string input,string output,string error,IntPtr pseudoConsole) {
+      bool console=pseudoConsole!=IntPtr.Zero;
       ProfileName(name);
-      foreach(string file in new[]{executable,cwd,input,output,error})if(!System.IO.Path.IsPathRooted(file))throw new ArgumentException("Absolute paths required");
+      foreach(string file in new[]{executable,cwd,output,error})if(!System.IO.Path.IsPathRooted(file))throw new ArgumentException("Absolute paths required");
+      if(!console&&!System.IO.Path.IsPathRooted(input))throw new ArgumentException("Absolute input path required");
       IntPtr sid=IntPtr.Zero,attributes=IntPtr.Zero,capPtr=IntPtr.Zero;
       IntPtr stdin=IntPtr.Zero,stdout=IntPtr.Zero,stderr=IntPtr.Zero;
       ProcessInfo pi=new ProcessInfo();bool initialized=false;
@@ -54,17 +65,20 @@ namespace Bridge.Native {
         if(created==unchecked((int)0x800700B7))HResult(DeriveAppContainerSidFromAppContainerName(name,out sid));else HResult(created);
         var caps=new Capabilities();caps.sid=sid;
         capPtr=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Capabilities)));Marshal.StructureToPtr(caps,capPtr,false);
-        IntPtr size=IntPtr.Zero;InitializeProcThreadAttributeList(IntPtr.Zero,1,0,ref size);
-        attributes=Marshal.AllocHGlobal(size);Check(InitializeProcThreadAttributeList(attributes,1,0,ref size));initialized=true;
+        IntPtr size=IntPtr.Zero;InitializeProcThreadAttributeList(IntPtr.Zero,console?2:1,0,ref size);
+        attributes=Marshal.AllocHGlobal(size);Check(InitializeProcThreadAttributeList(attributes,console?2:1,0,ref size));initialized=true;
         Check(UpdateProcThreadAttribute(attributes,0,new IntPtr(0x20009),capPtr,new IntPtr(Marshal.SizeOf(typeof(Capabilities))),IntPtr.Zero,IntPtr.Zero));
+        if(console)Check(UpdateProcThreadAttribute(attributes,0,new IntPtr(0x20016),pseudoConsole,new IntPtr(IntPtr.Size),IntPtr.Zero,IntPtr.Zero));
         var sa=new SecurityAttributes();sa.length=Marshal.SizeOf(typeof(SecurityAttributes));sa.inherit=true;
-        stdin=CreateFile(input,0x80000000,1,ref sa,3,0x80,IntPtr.Zero);Check(stdin!=new IntPtr(-1));
-        stdout=CreateFile(output,0x40000000,1,ref sa,2,0x80,IntPtr.Zero);Check(stdout!=new IntPtr(-1));
-        stderr=CreateFile(error,0x40000000,1,ref sa,2,0x80,IntPtr.Zero);Check(stderr!=new IntPtr(-1));
+        if(!console){
+          stdin=CreateFile(input,0x80000000,1,ref sa,3,0x80,IntPtr.Zero);Check(stdin!=new IntPtr(-1));
+          stdout=CreateFile(output,0x40000000,1,ref sa,2,0x80,IntPtr.Zero);Check(stdout!=new IntPtr(-1));
+          stderr=CreateFile(error,0x40000000,1,ref sa,2,0x80,IntPtr.Zero);Check(stderr!=new IntPtr(-1));
+        }
         var startup=new StartupEx();startup.startup.cb=Marshal.SizeOf(typeof(StartupEx));startup.attributes=attributes;
-        startup.startup.flags=0x100;startup.startup.input=stdin;startup.startup.output=stdout;startup.startup.error=stderr;
+        startup.startup.flags=console?0u:0x100u;startup.startup.input=stdin;startup.startup.output=stdout;startup.startup.error=stderr;
         var command=new StringBuilder(Quote(executable));foreach(string arg in arguments)command.Append(" ").Append(Quote(arg));
-        Check(CreateProcess(executable,command,IntPtr.Zero,IntPtr.Zero,true,0x08080000,IntPtr.Zero,cwd,ref startup,out pi));
+        Check(CreateProcess(executable,command,IntPtr.Zero,IntPtr.Zero,!console,console?0x00080000u:0x08080000u,IntPtr.Zero,cwd,ref startup,out pi));
         return new ContainerProcess{process=pi.process,ProcessId=pi.pid};
       } finally {
         if(pi.thread!=IntPtr.Zero)CloseHandle(pi.thread);

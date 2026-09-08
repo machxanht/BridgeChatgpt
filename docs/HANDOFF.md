@@ -1,5 +1,9 @@
 # BridgeChatgpt Handoff
 
+## OAuth input correction — 2026-09-09 02:55 UTC+7
+
+The local Google form previously sent authorization codes to stdin, but AGY Windows print-mode authentication reads its controlling terminal. The user's repeated submissions timed out after 60 seconds. Authentication now uses a private ConPTY while retaining BridgeAgent, AppContainer and OwnedJob. An intentionally invalid code reached Google and returned `invalid_grant / Malformed auth code`. Stale-session, duplicate and foreign-origin submissions are rejected; code redaction/removal and job cleanup passed. The portal now shows the deadline and separate submitted/delivered/provider-error states. Refresh the existing local page before using one fresh Google code. Real authentication and fresh-process persistence remain unproven. See the native runtime checkpoint below.
+
 ## Current continuation — 2026-09-09 UTC+7
 
 Native Codex Sol and Astra now create a real file through apply_patch and read it via cmd inside BridgeAgent + AppContainer + OwnedJob. PowerShell still cannot initialize, so the Windows adapter supplies explicit native sandbox/approval configuration and a cmd instruction. Exit-zero responses with every file/command tool failed are rejected.

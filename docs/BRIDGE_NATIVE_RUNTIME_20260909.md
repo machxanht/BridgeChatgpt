@@ -1,5 +1,15 @@
 # Native runtime continuation — 2026-09-09 UTC+7
 
+## 02:55 UTC+7 — Windows OAuth input fixed; real login pending
+
+The user reported more than ten failed code submissions. The previous portal sent codes to a named stdin pipe; AGY only reported authentication timeout after 60 seconds. The earlier PIPE_OK diagnostic proved the pipe, not AGY's authentication input. The official [AGY changelog for 1.1.2](https://github.com/google-antigravity/antigravity-cli/blob/main/CHANGELOG.md) documents controlling-terminal input via CONIN$ on Windows.
+
+A private AllocConsole failed under BridgeAgent. A private ConPTY succeeds without attaching to the operator console. `WindowsAppContainer.StartAuthConsole` supplies the pseudoconsole attribute alongside the existing AppContainer capability; ordinary execution retains CREATE_NO_WINDOW and file redirection. The terminal host remains inside the owned Job Object. NativeAuthConsole bounds captured output and redacts the submitted code, including split output chunks; the helper removes the code file after delivery.
+
+Live receipt `runtime/runner-control/native-auth-input-proof.json`, timestamp `2026-09-08T19:55:21.060Z`: an intentionally invalid code reached Google and returned `invalid_grant / Malformed auth code`; stale-session, duplicate and foreign-origin requests were rejected; code redaction/removal and owned-job cleanup passed. **This proves input delivery, not successful real authentication.**
+
+The portal has per-attempt session IDs, separate submitted/delivered states, specific provider/timeout/launcher errors and an approximate 60-second countdown from the observed OAuth URL. The existing local URL is retained; the user must refresh the page. Local lint/build and PowerShell 5 compilation pass. Confined Google login and subsequent new-process persistence still need verification; no main merge or deployment.
+
 This is the current source/PC checkpoint on `codex/bridge-completion`. It supersedes earlier statements that administrator execution is unavailable, that no v2 extension/service loop exists, or that only a Job Object was implemented. **This is not a production/native-model E2E completion report.**
 
 ## Coding and internal IPC fixes — 2026-09-09 02:30 UTC+7

@@ -40,6 +40,7 @@ jobs:
         run: |
           Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsJob.cs
           Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsAppContainer.cs
+          Add-Type -Path Apps/BridgeChatgpt/pc-executor/diagnostics/NativeAuthConsole.cs
           Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsNetworkPolicy.cs
           Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsNetworkPolicyIpc.cs
           Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsDirectoryMetadata.cs

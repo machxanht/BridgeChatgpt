@@ -1,5 +1,9 @@
 # Bridge Roadmap and Completion Matrix
 
+## OAuth input correction — 2026-09-09 02:55 UTC+7
+
+DONE: replace the incorrect stdin code transport with private ConPTY authentication, verify an intentionally invalid code reaches Google, reject stale/duplicate/foreign-origin submissions, redact/remove submitted codes and confirm job cleanup. The portal now exposes the 60-second deadline and distinguishes received input from CLI delivery. PENDING: user refreshes the existing local form and completes one fresh Google login; verify actual authentication and new-process persistence. This does not complete the remaining production runner/extension/E2E gates.
+
 ## Current live gates — 2026-09-09 UTC+7
 
 - Proven: confined native Sol/Astra apply_patch + cmd readback; explicit native configuration; exit-zero/all-tools-failed rejection; same-package IPC plus host-proxy access with real parent/child negative network/filesystem checks and cleanup.
