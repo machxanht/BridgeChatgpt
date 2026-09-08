@@ -1,7 +1,8 @@
 import type { Task } from '../src/types.js';
+import { isFastChatTask } from '../src/chatMode.js';
 import { extractTaskBinding } from './taskBinding.js';
 
-export const TERMINAL_TASK_STATUSES = new Set(['completed', 'cancelled']);
+export const TERMINAL_TASK_STATUSES = new Set(['completed', 'cancelled', 'failed']);
 const CLAIMABLE_TASK_STATUSES = new Set(['pending', 'assigned']);
 
 export function isNonTerminalTask(task: Task): boolean {
@@ -17,7 +18,8 @@ export function taskCreatedOrder(a: Task, b: Task): number {
 export function exactTaskLaneKey(task: Task): string | null {
   const binding = extractTaskBinding(String(task.description || '')).binding;
   if (!binding?.agent_instance_id) return null;
-  return [task.assignee, binding.workspace_id, binding.project_id, binding.agent_instance_id].join(':');
+  const modelLane = isFastChatTask(task) ? (binding.model || 'default') : 'workflow';
+  return [task.assignee, binding.workspace_id, binding.project_id, binding.agent_instance_id, modelLane].join(':');
 }
 
 export function exactLaneBlocker(task: Task, tasks: Task[]): Task | null {
