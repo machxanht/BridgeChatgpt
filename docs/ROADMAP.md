@@ -1,5 +1,7 @@
 # Bridge Roadmap and Completion Matrix
 
+Latest live gate: volume-query setup applied; confined Codex Sol/Astra simple chat PASS. Coding file/command tools FAIL under the nested Windows sandbox; AGY IPC, production transport wiring and full E2E remain open. This supersedes the earlier statement that Codex cannot start. See [native chat and tool evidence](BRIDGE_NATIVE_RUNTIME_20260909.md).
+
 Latest Codex diagnosis: ancestor setup applied successfully; remaining canonicalization failure is DOS/GUID volume-name translation inside AppContainer. A narrow volume-query permission candidate is prepared but awaits administrator application and live qualification. See [diagnostic evidence](BRIDGE_NATIVE_RUNTIME_20260909.md).
 
 Post-login qualification (2026-09-09): native sign-ins and AGY exact model listing are proven. Native generation remains blocked by AGY internal localhost IPC and Codex profile canonicalization under confinement. Runtime presence during active turns and bounded proxy hostname diagnostics are tested. Directory metadata grants have a tested helper but production provisioning remains partial. Runner wiring, legacy arbitration, extension installation/DOM qualification, model E2E and release/soak gates remain open. See [current evidence](BRIDGE_NATIVE_RUNTIME_20260909.md).

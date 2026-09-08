@@ -2,6 +2,16 @@
 
 This is the current source/PC checkpoint on `codex/bridge-completion`. It supersedes earlier statements that administrator execution is unavailable, that no v2 extension/service loop exists, or that only a Job Object was implemented. **This is not a production/native-model E2E completion report.**
 
+## First successful confined native chat — 2026-09-09 01:33 UTC+7
+
+The user applied `install-native-path-query.ps1`; the dated result reports installed=true at `2026-09-08T18:32:56.0813362Z`. This supersedes the unapplied candidate status below. Codex now passes CODEX_HOME canonicalization. Its next Git-directory check was satisfied by initializing a separate empty repository in the existing isolated `runtime/agent-tasks/runner-io-probe` directory.
+
+Actual included-account native chat under BridgeAgent + AppContainer + OwnedJob + WFP/provider proxy succeeded twice: explicit CLI model selection `gpt-5.6-sol` and `gpt-6-astra`, each returned `BRIDGE_NATIVE_OK`, native exit_code=0, cleanup_confirmed=true. Preserved evidence: `runtime/runner-control/codex-native-first-success.json`, `astra-native-probe-report.json`; corresponding request manifests are in `runner-releases/runner-v2-development`. These prove requests and real answers through the selected CLI routes, not a separate provider-side model identity receipt or Bridge browser E2E. NDJSON contains thread/turn receipts but no independently signed model identity. `chatgpt.com` and `ab.chatgpt.com` were allowed; the observed `*.oaiusercontent.com` hosts were denied and were not needed for these simple answers.
+
+Coding qualification is still FAIL. The original adapter invocation and a diagnostic with sandbox flags after `exec` both reported read-only without a file tool execution. A later diagnostic explicitly selected the documented `windows.sandbox="unelevated"` **inside the unchanged outer AppContainer boundary**. This enabled native file-tool attempts, but file writes failed and command startup returned `Access is denied (os error 5)`. The requested `bridge-native-write-proof.txt` does not exist. The process returned an honest inability answer, not task success. Evidence: `runtime/runner-control/codex-tools-probe-report.json`, `runner-io-probe/codex-tools-stdout.ndjson`, `codex-tools-stderr.txt`. The adapter source was not changed based on this unsuccessful diagnostic.
+
+Parent/subprocess negative boundary probes still pass after the volume-query grants: outside read/write denied, arbitrary direct/localhost network denied, scoped proxy and intended directory write allowed. All qualification processes ended with cleanup receipts; no proxy or coding probe is left running. Remaining immediate issues: native coding/tool launch in the nested Windows boundary, AGY internal localhost IPC, and the previously documented production runner/extension/release gates. No deploy or full E2E claim.
+
 ## Canonicalization diagnosis after manual administrator setup
 
 The user ran the direct ancestor metadata installer successfully at `2026-09-08T18:27:20.0981599Z`; `native-ancestor-metadata-result.json` now says installed=true. This supersedes the partial-rollout status below. Codex was retried and still failed before generation.

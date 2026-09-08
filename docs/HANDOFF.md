@@ -2,6 +2,8 @@
 
 ## Current continuation — 2026-09-09 UTC+7
 
+Latest: the user applied volume-query permissions successfully. Codex canonicalization is fixed; real confined chat returned `BRIDGE_NATIVE_OK` for both explicit Sol and Astra CLI routes with exit 0 and cleanup confirmed. Coding remains unqualified: file writes and command startup fail inside the nested native Windows sandbox. AGY localhost IPC remains blocked. See [first native chat evidence](BRIDGE_NATIVE_RUNTIME_20260909.md). Do not ask for either completed administrator script or OAuth again without a new failure.
+
 Manual ancestor setup now succeeded, but Codex still fails. A confined Win32 probe isolates DOS/GUID volume-name translation denial while NT-name translation and opening the profile work. A package-only mount-manager/Object Manager query installer is prepared, not yet applied or qualified. Read the newest [canonicalization diagnosis](BRIDGE_NATIVE_RUNTIME_20260909.md) before proposing further directory grants or another OAuth login.
 
 Post-login update: both native sign-ins are complete and AGY `models` confirms all three requested IDs under BridgeAgent. Confined headless startup still fails: AGY needs an internal localhost listener blocked by current policy; Codex fails CODEX_HOME canonicalization. The [post-login checkpoint](BRIDGE_NATIVE_RUNTIME_20260909.md) records ACL changes/backups, failed-start/clean-shutdown evidence and regression results. No native final answer, E2E completion, merge or deployment is claimed. Do not restart OAuth for these startup errors.
