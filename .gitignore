@@ -30,6 +30,20 @@ data/executors.json.*.tmp
 data/executor-auth.json
 data/executor-auth.json.*.tmp
 runtime/bridge-bus/outbox/
+data/*.sqlite.*
+data/runtime-revocations.json*
+runtime/runner-control/
+runtime/runner-releases/
+runtime/agent-runs/
+runtime/agent-tasks/
+runtime/completion-validation-*/
+
+# Isolated Phase 2 validation copies, logs and local harness artifacts.
+runtime/phase2-validation-*/
+runtime/phase2-smoke-*/
+runtime/phase2-validation-latest.txt
+runtime/phase2-validate.mjs
+runtime/phase2-smoke.mjs
 
 # Local browser profile used by Bridge Wake on the PC
 .bridge-browser-profile/
@@ -39,3 +53,4 @@ Apps/BridgeChatgpt/android-wake/.gradle/
 Apps/BridgeChatgpt/android-wake/app/build/
 Apps/BridgeChatgpt/android-wake/build/
 Apps/BridgeChatgpt/android-wake/bridge-dev.keystore
+runtime/chat-ui-fixture.mjs

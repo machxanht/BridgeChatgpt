@@ -1,5 +1,15 @@
 # Bridge Roadmap and Completion Matrix
 
+## Current completion gates — 2026-09-08 23:40 UTC+7
+
+The authoritative current 1–9 matrix is [BRIDGE_IMPLEMENTATION_STATUS.md](BRIDGE_IMPLEMENTATION_STATUS.md). Security/conversation/ownership/UI/native-contract work is implemented in part on `codex/bridge-completion`; **no phase 9 release qualification or native E2E completion is claimed**. Phase 2 has a measured filesystem isolation FAIL (restricted child reads/writes outside root), not a missing user authorization. Windows job descendant cleanup passes; provider sign-in and shell network isolation remain. Finish these gates before enabling the dispatcher or promoting. Historical “phases 3–9 not started” entries below are obsolete for source status and must not drive a rollback of the new work.
+
+## Master completion plan execution — 2026-09-08
+
+13:09 UTC continuation: Windows Phase 2 setup is explicitly authorized but cannot be applied by the current non-administrator process token. Restricted account is absent; no OS mutation occurred. Required next gate: administrator-capable execution, scoped setup with saved ACL/policy rollback, then real-child negative proofs. Current lint PASS; GitHub main/local HEAD verified at `c352655c299d2c750cadbf5ee47642b843d8714c`. Phases 3–9 remain gated.
+
+Phase 2: **partial / blocked**, browser session and fail-closed auth implemented and locally validated; Windows restricted execution setup/proof and runner/extension/attempt-scoped identities outstanding. Legacy CLI startup is quarantined with exit 78; no running process was changed. Phases 3–9: **not started**, dependencies not met. No new live E2E PASS. See [BRIDGE_IMPLEMENTATION_STATUS.md](BRIDGE_IMPLEMENTATION_STATUS.md) for exact evidence, limitations and continuation; historical statuses below are not evidence of current master-plan completion.
+
 Status legend:
 
 - ✅ PASS / proven

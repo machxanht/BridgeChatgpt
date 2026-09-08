@@ -329,7 +329,7 @@ async function runAllTests() {
     assert.strictEqual(verifyToken({ headers: { 'x-bridge-token': 'secret_test_token_123' }, query: {} } as any), true);
 
     // 3. Query param token
-    assert.strictEqual(verifyToken({ headers: {}, query: { token: 'secret_test_token_123' } } as any), true);
+    assert.strictEqual(verifyToken({ headers: {}, query: { token: 'secret_test_token_123' } } as any), false);
 
     // 4. REST requireAuth middleware mock
     let nextCalled = false;

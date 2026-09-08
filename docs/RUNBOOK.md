@@ -1,5 +1,15 @@
 # Bridge Operations Runbook
 
+## Local Phase 2 auth checkpoint (not deployed)
+
+Before eventual promotion, configure `BRIDGE_PUBLIC_ORIGIN` to the exact external HTTPS origin (no trailing slash/path) and `BRIDGE_BROWSER_PASSWORD` to a separate random credential of at least 32 characters. Do not reuse `BRIDGE_MCP_TOKEN` as the browser password. Do not write either credential into source, logs, documentation or browser storage. Keep existing machine pairing; no per-project re-pairing is needed.
+
+The dashboard signs in through `/api/auth/login` and uses a Secure, HttpOnly, SameSite=Strict host-only cookie. HTTPS is required even for local interactive sign-in; no insecure-cookie fallback is implemented. API tests manually transport the cookie over an isolated loopback test connection, which does not prove actual browser cookie behavior. Mutations need the returned CSRF header and exact Origin. Sessions expire after eight hours and are revoked on logout, server restart, or password/origin rotation. Restart prompts reauthentication; sessions are intentionally not persisted.
+
+`BRIDGE_EXTENSION_ORIGINS` is an optional comma-separated list of exact approved extension origins for CORS, with no wildcard. It grants no authentication or task capability. Protocol-v2 extension/scoped runner/attempt credentials remain unimplemented. URL tokens and unauthenticated development mode are no longer accepted by the changed auth boundaries. Recover bad auth configuration by fixing configuration; do not restore the header bypass.
+
+The legacy CLI worker now exits 78 before reading credentials or claiming work. Its replacement requires [Windows boundary setup](BRIDGE_WINDOWS_BOUNDARY_SETUP.md) and remaining Phase 2–5 implementation. Do not restart or promote it as a working replacement. No existing process was stopped. Parent review/push/deploy is required; this session does none of those operations.
+
 This runbook is for normal operation, deployment, recovery after PC power loss, and handoff to another agent.
 
 ## 0. Cost/quota gate — mandatory
@@ -212,3 +222,10 @@ Stop expanding the investigation. Search the current repo for an existing implem
 ## 12. No-secret / no-surprise-spend rule
 
 Runbooks and handoff docs may name configuration variables and service IDs, but must never contain raw authentication secrets. An available API key or connected service is not authorization to consume paid quota. Explicit prior user approval is required before any paid/quota API/AI-Agent use.
+# Conversation runtime candidate — 2026-09-08
+
+The `codex/bridge-completion` candidate is not deployed/qualified. Active UI now uses `/api/chat` conversations and SSE. Keep `BRIDGE_MCP_TOKEN`, independent `BRIDGE_BROWSER_PASSWORD` (at least 32 characters), and exact HTTPS `BRIDGE_PUBLIC_ORIGIN` configured before promotion; `/ready` returns 503 for missing configuration or draining. Runtime subject/attempt grants have bounded lifetimes; revocations persist in `data/runtime-revocations.json` and revoke descendant attempt capabilities. Back up that file with `data/bridge.sqlite`; do not restore one independently without considering credential revocation.
+
+Run `npm run lint`, `npm run test:isolated`, `npm run build`. Isolated test runner writes only fresh fixture state under runtime. Do not run the old ad-hoc `runtime/phase2-validate.mjs`, which edits source before testing. Native adapter/outbox tests are synthetic and do not authorize enabling CLI generation.
+
+Windows probes: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File Apps/BridgeChatgpt/pc-executor/windows-job-probe.ps1`; `native-capability-probe.ps1` uses the same owned job with a deadline. These are process-specific policies for repository scripts, not a machine execution-policy change. Current filesystem/network gates fail; keep the legacy worker disabled. Consult [current phase evidence](BRIDGE_IMPLEMENTATION_STATUS.md) before promotion. SIGTERM refuses new claims/turns and closes streams so clients reconnect; attempts/locks survive and require real owner cleanup, not elapsed-time replay.

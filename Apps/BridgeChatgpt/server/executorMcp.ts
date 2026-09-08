@@ -98,7 +98,7 @@ function executorTokenAllowed(req: Request) {
   const mainToken = String(process.env.BRIDGE_MCP_TOKEN || '').trim();
   const configured = String(process.env.BRIDGE_EXECUTOR_TOKEN || '').trim();
   if (mainToken && verifyToken(req)) return true;
-  if (!mainToken && !configured) return true;
+  if (!mainToken && !configured) return false;
   if (!configured) return false;
   const explicit = req.headers['x-bridge-executor-token'];
   if (typeof explicit === 'string' && explicit === configured) return true;

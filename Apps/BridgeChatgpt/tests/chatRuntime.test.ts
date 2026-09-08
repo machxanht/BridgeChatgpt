@@ -1,0 +1,104 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+
+// Dynamic imports after chdir: this suite must never open the operator's DB.
+const root=process.cwd();
+fs.mkdirSync(path.join(root,'runtime'),{recursive:true});
+const fixture=fs.mkdtempSync(path.join(root,'runtime/completion-validation-chat-'));
+process.chdir(fixture);
+process.env.BRIDGE_MCP_TOKEN='test-only-controller-secret-at-least-32';
+const db=await import('../server/db.js');
+const chat=await import('../server/chatRuntime.js');
+const auth=await import('../server/runtimeAuth.js');
+await db.initDatabase();
+const project=await db.getProject();
+const registry=await import('../server/workspaceRegistry.js');
+const workspace=(await registry.getWorkspaceRegistry(project)).workspaces[0];
+const input=(agent='codex')=>({workspace_id:workspace.workspace_id,project_id:workspace.project_id,agent_id:agent as any,client_message_id:randomUUID(),content:'Reply to the integration fixture'});
+const runner=auth.verifyRuntimeToken(auth.issueRuntimeToken('runner','test-runner',60_000),'runner')!;
+const other=auth.verifyRuntimeToken(auth.issueRuntimeToken('runner','other-runner',60_000),'runner')!;
+const attempt=(claim:any)=>auth.verifyRuntimeToken(claim.attempt_token,'attempt')!;
+
+const failedWrite=input();
+await chat.ensureChatSchema();
+const originalRename=fs.renameSync;
+try {
+  fs.renameSync=((source:any,destination:any)=>{
+    if(String(destination).endsWith('bridge.sqlite'))throw new Error('fixture_disk_error');
+    return originalRename(source,destination);
+  }) as typeof fs.renameSync;
+  await assert.rejects(chat.createTurn(failedWrite),/fixture_disk_error/);
+} finally {fs.renameSync=originalRename;}
+const recoveredWrite=await chat.createTurn(failedWrite);
+assert.equal(recoveredWrite.duplicate,false,'failed persist did not acknowledge or leave an in-memory ghost');
+await chat.cancelTurn(recoveredWrite.turn.id);
+
+const first=input();
+const [a,b]=await Promise.all([chat.createTurn(first),chat.createTurn(first)]);
+assert.equal(a.turn.id,b.turn.id);
+assert.equal((await chat.getConversation(a.conversation.id))!.messages.length,1);
+await assert.rejects(chat.createTurn({...first,content:'changed'}),/conflict/);
+await assert.rejects(chat.createTurn({...input(),project_id:'foreign'}),/Unknown workspace/);
+const second=await chat.createTurn(input('astra'));
+const claimRequest=randomUUID();
+const contenders=await Promise.all([chat.claimNextTurn(runner,['codex'],claimRequest),chat.claimNextTurn(other,['codex'],claimRequest)]);
+assert.equal(contenders.filter(Boolean).length,1);
+const claim=contenders.find(Boolean)!;
+const winningRuntime=contenders[0]?runner:other;
+assert.equal((await chat.claimNextTurn(winningRuntime,['codex'],claimRequest))!.attempt_id,claim.attempt_id,'lost claim response can be recovered without rerunning');
+assert.equal(await chat.claimNextTurn(other,['astra']),null,'shared checkout write lock spans model lanes');
+await assert.rejects(db.updateTask(a.turn.task_id,{status:'completed',result:'bypass'}),/attempt capability/);
+await assert.rejects(chat.completeAttempt(attempt(claim),''),/non-empty/);
+const completed=await chat.completeAttempt(attempt(claim),'fixture final');
+assert.equal((await chat.completeAttempt(attempt(claim),'fixture final')).idempotent,true);
+await assert.rejects(chat.completeAttempt(attempt(claim),'other final'),/different result/);
+assert.equal((await chat.getConversation(a.conversation.id))!.messages.filter(m=>m.role==='assistant').length,1);
+assert(completed.hash);
+
+const next=await chat.claimNextTurn(other,['astra']);assert(next);
+await chat.cancelTurn(second.turn.id);
+await chat.createTurn(input());
+assert.equal(await chat.claimNextTurn(runner,['codex']),null,'cancel must retain fence until child exits');
+await assert.rejects(chat.completeAttempt(attempt(next),'late'),/not active/);
+await assert.rejects(chat.acknowledgeCleanup(runner,next.attempt_id),/Foreign/);
+await chat.acknowledgeCleanup(other,next.attempt_id);
+const stale=await chat.claimNextTurn(runner,['codex']);assert(stale);
+await db.runDurableTransaction(d=>d.run("UPDATE chat_attempts SET lease_expires_at='2000-01-01T00:00:00.000Z' WHERE id=?",[stale.attempt_id]));
+await assert.rejects(chat.heartbeatAttempt(attempt(stale)),/no longer active/);
+await assert.rejects(chat.completeAttempt(attempt(stale),'late'),/not active/);
+await chat.recoverExpiredTurns();
+await chat.createTurn(input('astra'));
+assert.equal(await chat.claimNextTurn(other,['astra']),null,'expiry is not process cleanup');
+await chat.acknowledgeCleanup(runner,stale.attempt_id);
+const last=await chat.claimNextTurn(other,['astra']);assert(last);
+await assert.rejects(chat.updateBrowserReceipt(attempt(last),{stage:'sent'}),/Browser capability/);
+await chat.failAttempt(attempt(last),'test_failure');
+await chat.acknowledgeCleanup(other,last.attempt_id);
+
+await chat.createTurn(input('chatgpt'));
+const browser=auth.verifyRuntimeToken(auth.issueRuntimeToken('browser','fixture-browser',60_000))!;
+const browserClaim=await chat.claimNextTurn(browser,['chatgpt']);assert(browserClaim);
+const browserAttempt=attempt(browserClaim);
+await assert.rejects(chat.completeAttempt(browserAttempt,'browser final','native-browser-session'),/native message receipts/);
+await assert.rejects(chat.updateBrowserReceipt(browserAttempt,{stage:'sent',native_user_id:'user-fixture'}),/send protocol/);
+for(const stage of ['claimed','preparing','send_started'])await chat.updateBrowserReceipt(browserAttempt,{stage});
+await chat.updateBrowserReceipt(browserAttempt,{stage:'sent',native_user_id:'user-fixture',native_session_id:'native-browser-session'});
+await assert.rejects(chat.updateBrowserReceipt(browserAttempt,{stage:'sent',native_user_id:'different-user'}),/identity cannot change/);
+await chat.updateBrowserReceipt(browserAttempt,{stage:'answer_observed',native_assistant_id:'assistant-fixture',answer_hash:createHash('sha256').update('browser final').digest('hex')});
+await chat.completeAttempt(browserAttempt,'browser final','native-browser-session');
+
+const token=auth.issueRuntimeToken('runner','revoked-runner',60_000);
+const parent=auth.verifyRuntimeToken(token)!;
+const descendant=auth.issueRuntimeToken('attempt',parent.sub,30_000,{parent_jti:parent.jti});
+assert(auth.revokeRuntimeToken(token));assert.equal(auth.verifyRuntimeToken(token),null);
+assert.equal(auth.verifyRuntimeToken(descendant),null,'parent revocation also revokes attempt capabilities');
+assert(fs.existsSync(path.join(fixture,'data/runtime-revocations.json')));
+assert.equal(auth.verifyRuntimeToken('bad.input'),null);
+const env=auth.cleanChildEnv({PATH:'ok',CODEX_API_KEY:'secret',AGY_SECRET:'secret',BRIDGE_MCP_TOKEN:'secret'});
+assert.deepEqual(env,{PATH:'ok'});
+process.env.BRIDGE_MCP_TOKEN='';
+assert.equal(auth.verifyRuntimeToken(token),null,'missing auth config fails closed without throwing');
+process.chdir(root);
+console.log('chatRuntime: atomic create, routing, result idempotency, cancellation/expiry fencing, token persistence PASS');

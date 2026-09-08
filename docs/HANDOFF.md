@@ -1,5 +1,23 @@
 # BridgeChatgpt Handoff
 
+## Active implementation checkpoint — 2026-09-08 23:40 UTC+7
+
+Work is on `codex/bridge-completion`, baseline/main `c352655c299d2c750cadbf5ee47642b843d8714c` verified with GitHub. The user authorized all nine phases and PC scope. Current source includes scoped auth, durable conversation/runtime APIs, fenced claims/leases, an active conversation-first UI, native adapter/outbox contracts and a Windows owned Job Object primitive. See [the current phase matrix and evidence](BRIDGE_IMPLEMENTATION_STATUS.md). Typecheck/build and isolated regression checkpoints pass; browser UI was tested using explicitly labelled local fixture data.
+
+**NOT READY FOR RELEASE.** Actual `BridgeAgent` child reads/writes a harmless file outside Bridge: required filesystem denial FAIL. Network policy is not enforced; isolated AGY identity requires native OAuth login. The available browser does not expose Sol 5.6. Replacement runtime dispatcher, unified legacy executor coordination, V2 extension transport and native A–L/fault/soak qualification remain unfinished. No deploy/merge has been performed. Do not infer native success from fixture tests or the Job Object's successful process cleanup.
+
+The historical Phase 2 notes below are superseded: account `BridgeAgent` now exists, Git is writable, scoped tokens and later-phase source work exist. Do not ask the user to reauthorize PC scope. Do not enable the quarantined legacy worker as a shortcut.
+
+## Local Phase 2 security checkpoint — 2026-09-08
+
+Continuation at 13:09 UTC: narrow Windows account/ACL/process/network setup and negative tests are now explicitly authorized. Current execution token is not administrator-capable; `BridgeAgentRestricted` is absent. This is a Windows elevation/administrator execution blocker, not missing user scope approval. No system changes were applied. Local HEAD and live `git ls-remote` main both match `c352655c299d2c750cadbf5ee47642b843d8714c`; current lint PASS. Baseline evidence: `runtime/phase2-admin-preflight-20260908/evidence.json`. Resume Phase 2 with an administrator-capable execution context; do not ask the user to reauthorize the same narrow scope. No commit/deploy or new E2E proof.
+
+Current implementation work is recorded in [BRIDGE_IMPLEMENTATION_STATUS.md](BRIDGE_IMPLEMENTATION_STATUS.md), which supersedes older source-state assumptions below. Browser auth now requires a real secure session or controller token; forged browser headers and missing-token open modes are removed. The legacy CLI worker exits 78 before bootstrap; it is not a replacement runner and an already-running process is unchanged. Sol remains browser transport and legacy wake remains disabled.
+
+Phase 2 is PARTIAL/BLOCKED on the restricted Windows identity/ACL/network capability gate, not complete. The concrete scope and rollback manifest is [BRIDGE_WINDOWS_BOUNDARY_SETUP.md](BRIDGE_WINDOWS_BOUNDARY_SETUP.md). Runner/extension/attempt credentials are still outstanding. Phases 3–9 have not started. Local lint/build and isolated test entrypoints pass; standard tsx execution is blocked by the tool sandbox's os.userInfo failure. No push, deploy, native generation or live E2E was performed. Do not promote without finishing the missing gates and configuring the new browser sign-in variables in RUNBOOK.
+
+The local commit attempt was blocked by `.git/index.lock: Permission denied`; no new commit exists. All checkpoint changes remain in the working tree for the parent to review/commit in a Git-writable session. See the execution record for test artifacts and the intended commit message.
+
 > Primary replacement-session document. Read this after `START_HERE.md`. Update it after every substantial architecture, deployment, security, cost/quota, or live-state change.
 
 ## Snapshot
