@@ -2,6 +2,8 @@
 
 ## Active runner installation work — 2026-09-09
 
+Validation passed (31 isolated suites, typecheck, app/runner builds, PowerShell syntax). Automatic tool review rejected the elevated installer with `blocked by policy`; installation/live service/E2E remain pending. Do not loop on alternate elevation methods or consume native model quota diagnosing this rejection.
+
 Implemented for validation: bundled runner entrypoint, pinned configuration and native/release hashes, OS WFP/access checks, per-attempt output directory preparation, protected credential loading and hidden scheduled-task installation. First configuration binds one explicit project/workspace; general workspace lifecycle remains unfinished. Next: install, verify the actual service, configure the candidate control plane and prove a real send/result/resume path. Avoid repeated native generations until that path is ready.
 
 ## Google/native chat gate passed — 2026-09-09 03:07 UTC+7
