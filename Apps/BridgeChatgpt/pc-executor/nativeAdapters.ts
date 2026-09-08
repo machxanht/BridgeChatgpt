@@ -25,11 +25,17 @@ export function buildNativeLaunch(input: NativeRequest): LaunchSpec {
     args: ['--sandbox', '--model', route.native_model, '--add-dir', input.cwd, '--input-format', 'stream-json', '--output-format', 'stream-json', ...(nativeSession ? ['--conversation', nativeSession] : [])],
     stdin: JSON.stringify({ event: 'user', message: { content: input.content } }) + '\n',
   };
-  // Global sandbox/cwd precede the subcommand, including exec resume, whose
-  // subcommand parser does not accept exec's -C/--sandbox options.
+  // Config overrides also reach `exec resume`; its parser does not accept
+  // exec's sandbox/cwd flags. The nested Windows backend must be explicit:
+  // the default can otherwise expose only a read-only tool environment.
+  const windows = process.platform === 'win32' ? [
+    '-c', 'windows.sandbox="unelevated"',
+    '-c', 'windows.sandbox_private_desktop=false',
+    '-c', `developer_instructions=${JSON.stringify('Use cmd.exe explicitly for shell commands and use cmd syntax. Use the native apply_patch tool for file edits. PowerShell cannot initialize inside this runner\'s nested Windows sandbox.')}`,
+  ] : [];
   return {
     executable: input.executable, cwd: input.cwd, outputFile: input.outputFile,
-    args: ['--sandbox', 'workspace-write', '-C', input.cwd, 'exec', ...(nativeSession ? ['resume', nativeSession] : []), '-m', route.native_model, '--json', '-o', input.outputFile, '-'],
+    args: ['-c', 'sandbox_mode="workspace-write"', '-c', 'approval_policy="never"', ...windows, '-C', input.cwd, 'exec', ...(nativeSession ? ['resume', nativeSession] : []), '-m', route.native_model, '--json', '-o', input.outputFile, '-'],
     stdin: input.content + '\n',
   };
 }
@@ -42,6 +48,8 @@ export class NativeTranscript {
   private init: any = null;
   private sessionId: string | null = null;
   private blocked = false;
+  private completedTools = 0;
+  private successfulTools = 0;
   constructor(private agentId: BridgeAgentId, private cwd: string, private expectedSession?: string | null) {}
   push(chunk: string) {
     this.bytes += Buffer.byteLength(chunk);
@@ -72,6 +80,10 @@ export class NativeTranscript {
     } else {
       if (event.type === 'thread.started') { if (this.sessionId) fail('duplicate_init', 'Native stream opened more than once'); this.sessionId = session(event.thread_id); }
       if (event.type === 'error' || event.type === 'turn.failed') this.blocked = true;
+      if (event.type === 'item.completed' && ['file_change', 'command_execution'].includes(event.item?.type)) {
+        this.completedTools++;
+        if (event.item.status === 'completed' && (event.item.type !== 'command_execution' || event.item.exit_code === 0)) this.successfulTools++;
+      }
       if (event.type === 'turn.completed') { if (this.terminal) fail('duplicate_final', 'Native stream returned more than one result'); this.terminal = event; }
     }
   }
@@ -79,6 +91,7 @@ export class NativeTranscript {
     if (this.buffer.trim()) { this.event(this.buffer); this.buffer = ''; }
     if (exitCode !== 0) return fail('process_exit', `Native process exited with ${exitCode ?? 'signal'}`);
     if (this.blocked) return fail('native_failure', 'Native execution reported an error or denied permission');
+    if (this.completedTools > 0 && this.successfulTools === 0) return fail('native_tool_failure', 'Every native file/command tool failed; a final answer is not proof of task completion');
     if (!this.terminal || !this.sessionId) return fail('incomplete_output', 'Native execution has no terminal result/session receipt');
     if (this.expectedSession && this.sessionId !== this.expectedSession) return fail('session_mismatch', 'Native runtime resumed a different conversation');
     const route = getAgentRoute(this.agentId);

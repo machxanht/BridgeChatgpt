@@ -13,6 +13,18 @@ assert.equal(JSON.parse(spec.stdin).message.content,malicious);
 assert.throws(()=>buildNativeLaunch({agentId:'chatgpt',cwd,content:'hi',outputFile:path.join(cwd,'final.txt'),executable:path.join(cwd,'codex.cmd')}),/browser/);
 const codex=buildNativeLaunch({agentId:'astra',cwd,content:malicious,sessionId,outputFile:path.join(cwd,'final.txt'),executable:path.join(cwd,'codex.cmd')});
 assert(codex.args.includes('gpt-6-astra'));assert(codex.args.includes(sessionId));assert.equal(codex.args.at(-1),'-');assert(!codex.args.includes('--last'));
+assert(codex.args.includes('sandbox_mode="workspace-write"'));
+assert(codex.args.indexOf('sandbox_mode="workspace-write"')<codex.args.indexOf('exec'),'resume receives global permission config');
+assert(codex.args.includes('approval_policy="never"'),'headless tools cannot request an unsandboxed retry');
+if(process.platform==='win32')assert(codex.args.includes('windows.sandbox="unelevated"'));
+const failedTools=[
+  {type:'thread.started',thread_id:sessionId},
+  {type:'item.completed',item:{type:'file_change',status:'failed'}},
+  {type:'item.completed',item:{type:'command_execution',status:'failed',exit_code:1}},
+];
+const codexTranscript=(events:any[])=>{const p=new NativeTranscript('codex',cwd);p.push(events.map(event=>JSON.stringify(event)).join('\n')+'\n');return p;};
+assert.throws(()=>codexTranscript([...failedTools,{type:'turn.completed'}]).finish(0,'I could not create the file.'),/Every native/,'exit zero plus an inability answer must not hide total tool failure');
+assert.equal(codexTranscript([...failedTools,{type:'item.completed',item:{type:'command_execution',status:'completed',exit_code:0}},{type:'turn.completed'}]).finish(0,'Recovered using cmd.exe.').answer,'Recovered using cmd.exe.','a successful native retry remains usable');
 const lines=[{event:'init',conversation_id:sessionId,init:{model:'gemini-3.8-flash-high',cwd,permission_mode:'request-review'}},{event:'result',result:{status:'SUCCESS',conversation_id:sessionId,response:'real fixture final'}}];
 const parse=(events:any[])=>{const p=new NativeTranscript('gemini',cwd);p.push(events.map(x=>JSON.stringify(x)).join('\n')+'\n');return p;};
 const final=parse(lines).finish(0);assert.equal(final.answer,'real fixture final');

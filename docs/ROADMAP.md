@@ -1,15 +1,13 @@
 # Bridge Roadmap and Completion Matrix
 
-Latest live gate: volume-query setup applied; confined Codex Sol/Astra simple chat PASS. Coding file/command tools FAIL under the nested Windows sandbox; AGY IPC, production transport wiring and full E2E remain open. This supersedes the earlier statement that Codex cannot start. See [native chat and tool evidence](BRIDGE_NATIVE_RUNTIME_20260909.md).
+## Current live gates — 2026-09-09 UTC+7
 
-Latest Codex diagnosis: ancestor setup applied successfully; remaining canonicalization failure is DOS/GUID volume-name translation inside AppContainer. A narrow volume-query permission candidate is prepared but awaits administrator application and live qualification. See [diagnostic evidence](BRIDGE_NATIVE_RUNTIME_20260909.md).
+- Proven: confined native Sol/Astra apply_patch + cmd readback; explicit native configuration; exit-zero/all-tools-failed rejection; same-package IPC plus host-proxy access with real parent/child negative network/filesystem checks and cleanup.
+- Applied: WFP v2 with no Bridge loopback exemption. The source verifier checks exact filters, proxy app ID and sublayer priority. Existing volume-query/directory grants remain in place.
+- Waiting for user authentication: AGY cannot read the ordinary BridgeAgent Windows keyring from AppContainer. The local code-entry form is prepared; confined sign-in and persistence are not yet proven.
+- Still unfinished: PowerShell compatibility, production runner entrypoint/pinned permission lifecycle, legacy arbitration, native session resume/full model matrix, installed extension/browser Sol DOM tests, A–L/fault/soak gates, exact-SHA CI and release deployment. Existing included subscriptions remain the only native model route.
 
-Post-login qualification (2026-09-09): native sign-ins and AGY exact model listing are proven. Native generation remains blocked by AGY internal localhost IPC and Codex profile canonicalization under confinement. Runtime presence during active turns and bounded proxy hostname diagnostics are tested. Directory metadata grants have a tested helper but production provisioning remains partial. Runner wiring, legacy arbitration, extension installation/DOM qualification, model E2E and release/soak gates remain open. See [current evidence](BRIDGE_NATIVE_RUNTIME_20260909.md).
-
-## Current continuation — 2026-09-09 UTC+7
-
-See [native runtime checkpoint](BRIDGE_NATIVE_RUNTIME_20260909.md) for the current source and live Windows evidence. AppContainer filesystem denial and package-scoped WFP/proxy confinement now pass the documented real parent/subprocess and HTTPS probes. Administrator execution works. Runner service/recovery and v2 extension source are implemented, but production policy provisioning, native sign-in/model qualification, legacy coordination, browser installation and release E2E remain unfinished. **No production-ready or deployed-native claim is made.** Older contradictory statements below are historical.
-
+See [current live evidence and limitations](BRIDGE_NATIVE_RUNTIME_20260909.md). Earlier status entries below are historical; no production-ready or full E2E claim is made.
 
 ## Current completion gates — 2026-09-08 23:40 UTC+7
 

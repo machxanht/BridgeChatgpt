@@ -2,7 +2,35 @@
 
 This is the current source/PC checkpoint on `codex/bridge-completion`. It supersedes earlier statements that administrator execution is unavailable, that no v2 extension/service loop exists, or that only a Job Object was implemented. **This is not a production/native-model E2E completion report.**
 
-## First successful confined native chat — 2026-09-09 01:33 UTC+7
+## Coding and internal IPC fixes — 2026-09-09 02:30 UTC+7
+
+**Actual native file write/read now succeeds for both Codex Sol and Astra. This is still not the full nine-phase or production E2E gate.**
+
+Codex 0.153.4 first failed while preparing its offline shell stubs: the AppContainer could not create `C:\Users\BridgeAgent\.sbx-denybin`. Trusted profile setup now creates the four fixed ssh/scp refusal scripts and grants the package read/execute only. The native workspace capability SID also needed a Modify ACE on the exact `runner-io-probe` task folder. Original task DACL: `runtime/runner-control/codex-task-acl-before.txt`. An additional exact native temp-capability ACE was applied; it did not fix PowerShell startup.
+
+A deterministic nested `codex sandbox -P :workspace` probe writes and reads `BRIDGE_WRITE_OK` through cmd.exe. Native Sol then created `bridge-native-write-proof.txt` with apply_patch and read it using cmd after PowerShell failed. Native Astra used the updated adapter's global config overrides, created `astra-native-write-proof.txt` with apply_patch and read it via cmd with no tool failure. Both exited 0 and their OwnedJobs confirmed cleanup. Evidence: `codex-tools-probe-report.json`, `astra-tools-probe-report.json` and matching NDJSON under `runner-io-probe`. Model identity is explicit CLI route selection, not a separate signed provider receipt.
+
+Private-desktop creation fails with CreateDesktopW error 5 in the nested boundary. The adapter explicitly selects the supported unelevated native backend, workspace-write, approval never, and the private-desktop compatibility setting. It now tells the native agent to select cmd.exe. Windows PowerShell 5 still fails with 80070005; a read-only copy of bundled PowerShell 7.6.5 in the diagnostic release gives a specific GetSaferPolicy/Access Denied error. No PowerShell policy bypass was added. The source cmd instruction was added after the Astra run, whose user prompt carried the same instruction; a full generic coding/continuation matrix remains open.
+
+NativeTranscript now rejects exit-zero/final-answer streams when every completed file/command tool failed. A later successful tool retry is preserved. This detects the measured all-tools-failed case; it is not semantic proof of every requested task outcome.
+
+### Applied network policy v2
+
+The old six filters and Bridge LoopbackExempt entry were replaced at `2026-09-08T19:03:09.7004722Z`. The new eight filters allow same-package internal TCP IPC and a hard permit only for 127.0.0.1:43892 received by the exact `C:\Program Files\nodejs\node.exe` proxy. Direct/non-loopback egress, IPv6, native proxy-port listeners and foreign ingress remain denied. No Bridge loopback exemption remains. Sublayer `b73561e9-1239-4b20-96ce-c56bd2f8a340` has verified priority 0xF101; filter keys end a350–a357. Early migration attempts restored the old configuration when checks failed; the installed version passed. Windows assigned 0xF101 while the old 0xF100 sublayer coexisted; source now requests/verifies the distinct priority explicitly.
+
+The final parent/child probe runs as **BridgeAgent + AppContainer + OwnedJob**. Both show proxy_connect/own_loopback/inside_write true, and direct_connect/foreign_loopback/outside_read/outside_write false. A wildcard bind can succeed, but host connections to its live listeners fail using both loopback and LAN addresses, in parent and child. Requiring wildcard bind itself to fail would also block ordinary outbound clients that explicitly bind an ephemeral wildcard endpoint; ingress is enforced at ALE RECEIVE instead. Cross-package AppContainer ingress has not separately been exercised. Final cleanup receipt: true at `2026-09-08T19:25:53.8344570Z`. Evidence: `ipc-boundary-report.json`, `ipc-owned-check.log`, `ipc-owned-cleanup.json`, `native-ipc-install-result.json`. Source verifier passed at `2026-09-08T19:18:08.5193608Z`; it checks filter values/flags, app ID, priority and absence of the exemption. The v1 installer must not be used as the current verifier.
+
+The receive-side design follows Microsoft's [WFP filter contract](https://learn.microsoft.com/en-us/windows/win32/api/fwpmtypes/ns-fwpmtypes-fwpm_filter0) and the same-package loopback behavior measured by [Google Project Zero](https://projectzero.google/2021/08/understanding-network-access-windows-app.html), then tested on this machine. Diagnostic migration/fixtures and both native permission primitives are preserved under `pc-executor`. They are not a production service installer.
+
+### Google authentication boundary and prepared local form
+
+AGY now gets past its internal listener and reaches provider startup. It then logs `Failed to load stored token from keyring, falling back to file: Access is denied.` The existing successful BridgeAgent login is in Windows Credential Manager, which this AppContainer cannot read. This is new evidence for confined sign-in; do not repeat the original ordinary-account login or export the keyring credential.
+
+A local authorization-code form is prepared by `runtime/runner-control/native-auth-portal.mjs`. Its URL is held only in protected `native-auth-portal-url.txt`; do not commit the generated capability. It opens a fresh native OAuth attempt on demand and sends the user's code to the native input pipe. Pipe I/O was validated with a fixed PIPE_OK fixture. The portal was inspected in the existing Codex in-app tab. No authorization code has been received and no confined/persisted Google session is proven. The initial unattended auth attempt timed out with native exit 1 and cleanup confirmed; the Start button can create a fresh link. Shell-based automatic browser opening was rejected by automatic approval policy with only “blocked by policy”; do not work around that rejection. Use the prepared in-app page or give the user its local URL.
+
+Validation: all 30 isolated suites passed in `runtime/completion-validation-suite-vxcSdb`; updated adapter regressions and both new C# helper compilations also pass. Final typecheck and build pass. No main merge or Railway deployment. Production runner entrypoint/pinned provisioning, per-workspace permission lifecycle, unified legacy coordination, native session resume/full model matrix, installed browser extension/Sol DOM qualification and final A–L/fault/soak/release gates still remain. Do not describe Google login as the only remaining project work.
+
+## First successful confined native chat — 2026-09-09 01:33 UTC+7 (historical)
 
 The user applied `install-native-path-query.ps1`; the dated result reports installed=true at `2026-09-08T18:32:56.0813362Z`. This supersedes the unapplied candidate status below. Codex now passes CODEX_HOME canonicalization. Its next Git-directory check was satisfied by initializing a separate empty repository in the existing isolated `runtime/agent-tasks/runner-io-probe` directory.
 
