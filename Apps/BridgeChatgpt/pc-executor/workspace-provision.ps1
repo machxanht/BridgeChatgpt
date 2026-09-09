@@ -18,12 +18,22 @@ function Grant([string]$folder,[string]$sid){
  $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),[Security.AccessControl.FileSystemRights]::Modify,[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit',[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow))
  Set-Acl -LiteralPath $folder -AclObject $acl
 }
+function Resolve-GitExecutable(){
+ $candidates=@(
+  (Get-Command git.exe -ErrorAction SilentlyContinue).Source,
+  'E:\Git\cmd\git.exe',
+  'C:\Program Files\Git\cmd\git.exe'
+ )
+ foreach($candidate in $candidates){if($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)){return (Get-Item -LiteralPath $candidate -Force).FullName}}
+ throw 'Git executable was not found on this PC'
+}
 try{
  $config=Get-Content -LiteralPath $ConfigPath -Raw|ConvertFrom-Json
  & (Join-Path $PSScriptRoot 'runner-access.ps1') -ConfigPath $ConfigPath -Mode VerifyPolicy|Out-Null
  $request=Get-Content -LiteralPath $RequestPath -Raw|ConvertFrom-Json
  if(!$config.managedProjects){throw 'Managed projects are not enabled in the installed config'}
  $cwd=ProjectPath $request.cwd
+ $git=Resolve-GitExecutable
  if($request.local_path -ne ('Apps/'+[IO.Path]::GetFileName($cwd))){throw 'Project mapping mismatch'}
  $store=Join-Path $config.controlRoot 'managed-workspaces.json'
  $state=if(Test-Path -LiteralPath $store){Get-Content -LiteralPath $store -Raw|ConvertFrom-Json}else{[pscustomobject]@{active=$config.workspace.cwd;bindings=@()}}
@@ -36,14 +46,14 @@ try{
    if($request.branch -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]{0,150}$' -or $request.branch.Contains('..')){throw 'Invalid clone branch'}
    $env:GIT_TERMINAL_PROMPT='0';$env:GCM_INTERACTIVE='Never';$env:GIT_LFS_SKIP_SMUDGE='1'
    $staging=Join-Path $config.controlRoot ('clone-'+[guid]::NewGuid().ToString('N'))
-   & 'C:\Program Files\Git\cmd\git.exe' -c core.hooksPath=NUL -c protocol.file.allow=never -c protocol.ext.allow=never clone --single-branch --branch $request.branch -- $request.repository_url $staging *> ($RequestPath+'.git.log')
+   & $git -c core.hooksPath=NUL -c protocol.file.allow=never -c protocol.ext.allow=never clone --single-branch --branch $request.branch -- $request.repository_url $staging *> ($RequestPath+'.git.log')
    if($LASTEXITCODE -ne 0){throw 'Clone failed. Check repository URL/branch and Git access on this PC; see protected setup log. Existing files were not overwritten.'}
    PlainTree $staging
    if([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($staging)) -ne $config.controlRoot -or [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($cwd)) -ne 'E:\AI\Bridge\Apps' -or (Test-Path -LiteralPath $cwd)){throw 'Clone destination changed; refusing move'}
    Move-Item -LiteralPath $staging -Destination $cwd
   }else{
    [IO.Directory]::CreateDirectory($cwd)|Out-Null
-   & 'C:\Program Files\Git\cmd\git.exe' -c core.hooksPath=NUL init --initial-branch $request.branch -- $cwd *> ($RequestPath+'.git.log')
+   & $git -c core.hooksPath=NUL init --initial-branch $request.branch -- $cwd *> ($RequestPath+'.git.log')
    if($LASTEXITCODE -ne 0){throw 'Could not initialize the new project repository; inspect the protected setup log'}
   }
  }
