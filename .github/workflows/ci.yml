@@ -15,7 +15,11 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -25,19 +29,34 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Typecheck
         run: npm run lint
       - name: Tests
-        run: npm test
+        run: npm run test:isolated
+      - name: Compile Windows confinement primitives
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsJob.cs
+          Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsAppContainer.cs
+          Add-Type -Path Apps/BridgeChatgpt/pc-executor/diagnostics/NativeAuthConsole.cs
+          Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsNetworkPolicy.cs
+          Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsNetworkPolicyIpc.cs
+          Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsDirectoryMetadata.cs
+          Add-Type -Path Apps/BridgeChatgpt/pc-executor/WindowsPathQueryAccess.cs
       - name: Build
         run: npm run build
+      - name: Build native runner
+        run: npm run build:runner
       - name: Package Bridge Wake extension
+        if: runner.os == 'Linux'
         run: |
           set -euo pipefail
           zip -qr bridge-wake.zip Apps/BridgeChatgpt/browser-wake
           test -s bridge-wake.zip
       - name: Upload Bridge Wake extension
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: bridge-wake
@@ -45,6 +64,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Production startup smoke test
+        if: runner.os == 'Linux'
         env:
           NODE_ENV: production
           PORT: 3101

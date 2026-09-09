@@ -1,5 +1,50 @@
 # Bridge Roadmap and Completion Matrix
 
+## Current requested scope — 2026-09-10
+
+Implemented for rollout: add/select multiple projects; one native writer on the PC at a time; Astra/Sol/model switching with persisted per-project handoff; managed project clone/adoption and scoped activation; preparation cancellation/cleanup ownership. Existing Codex/Astra service success is recorded in HANDOFF. Pending: new runner installation by the user and use of the new flow. Per user instruction, no regression rerun, new model probe or live multi-project E2E was performed. Compile/build checks are distinct from runtime proof. Extension/parallel coding/full fault-and-soak work is not required to describe this narrower sequential workflow as implemented.
+
+## Codex/Astra service upgrade — prepared, not installed (2026-09-09)
+
+PASS: exact default workspace offline sandbox read/write and owned cleanup; native capability grant; adapter fix for Git discovery; typecheck/runner build/31 isolated suites and pinned CLI argument parsing. PENDING: manual Administrator execution of pc-executor/upgrade-codex-astra.ps1, then live Codex/Astra completion and history receipts. Current service intentionally retains only the three working AGY routes. Two pre-generation Git-check failures consumed no native generation; do not repeat old-bundle submissions. See HANDOFF for the one-command upgrade and rollback behavior. This does not close resume/coding/multi-workspace/extension/fault/soak gates.
+
+## Narrow live integration passed — 2026-09-09 03:44 UTC+7
+
+PASS: installed/running Windows task; configured and deployed current server; real cookie/CSRF API send → Gemini on PC → correct conversation result; job cleanup; fresh-session history reload. One native request, 12.241 seconds. See HANDOFF and runtime/runner-control/server-release-proof.json. Browser sign-in page is visually verified; browser click-send was not automated. Current service advertises three AGY models for the default BridgeChatgpt workspace. Full nine-phase completion remains open.
+
+## Active runner installation work — 2026-09-09
+
+Validation passed (31 isolated suites, typecheck, app/runner builds, PowerShell syntax). Automatic tool review rejected the elevated installer with `blocked by policy`; installation/live service/E2E remain pending. Do not loop on alternate elevation methods or consume native model quota diagnosing this rejection.
+
+Implemented for validation: bundled runner entrypoint, pinned configuration and native/release hashes, OS WFP/access checks, per-attempt output directory preparation, protected credential loading and hidden scheduled-task installation. First configuration binds one explicit project/workspace; general workspace lifecycle remains unfinished. Next: install, verify the actual service, configure the candidate control plane and prove a real send/result/resume path. Avoid repeated native generations until that path is ready.
+
+## Google/native chat gate passed — 2026-09-09 03:07 UTC+7
+
+PASS: persisted confined Google login, followed by three fresh normal headless native runs for Gemini 3.8 Flash High, Claude Sonnet 4.6 and Claude Opus 4.6 Thinking. All returned BRIDGE_NATIVE_OK with exact-model receipts, exit 0 and owned-job cleanup. The last post-login failures were missing exact proxy hosts for eligibility and the profile picture; those are fixed. **No more user OAuth input is needed.** Native coding/resume, production runner provisioning, extension and final E2E/soak/deployment remain open.
+
+## OAuth input correction — 2026-09-09 02:55 UTC+7
+
+DONE: replace the incorrect stdin code transport with private ConPTY authentication, verify an intentionally invalid code reaches Google, reject stale/duplicate/foreign-origin submissions, redact/remove submitted codes and confirm job cleanup. The portal now exposes the 60-second deadline and distinguishes received input from CLI delivery. PENDING: user refreshes the existing local form and completes one fresh Google login; verify actual authentication and new-process persistence. This does not complete the remaining production runner/extension/E2E gates.
+
+## Current live gates — 2026-09-09 UTC+7
+
+- Proven: confined native Sol/Astra apply_patch + cmd readback; explicit native configuration; exit-zero/all-tools-failed rejection; same-package IPC plus host-proxy access with real parent/child negative network/filesystem checks and cleanup.
+- Applied: WFP v2 with no Bridge loopback exemption. The source verifier checks exact filters, proxy app ID and sublayer priority. Existing volume-query/directory grants remain in place.
+- Waiting for user authentication: AGY cannot read the ordinary BridgeAgent Windows keyring from AppContainer. The local code-entry form is prepared; confined sign-in and persistence are not yet proven.
+- Still unfinished: PowerShell compatibility, production runner entrypoint/pinned permission lifecycle, legacy arbitration, native session resume/full model matrix, installed extension/browser Sol DOM tests, A–L/fault/soak gates, exact-SHA CI and release deployment. Existing included subscriptions remain the only native model route.
+
+See [current live evidence and limitations](BRIDGE_NATIVE_RUNTIME_20260909.md). Earlier status entries below are historical; no production-ready or full E2E claim is made.
+
+## Current completion gates — 2026-09-08 23:40 UTC+7
+
+The authoritative current 1–9 matrix is [BRIDGE_IMPLEMENTATION_STATUS.md](BRIDGE_IMPLEMENTATION_STATUS.md). Security/conversation/ownership/UI/native-contract work is implemented in part on `codex/bridge-completion`; **no phase 9 release qualification or native E2E completion is claimed**. Phase 2 has a measured filesystem isolation FAIL (restricted child reads/writes outside root), not a missing user authorization. Windows job descendant cleanup passes; provider sign-in and shell network isolation remain. Finish these gates before enabling the dispatcher or promoting. Historical “phases 3–9 not started” entries below are obsolete for source status and must not drive a rollback of the new work.
+
+## Master completion plan execution — 2026-09-08
+
+13:09 UTC continuation: Windows Phase 2 setup is explicitly authorized but cannot be applied by the current non-administrator process token. Restricted account is absent; no OS mutation occurred. Required next gate: administrator-capable execution, scoped setup with saved ACL/policy rollback, then real-child negative proofs. Current lint PASS; GitHub main/local HEAD verified at `c352655c299d2c750cadbf5ee47642b843d8714c`. Phases 3–9 remain gated.
+
+Phase 2: **partial / blocked**, browser session and fail-closed auth implemented and locally validated; Windows restricted execution setup/proof and runner/extension/attempt-scoped identities outstanding. Legacy CLI startup is quarantined with exit 78; no running process was changed. Phases 3–9: **not started**, dependencies not met. No new live E2E PASS. See [BRIDGE_IMPLEMENTATION_STATUS.md](BRIDGE_IMPLEMENTATION_STATUS.md) for exact evidence, limitations and continuation; historical statuses below are not evidence of current master-plan completion.
+
 Status legend:
 
 - ✅ PASS / proven

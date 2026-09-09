@@ -1,5 +1,51 @@
 # Bridge Operations Runbook
 
+## Multiple projects / Astra–Sol handoff — 2026-09-10
+
+The new server/UI is live at https://bridgechatgpt-production.up.railway.app (deployment 97ae60bd-f1e5-401b-bfd7-1072c257935a). Refresh the page. The PC still needs the following runner update; new-project turns wait for a managed-project runner instead of being sent to the old default-workspace runner.
+
+Install the prepared runner update once from Administrator PowerShell:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "E:\AI\Bridge\Apps\BridgeChatgpt\pc-executor\install-multi-project.ps1"
+```
+
+The installer preserves current native sign-in and qualified models. It compiles/installs the pinned runner, enables managed projects and waits for service readiness. It does not call a model or rerun tests. Existing unrelated browser/test source edits do not block installation; all runner/server/package sources must match the committed SHA. If installation fails, it restores the prior task/config and keeps diagnostics. Do not rerun the old Codex/Astra upgrade-and-E2E script.
+
+In Bridge, choose **Thêm project**. Supply a name, optionally an HTTPS GitHub repository, optional Apps folder name and clone branch. Blank repository creates/adopts a local project. Existing folders are used as-is; no automatic pull/reset or branch change. GitHub private repositories require the PC's Git account to already have access; setup never prompts invisibly for a password. Clone failures retain protected logs/staging and do not overwrite the registered folder.
+
+Select a project and model, then send the task. First use prepares its folder and native capability without model generation. All project tasks share a single writer queue. Select another model to continue: the latest three completed reports for this project are attached at claim time, after preceding queued work finishes. The UI shows the project queue and handoff. Code, not prior model claims, remains the authority on actual changes. Native conversation histories remain model-specific. Follow-up coding/resume and new-project runtime behavior are not re-tested in this session, per user instruction.
+
+## Pending Codex/Astra upgrade — 2026-09-09
+
+In an Administrator PowerShell window, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "E:\AI\Bridge\Apps\BridgeChatgpt\pc-executor\upgrade-codex-astra.ps1"
+```
+
+This is a prepared procedure, not an already successful installation. It requires clean committed source and an idle installed runner. It backs up task/config, installs the corrected bundle, grants only the exact workspace's Codex capability, performs offline write/read and cleanup, enables the five qualified native routes, then sends one small real Bridge request per Codex/Astra. It verifies a fresh authenticated history reload. No Google login, API key, server redeployment or subscription change is involved. On failure it restores the old service configuration and retains evidence; do not keep rerunning it without reading the error.
+
+Success ends with `PASS: Codex and Astra completed through Bridge; fresh-login history verified.` Read protected runtime/runner-control/codex-service-e2e.json and astra-service-e2e.json. Existing pending/terminal receipts deliberately block automatic resubmission; inspect them first. Current live service still advertises Gemini/Sonnet/Opus only until this upgrade succeeds. The prior elevated installation was blocked by automatic review; this script never self-elevates or changes a task to work around that rejection.
+
+## Current native chat installation — 2026-09-09
+
+Open https://bridgechatgpt-production.up.railway.app and sign in using the protected local file `E:\AI\Bridge\runtime\runner-control\bridge-sign-in.txt`. Select BridgeChatgpt + Gemini 3.8 Flash. The old localhost Google-login portal is closed; native Google login is already persisted.
+
+Scheduled task `Bridge Native Runner v2` starts a hidden protected runner at user logon. Inspect runtime/runner-control/runner-status.json and task state before restarting; idle state is waiting. Do not start another proxy on port 43892. Current service allows only the default workspace and advertises Gemini/Sonnet/Opus. See HANDOFF for live proof and remaining limitations.
+
+Current deployment: 766a96bd-3a82-4ed6-9687-cffd27e02411, a CLI upload of tracked f711e489 source using npm. CLI deployment metadata has no commitHash; verify the recorded archive digest and frontend build match in server-release-proof.json. Never commit sign-in credentials.
+
+## Local Phase 2 auth checkpoint (not deployed)
+
+Before eventual promotion, configure `BRIDGE_PUBLIC_ORIGIN` to the exact external HTTPS origin (no trailing slash/path) and `BRIDGE_BROWSER_PASSWORD` to a separate random credential of at least 32 characters. Do not reuse `BRIDGE_MCP_TOKEN` as the browser password. Do not write either credential into source, logs, documentation or browser storage. Keep existing machine pairing; no per-project re-pairing is needed.
+
+The dashboard signs in through `/api/auth/login` and uses a Secure, HttpOnly, SameSite=Strict host-only cookie. HTTPS is required even for local interactive sign-in; no insecure-cookie fallback is implemented. API tests manually transport the cookie over an isolated loopback test connection, which does not prove actual browser cookie behavior. Mutations need the returned CSRF header and exact Origin. Sessions expire after eight hours and are revoked on logout, server restart, or password/origin rotation. Restart prompts reauthentication; sessions are intentionally not persisted.
+
+`BRIDGE_EXTENSION_ORIGINS` is an optional comma-separated list of exact approved extension origins for CORS, with no wildcard. It grants no authentication or task capability. Protocol-v2 extension/scoped runner/attempt credentials remain unimplemented. URL tokens and unauthenticated development mode are no longer accepted by the changed auth boundaries. Recover bad auth configuration by fixing configuration; do not restore the header bypass.
+
+The legacy CLI worker now exits 78 before reading credentials or claiming work. Its replacement requires [Windows boundary setup](BRIDGE_WINDOWS_BOUNDARY_SETUP.md) and remaining Phase 2–5 implementation. Do not restart or promote it as a working replacement. No existing process was stopped. Parent review/push/deploy is required; this session does none of those operations.
+
 This runbook is for normal operation, deployment, recovery after PC power loss, and handoff to another agent.
 
 ## 0. Cost/quota gate — mandatory
@@ -212,3 +258,10 @@ Stop expanding the investigation. Search the current repo for an existing implem
 ## 12. No-secret / no-surprise-spend rule
 
 Runbooks and handoff docs may name configuration variables and service IDs, but must never contain raw authentication secrets. An available API key or connected service is not authorization to consume paid quota. Explicit prior user approval is required before any paid/quota API/AI-Agent use.
+# Conversation runtime candidate — 2026-09-08
+
+The `codex/bridge-completion` candidate is not deployed/qualified. Active UI now uses `/api/chat` conversations and SSE. Keep `BRIDGE_MCP_TOKEN`, independent `BRIDGE_BROWSER_PASSWORD` (at least 32 characters), and exact HTTPS `BRIDGE_PUBLIC_ORIGIN` configured before promotion; `/ready` returns 503 for missing configuration or draining. Runtime subject/attempt grants have bounded lifetimes; revocations persist in `data/runtime-revocations.json` and revoke descendant attempt capabilities. Back up that file with `data/bridge.sqlite`; do not restore one independently without considering credential revocation.
+
+Run `npm run lint`, `npm run test:isolated`, `npm run build`. Isolated test runner writes only fresh fixture state under runtime. Do not run the old ad-hoc `runtime/phase2-validate.mjs`, which edits source before testing. Native adapter/outbox tests are synthetic and do not authorize enabling CLI generation.
+
+Windows probes: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File Apps/BridgeChatgpt/pc-executor/windows-job-probe.ps1`; `native-capability-probe.ps1` uses the same owned job with a deadline. These are process-specific policies for repository scripts, not a machine execution-policy change. Current filesystem/network gates fail; keep the legacy worker disabled. Consult [current phase evidence](BRIDGE_IMPLEMENTATION_STATUS.md) before promotion. SIGTERM refuses new claims/turns and closes streams so clients reconnect; attempts/locks survive and require real owner cleanup, not elapsed-time replay.

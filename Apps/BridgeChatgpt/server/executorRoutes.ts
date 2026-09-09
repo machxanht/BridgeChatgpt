@@ -18,7 +18,7 @@ import {
 export const executorRouter = Router();
 
 type ExecutorRequestAuth =
-  | { kind: 'browser' | 'main' | 'legacy' | 'open' }
+  | { kind: 'browser' | 'main' | 'legacy' }
   | { kind: 'paired'; pairing: PairedExecutorAuth };
 
 function readPresentedExecutorToken(req: Request) {
@@ -87,11 +87,6 @@ function requireExecutorAccess(req: Request, res: Response, next: NextFunction) 
   const pairing = presented ? verifyPairedExecutorToken(presented) : null;
   if (pairing) {
     (req as any).executorAuth = { kind: 'paired', pairing } satisfies ExecutorRequestAuth;
-    next();
-    return;
-  }
-  if (!executorToken && !mainToken) {
-    (req as any).executorAuth = { kind: 'open' } satisfies ExecutorRequestAuth;
     next();
     return;
   }

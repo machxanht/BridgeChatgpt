@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+import {loadInstalledConfig,type InstalledRunnerConfig} from '../pc-executor/runnerEntry.js';
+fs.mkdirSync('runtime',{recursive:true});
+const root=fs.mkdtempSync(path.resolve('runtime/completion-validation-runner-config-'));
+const hash=(s:string)=>createHash('sha256').update(s).digest('hex');
+for(const name of ['control','release','tasks','workspace'])fs.mkdirSync(path.join(root,name));
+const release=path.join(root,'release'),configFile=path.join(root,'control/config.json');
+const files:Record<string,string>={};
+for(const name of ['native-owned-launch.ps1','native-child.ps1','native-environment.ps1','WindowsJob.cs','WindowsAppContainer.cs','runner-access.ps1','WindowsNetworkPolicyIpc.cs']){fs.writeFileSync(path.join(release,name),'fixture');files[name]=hash('fixture');}
+const binary=path.join(release,'native.exe');fs.writeFileSync(binary,'pinned');
+const config:InstalledRunnerConfig={version:1,origin:'https://bridge.example',subject:'pc-test',sourceSha:'a'.repeat(40),releaseRoot:release,controlRoot:path.dirname(configFile),taskRoot:path.join(root,'tasks'),workspace:{workspaceId:'workspace-1',projectId:'project-1',cwd:path.join(root,'workspace')},executables:{agy:{path:binary,sha256:hash('pinned')},codex:{path:binary,sha256:hash('pinned')}},files,qualificationFile:path.join(root,'control/qualification.json')};
+const save=()=>fs.writeFileSync(configFile,JSON.stringify(config));save();
+assert.equal(loadInstalledConfig(configFile).workspace.projectId,'project-1');
+fs.writeFileSync(binary,'modified');assert.throws(()=>loadInstalledConfig(configFile),/executable changed/);fs.writeFileSync(binary,'pinned');
+fs.writeFileSync(path.join(release,'native-child.ps1'),'modified');assert.throws(()=>loadInstalledConfig(configFile),/integrity failure/);fs.writeFileSync(path.join(release,'native-child.ps1'),'fixture');
+config.origin='http://bridge.example';save();assert.throws(()=>loadInstalledConfig(configFile),/HTTPS/);
+config.origin='https://bridge.example/path';save();assert.throws(()=>loadInstalledConfig(configFile),/HTTPS/);
+config.origin='https://bridge.example';delete config.files['runner-access.ps1'];save();assert.throws(()=>loadInstalledConfig(configFile),/Incomplete/);
+console.log('runnerConfig.test.ts: exact origin and pinned native/release integrity PASS');

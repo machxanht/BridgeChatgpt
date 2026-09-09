@@ -1,5 +1,11 @@
 # Bridge Security and Permission Boundary
 
+## Phase 2 checkpoint — 2026-09-08 (local, incomplete)
+
+Browser headers no longer prove identity. Secure browser sessions require a separate configured password, CSRF and exact Origin for mutations. Missing shared auth configuration fails closed, including executor REST/MCP. Session logout/expiry/restart and password/origin rotation revoke access. Query-string controller tokens are rejected.
+
+This does not establish least-privilege native execution. The legacy CLI entrypoint is quarantined before bootstrap; no currently running worker was changed. Runner/extension/attempt capabilities, restricted Windows token/identity, protected coordinator/release ACLs, child environment filtering and network enforcement remain outstanding. Root ACL inspection found broad inherited group access; cwd and a newly created user are insufficient proof. See [BRIDGE_WINDOWS_BOUNDARY_SETUP.md](BRIDGE_WINDOWS_BOUNDARY_SETUP.md) for scope, rollback and required real-child negative evidence. Do not enable dispatch through a configuration assertion or restore skip-all to bypass this gate.
+
 ## Principle
 
 Technical capability does not imply permission. Every agent, connector, executor, remote-desktop tool, browser automation path, or human-assisted workflow must stay within the scope explicitly approved by the user.
@@ -128,3 +134,8 @@ Before any destructive action:
 ## Incident recovery
 
 If an agent discovers it has operated outside filesystem scope **or consumed unapproved paid/quota resources**, stop further unauthorized actions, record what was accessed/changed/consumed, and report it clearly. Do not attempt broad cleanup that could cause additional damage or spend more quota.
+# Current runtime boundary finding — 2026-09-08
+
+`BridgeAgent` is an actual separate local Windows identity and the owned Job Object mechanism has passed explicit descendant cleanup. It is **not yet a sufficient sandbox**: a real child read/wrote a harmless outside-root sentinel. Per-process filesystem and outbound-network policy remain unimplemented/unproven, and the replacement dispatcher must stay disabled. User PC authorization is already granted; this is a technical isolation failure. See [measured evidence and remaining gates](BRIDGE_IMPLEMENTATION_STATUS.md).
+
+Controller tokens are not child environment variables. Runner/browser/attempt credentials are signed and bounded; attempt tokens refer to the issuing runtime token so revoking the runtime also rejects descendants. Revocations are persisted. Cancellation/lease expiry revokes result commit but holds the writer fence until owner cleanup; an offline heartbeat is not proof a subprocess stopped. Legacy generic task mutation/claim cannot bypass the V2 attempt contract. Legacy executor jobs still require integration with the common lock before both execution paths can run together.

@@ -176,7 +176,7 @@ export async function upsertWorkspace(project: ProjectConfig, input: Partial<Wor
       workspace_id: workspaceId,
       project_id: projectId,
       project_name: projectName,
-      repository_url: cleanLabel(input.repository_url, existing?.repository_url || project.repository_url),
+      repository_url: input.repository_url == null ? (existing?.repository_url || project.repository_url) : String(input.repository_url).trim().slice(0,1024),
       branch: cleanLabel(input.branch, existing?.branch || project.default_branch || 'main'),
       local_path: cleanLabel(input.local_path, existing?.local_path || projectLocalPath(projectName, projectId)),
       execution_target: normalizeExecutionTarget(input.execution_target, normalizeExecutionTarget(existing?.execution_target)),
@@ -185,6 +185,8 @@ export async function upsertWorkspace(project: ProjectConfig, input: Partial<Wor
       updated_at: now,
     };
     if (!next.local_path.startsWith('Apps/')) throw new Error('local_path must stay under Apps/');
+    if(store.workspaces.some(w=>w.workspace_id!==workspaceId&&w.local_path.toLowerCase()===next.local_path.toLowerCase()))throw new Error('This project folder is already registered');
+    if(existing&&(existing.project_id!==next.project_id||existing.local_path!==next.local_path))throw new Error('An existing project cannot be redirected to another folder or identity');
     if (existing) Object.assign(existing, next);
     else store.workspaces.push(next);
     writeStore(store);
