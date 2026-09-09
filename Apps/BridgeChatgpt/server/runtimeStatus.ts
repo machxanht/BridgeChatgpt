@@ -6,6 +6,7 @@ type RuntimeHeartbeat = {
   agents: BridgeAgentId[];
   version?: string;
   source_sha?: string;
+  managed_projects?: boolean;
   last_seen_at: string;
   expires_at: number;
 };

@@ -1,5 +1,9 @@
 # Bridge Roadmap and Completion Matrix
 
+## Current requested scope — 2026-09-10
+
+Implemented for rollout: add/select multiple projects; one native writer on the PC at a time; Astra/Sol/model switching with persisted per-project handoff; managed project clone/adoption and scoped activation; preparation cancellation/cleanup ownership. Existing Codex/Astra service success is recorded in HANDOFF. Pending: new runner installation by the user and use of the new flow. Per user instruction, no regression rerun, new model probe or live multi-project E2E was performed. Compile/build checks are distinct from runtime proof. Extension/parallel coding/full fault-and-soak work is not required to describe this narrower sequential workflow as implemented.
+
 ## Codex/Astra service upgrade — prepared, not installed (2026-09-09)
 
 PASS: exact default workspace offline sandbox read/write and owned cleanup; native capability grant; adapter fix for Git discovery; typecheck/runner build/31 isolated suites and pinned CLI argument parsing. PENDING: manual Administrator execution of pc-executor/upgrade-codex-astra.ps1, then live Codex/Astra completion and history receipts. Current service intentionally retains only the three working AGY routes. Two pre-generation Git-check failures consumed no native generation; do not repeat old-bundle submissions. See HANDOFF for the one-command upgrade and rollback behavior. This does not close resume/coding/multi-workspace/extension/fault/soak gates.

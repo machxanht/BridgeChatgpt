@@ -46,10 +46,27 @@ namespace Bridge.Native {
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
     [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
     static extern bool CreateProcessWithLogonW(string user,string domain,IntPtr password,uint logonFlags,string app,StringBuilder command,uint flags,IntPtr environment,string cwd,ref StartupInfo startup,out ProcessInfo info);
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    static extern bool CreateProcessW(string app,StringBuilder command,IntPtr processAttributes,IntPtr threadAttributes,bool inherit,uint flags,IntPtr environment,string cwd,ref StartupInfo startup,out ProcessInfo info);
     private IntPtr job,process;
     public uint ProcessId { get; private set; }
     private OwnedJob() {}
     private static void Check(bool ok) { if(!ok) throw new Win32Exception(Marshal.GetLastWin32Error()); }
+    // Trusted workspace provisioning only. The entire setup tree (including Git
+    // and native capability initialization) dies if its controller disappears.
+    public static OwnedJob StartCurrent(string executable,string trustedArguments,string cwd) {
+      if(!System.IO.Path.IsPathRooted(executable)||!System.IO.Path.IsPathRooted(cwd)||executable.Contains("\"")||trustedArguments.Length>850)throw new ArgumentException("Invalid provisioning launcher");
+      var owned=new OwnedJob();ProcessInfo pi=new ProcessInfo();
+      try{
+        owned.job=CreateJobObject(IntPtr.Zero,null);Check(owned.job!=IntPtr.Zero);
+        var limit=new ExtendedLimit();limit.basic.flags=0x2000|0x8|0x200;limit.basic.activeProcessLimit=32;limit.jobMemory=new UIntPtr(2147483648UL);
+        Check(SetInformationJobObject(owned.job,9,ref limit,(uint)Marshal.SizeOf(typeof(ExtendedLimit))));
+        var startup=new StartupInfo();startup.cb=Marshal.SizeOf(typeof(StartupInfo));startup.flags=1;startup.showWindow=0;
+        Check(CreateProcessW(executable,new StringBuilder("\""+executable+"\" "+trustedArguments),IntPtr.Zero,IntPtr.Zero,false,0x4|0x08000000,IntPtr.Zero,cwd,ref startup,out pi));
+        owned.process=pi.process;owned.ProcessId=pi.pid;Check(AssignProcessToJobObject(owned.job,pi.process));Check(ResumeThread(pi.thread)!=0xFFFFFFFF);return owned;
+      }catch{if(pi.process!=IntPtr.Zero)TerminateProcess(pi.process,78);owned.Dispose();throw;}
+      finally{if(pi.thread!=IntPtr.Zero)CloseHandle(pi.thread);}
+    }
     public static OwnedJob Start(string user,string domain,SecureString password,string executable,string trustedArguments,string cwd) {
       if(!System.IO.Path.IsPathRooted(executable)||!System.IO.Path.IsPathRooted(cwd)) throw new ArgumentException("Absolute launch paths required");
       if(executable.Contains("\"")||trustedArguments.Length>850) throw new ArgumentException("Invalid trusted launcher command");

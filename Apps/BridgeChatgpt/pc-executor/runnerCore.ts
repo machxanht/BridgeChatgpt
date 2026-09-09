@@ -10,7 +10,7 @@ export interface NativeExecution {
 }
 export interface RunnerDependencies {
   request<T>(route: string, token: string, body: unknown): Promise<T>;
-  launch(turn: ClaimedTurn): Promise<NativeExecution>;
+  launch(turn: ClaimedTurn,signal?:AbortSignal): Promise<NativeExecution>;
   journal(turn: ClaimedTurn | null): Promise<void>;
   outbox: ResultOutbox;
 }
@@ -43,22 +43,24 @@ export class NativeRunner {
     let stopped = false, finalStored = false, finished = false;
     let rejectLease!: (reason: Error) => void;
     const lostLease = new Promise<never>((_, reject) => { rejectLease = reject; });
-    const abort = () => rejectLease(new Error('Runner interrupted'));
+    void lostLease.catch(()=>{});
+    const preparation=new AbortController();
+    const abort = () => {preparation.abort();rejectLease(new Error('Runner interrupted'));};
     const beat = async () => {
       try {
         if (Date.now() >= Date.parse(turn.deadline_at)) throw new Error('Native execution deadline reached');
         await this.deps.request('/attempt/heartbeat', turn.attempt_token, {});
         if (!finished) heartbeat = setTimeout(beat, 10000);
-      } catch { rejectLease(new Error('Native execution lease lost')); }
+      } catch {preparation.abort();rejectLease(new Error('Native execution lease lost'));}
     };
     try {
       await this.deps.journal(turn); // Durable before launching anything.
       if (signal?.aborted) throw new Error('Runner interrupted');
       await this.deps.request('/attempt/heartbeat', turn.attempt_token, {});
-      execution = await this.deps.launch(turn);
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) abort();
       heartbeat = setTimeout(beat, 10000);
+      execution = await this.deps.launch(turn,preparation.signal);
       const final = await Promise.race([execution.result, lostLease]);
       stopped = await execution.stop();
       if (!stopped) throw new Error('Native process tree cleanup was not confirmed');
@@ -69,7 +71,7 @@ export class NativeRunner {
     } catch (error) {
       // A lost completion response must replay the persisted final, never native input.
       if (finalStored) throw error;
-      stopped = execution ? await execution.stop().catch(() => false) : true;
+      stopped = execution ? await execution.stop().catch(() => false) : !(error as any)?.cleanupUnconfirmed;
       await this.deps.request('/attempt/fail', turn.attempt_token,
         {code: 'native_execution_failed', message: error instanceof Error ? error.message : 'Native execution failed'});
       if (stopped) {

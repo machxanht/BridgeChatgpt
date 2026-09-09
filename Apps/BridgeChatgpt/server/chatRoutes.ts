@@ -7,6 +7,11 @@ import { verifyToken } from './auth.js';
 import { recordRuntimeHeartbeat, runtimeAgentAvailable, runtimeSnapshot } from './runtimeStatus.js';
 import { runtimeIsDraining } from './runtimeLifecycle.js';
 import { recoverOwnedAttempt } from './chatRuntime.js';
+import {projectActivity} from './chatRuntime.js';
+import {getProject} from './db.js';
+import {upsertWorkspace,projectLocalPath,getWorkspaceRegistry} from './workspaceRegistry.js';
+import {validateProjectBinding} from './projectBinding.js';
+import {randomUUID} from 'node:crypto';
 
 export const chatRouter=Router();
 export const runtimeRouter=Router();
@@ -15,6 +20,23 @@ const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 
 chatRouter.get('/agents',(_req,res)=>{
   res.json({agents:BRIDGE_AGENT_ROUTES.map(route=>({...route,available:runtimeAgentAvailable(route.id)})),runtimes:runtimeSnapshot()});
+});
+chatRouter.post('/projects',async(req,res)=>{
+  try{
+    const name=String(req.body?.project_name||'').trim();if(!name||name.length>100)throw new Error('Tên project cần từ 1 đến 100 ký tự');
+    const binding=validateProjectBinding({local_path:req.body?.local_path||projectLocalPath(name),repository_url:req.body?.repository_url||'',branch:req.body?.branch||'main'});
+    const workspaceId='workspace-'+randomUUID();
+    const workspace=await upsertWorkspace(await getProject(),{...binding,workspace_id:workspaceId,project_id:workspaceId.replace('workspace-','project-'),project_name:name,execution_target:'pc',setup_required:true});
+    res.status(201).json({workspace});
+  }catch(err:any){res.status(status(err)).json({error:err.message});}
+});
+chatRouter.get('/project-activity',async(req,res)=>{
+  try{
+    const wid=String(req.query.workspace_id||''),pid=String(req.query.project_id||'');
+    const registry=await getWorkspaceRegistry(await getProject());
+    if(!registry.workspaces.some(w=>w.workspace_id===wid&&w.project_id===pid))throw new Error('Unknown project');
+    res.json(await projectActivity(wid,pid));
+  }catch(err:any){res.status(status(err)).json({error:err.message});}
 });
 chatRouter.get('/conversations',async(req,res)=>{
   try{res.json(await listConversations(String(req.query.workspace_id||''),String(req.query.project_id||'')));}
@@ -66,7 +88,7 @@ runtimeRouter.post('/revoke',(req,res)=>{
 runtimeRouter.post('/runner/heartbeat',runtimeAuth('runner'),(req,res)=>{
   const claims=(req as any).runtimeAuth;
   const agents=(Array.isArray(req.body?.agents)?req.body.agents:[]).filter((id:string)=>BRIDGE_AGENT_ROUTES.some(a=>a.id===id&&a.transport==='cli')) as BridgeAgentId[];
-  res.json(recordRuntimeHeartbeat({transport:'cli',subject:claims.sub,agents,version:req.body?.version,source_sha:req.body?.source_sha}));
+  res.json(recordRuntimeHeartbeat({transport:'cli',subject:claims.sub,agents,version:req.body?.version,source_sha:req.body?.source_sha,managed_projects:req.body?.managed_projects===true}));
 });
 runtimeRouter.post('/browser/heartbeat',runtimeAuth('browser'),(req,res)=>{
   const claims=(req as any).runtimeAuth;

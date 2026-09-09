@@ -1,5 +1,19 @@
 # Bridge Operations Runbook
 
+## Multiple projects / Astra–Sol handoff — 2026-09-10
+
+Install the prepared runner update once from Administrator PowerShell:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "E:\AI\Bridge\Apps\BridgeChatgpt\pc-executor\install-multi-project.ps1"
+```
+
+The installer preserves current native sign-in and qualified models. It compiles/installs the pinned runner, enables managed projects and waits for service readiness. It does not call a model or rerun tests. Existing unrelated browser/test source edits do not block installation; all runner/server/package sources must match the committed SHA. If installation fails, it restores the prior task/config and keeps diagnostics. Do not rerun the old Codex/Astra upgrade-and-E2E script.
+
+In Bridge, choose **Thêm project**. Supply a name, optionally an HTTPS GitHub repository, optional Apps folder name and clone branch. Blank repository creates/adopts a local project. Existing folders are used as-is; no automatic pull/reset or branch change. GitHub private repositories require the PC's Git account to already have access; setup never prompts invisibly for a password. Clone failures retain protected logs/staging and do not overwrite the registered folder.
+
+Select a project and model, then send the task. First use prepares its folder and native capability without model generation. All project tasks share a single writer queue. Select another model to continue: the latest three completed reports for this project are attached at claim time, after preceding queued work finishes. The UI shows the project queue and handoff. Code, not prior model claims, remains the authority on actual changes. Native conversation histories remain model-specific. Follow-up coding/resume and new-project runtime behavior are not re-tested in this session, per user instruction.
+
 ## Pending Codex/Astra upgrade — 2026-09-09
 
 In an Administrator PowerShell window, run:

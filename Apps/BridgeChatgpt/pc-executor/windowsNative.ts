@@ -13,7 +13,7 @@ export interface WindowsLaunchPolicy {
   containerName: string;
   containerSid: string;
   /** Must validate actual OS policy and pinned executable before returning. */
-  authorize(turn: ClaimedTurn): Promise<{cwd: string; executable: string}>;
+  authorize(turn: ClaimedTurn,signal?:AbortSignal): Promise<{cwd: string; executable: string}>;
   /** Grant only this attempt's output directory before the native child starts. */
   prepareTask(task: string): Promise<void>;
 }
@@ -21,9 +21,10 @@ function readBounded(file: string, max: number) {
   if (fs.lstatSync(file).isSymbolicLink() || fs.statSync(file).size > max) throw new Error('Native output is invalid or too large');
   return fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
 }
-export async function launchWindowsNative(turn: ClaimedTurn, policy: WindowsLaunchPolicy): Promise<NativeExecution> {
+export async function launchWindowsNative(turn: ClaimedTurn, policy: WindowsLaunchPolicy,signal?:AbortSignal): Promise<NativeExecution> {
   if (process.platform !== 'win32') throw new Error('Windows launcher requires Windows');
-  const approved = await policy.authorize(turn);
+  const approved = await policy.authorize(turn,signal);
+  if(signal?.aborted)throw new Error('Cancelled before native launch');
   if(policy.containerName!=='BridgeNative.boundary-v1'||policy.containerSid!=='S-1-15-2-2031389295-489431135-2461900177-1913706768-3870177427-4052891927-2660065647')throw new Error('Unrecognized installed Windows confinement policy');
   for (const directory of [policy.releaseRoot, policy.controlRoot, policy.taskRoot, approved.cwd]) {
     if (!path.isAbsolute(directory) || fs.lstatSync(directory).isSymbolicLink()) throw new Error('Native root must be an absolute real directory');
@@ -92,6 +93,10 @@ export async function launchWindowsNative(turn: ClaimedTurn, policy: WindowsLaun
 export function recoverWindowsNative(turn:ClaimedTurn,policy:WindowsLaunchPolicy){
   if(!/^ATT-[a-f0-9-]{36}$/.test(turn.attempt_id))throw new Error('Invalid attempt identity');
   const requestFile=path.join(policy.releaseRoot,`${turn.attempt_id}.request.json`);
+  if(fs.existsSync(path.join(policy.controlRoot,turn.attempt_id+'.workspace-started.json'))){
+    const setup=JSON.parse(readBounded(path.join(policy.controlRoot,turn.attempt_id+'.workspace-cleanup.json'),4096));
+    if(!setup.cleanup_confirmed)throw new Error('Workspace setup cleanup is not proven; keeping the writer fence');
+  }
   if(!fs.existsSync(requestFile))return {stopped:true as const,final:null}; // Manifest publication precedes every native spawn.
   const receipt=JSON.parse(readBounded(path.join(policy.controlRoot,`${turn.attempt_id}.cleanup.json`),4096));
   if(receipt.attempt_id!==turn.attempt_id||receipt.cleanup_confirmed!==true)throw new Error('OS cleanup is not proven; keeping the writer fence');

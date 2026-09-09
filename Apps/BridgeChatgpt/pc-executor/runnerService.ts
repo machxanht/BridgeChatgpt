@@ -13,6 +13,7 @@ import {startProviderProxy} from './providerProxy.js';
 export interface RunnerServiceOptions {
   origin:string;subject:string;sourceSha:string;policy:WindowsLaunchPolicy;
   providerHosts:readonly string[];
+  managedProjects?:boolean;
   controllerCredential():Promise<string>;
   /** Native sign-in/model capability proof, not a user-configurable verified flag. */
   readyAgents():Promise<BridgeAgentId[]>;
@@ -50,7 +51,7 @@ export async function runNativeService(options:RunnerServiceOptions,signal:Abort
           const grant=await request<{token:string;expires_in_ms:number}>('/runner/session',await options.controllerCredential(),{subject:options.subject});
           runtimeToken=grant.token;renewAt=Date.now()+grant.expires_in_ms-11*60000;
         }
-        const runner=new NativeRunner({outbox,request,launch:turn=>launchWindowsNative(turn,options.policy),
+        const runner=new NativeRunner({outbox,request,launch:(turn,signal)=>launchWindowsNative(turn,options.policy,signal),
           journal:async turn=>{journal={turn,claimRequest:null,...(turn?{releaseRoot:options.policy.releaseRoot}:{})};save();}},runtimeToken);
         if(journal.turn){
           const recovered=await request<{turn:ClaimedTurn;status:string;result_hash:string|null}>('/recover',runtimeToken,{attempt_id:journal.turn.attempt_id});
@@ -75,7 +76,7 @@ export async function runNativeService(options:RunnerServiceOptions,signal:Abort
           continue;
         }
         const agents=await options.readyAgents();
-        await request('/runner/heartbeat',runtimeToken,{agents,version:'2.0.0',source_sha:options.sourceSha});
+        await request('/runner/heartbeat',runtimeToken,{agents,version:'2.0.0',source_sha:options.sourceSha,managed_projects:options.managedProjects===true});
         if(!agents.length){options.report({state:'sign_in_required',message:'No native model is authenticated and qualified'});await delay(15000,undefined,{signal});continue;}
         journal.claimRequest ||= randomUUID();save();
         options.report({state:'waiting'});

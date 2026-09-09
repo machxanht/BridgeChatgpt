@@ -1,6 +1,6 @@
 param(
  [Parameter(Mandatory=$true)][string]$ConfigPath,
- [Parameter(Mandatory=$true)][ValidateSet('Verify','PrepareTask','Credential')][string]$Mode,
+ [Parameter(Mandatory=$true)][ValidateSet('Verify','VerifyPolicy','PrepareTask','Credential')][string]$Mode,
  [string]$Task
 )
 $ErrorActionPreference='Stop'
@@ -62,6 +62,7 @@ Add-Type -Path (Join-Path $config.releaseRoot 'WindowsNetworkPolicyIpc.cs')
 if(![Bridge.Native.NetworkPolicyIpc]::Verify($packageSid,43892,'C:\Program Files\nodejs\node.exe')){throw 'Installed WFP policy mismatch'}
 $exempt=(& "$env:SystemRoot\System32\CheckNetIsolation.exe" LoopbackExempt -s 2>&1|Out-String)
 if($LASTEXITCODE -ne 0 -or $exempt.Contains($packageSid)){throw 'Loopback exemption verification failed'}
+if($Mode -eq 'VerifyPolicy'){Write-Output 'verified';exit}
 $workspace=RealPath $config.workspace.cwd
 if(!$workspace.StartsWith('E:\AI\Bridge\Apps\',[StringComparison]::OrdinalIgnoreCase)){throw 'Workspace outside approved project root'}
 foreach($sid in @($nativeSid,$packageSid)){

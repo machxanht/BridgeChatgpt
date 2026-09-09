@@ -15,7 +15,7 @@ $config=Get-Content -LiteralPath $ConfigDraft -Raw -Encoding UTF8|ConvertFrom-Js
 if($config.sourceSha -notmatch '^[a-f0-9]{40}$'){throw 'Exact source SHA required'}
 $head=(& git.exe -C $SourceRoot rev-parse HEAD).Trim()
 if($LASTEXITCODE -ne 0 -or $head -ne $config.sourceSha){throw 'Source SHA mismatch'}
-$dirty=& git.exe -C $SourceRoot diff HEAD --name-only
+$dirty=& git.exe -C $SourceRoot diff HEAD --name-only -- Apps/BridgeChatgpt/pc-executor Apps/BridgeChatgpt/server package.json package-lock.json
 if($LASTEXITCODE -ne 0 -or $dirty){throw 'Commit reviewed source before installing'}
 $release=Join-Path $SourceRoot ('runtime\runner-releases\runner-'+$head.Substring(0,12))
 if(Test-Path -LiteralPath $release){throw 'Release exists; never overwrite an installed release'}
@@ -29,22 +29,25 @@ $backup=Join-Path $control ('runner-install-'+$head.Substring(0,12)+'-acl-before
 New-Item -ItemType Directory -Path $release|Out-Null
 & icacls.exe $release /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' ('*'+$operator+':(OI)(CI)F') ('*'+$nativeSid+':(OI)(CI)RX') ('*'+$packageSid+':(OI)(CI)RX') | Out-Null
 if($LASTEXITCODE -ne 0){throw 'Release protection failed'}
-$files=@('native-owned-launch.ps1','native-child.ps1','native-environment.ps1','WindowsJob.cs','WindowsAppContainer.cs','WindowsNetworkPolicyIpc.cs','WindowsDirectoryMetadata.cs','runner-access.ps1','start-runner.ps1')
+$files=@('native-owned-launch.ps1','native-child.ps1','native-environment.ps1','WindowsJob.cs','WindowsAppContainer.cs','WindowsNetworkPolicyIpc.cs','WindowsDirectoryMetadata.cs','runner-access.ps1','start-runner.ps1','workspace-owned-launch.ps1','workspace-provision.ps1')
 foreach($name in $files){Copy-Item -LiteralPath (Join-Path $SourceRoot ('Apps\BridgeChatgpt\pc-executor\'+$name)) -Destination (Join-Path $release $name)}
 Copy-Item -LiteralPath (Join-Path $SourceRoot 'dist\runner-entry.mjs') -Destination (Join-Path $release 'runner-entry.mjs')
 $hashes=[ordered]@{};foreach($file in Get-ChildItem -LiteralPath $release -File){$hashes[$file.Name]=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
 Add-Type -Path (Join-Path $release 'WindowsDirectoryMetadata.cs')
 [Bridge.Native.DirectoryMetadata]::Grant($apps,$packageSid)
+if(!$config.managedProjects){
 $acl=Get-Acl -LiteralPath $workspace
 foreach($sid in @($nativeSid,$packageSid)){$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),[Security.AccessControl.FileSystemRights]::Modify,[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit',[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow))}
 Set-Acl -LiteralPath $workspace -AclObject $acl
 & icacls.exe $workspace /setintegritylevel '(OI)(CI)L'|Out-Null
 if($LASTEXITCODE -ne 0){throw 'Workspace integrity label failed'}
+}
 $config.releaseRoot=$release;$config.controlRoot=$control;$config.taskRoot=Join-Path $SourceRoot 'runtime\agent-tasks'
 $config|Add-Member -NotePropertyName files -NotePropertyValue $hashes -Force
 $target=Join-Path $control 'runner-config.json'
 $config|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $target -Encoding UTF8
-& (Join-Path $release 'runner-access.ps1') -ConfigPath $target -Mode Verify
+$verifyMode=if($config.managedProjects){'VerifyPolicy'}else{'Verify'}
+& (Join-Path $release 'runner-access.ps1') -ConfigPath $target -Mode $verifyMode
 if($LASTEXITCODE -ne 0){throw 'Installed policy did not verify'}
 $taskName='Bridge Native Runner v2'
 $arguments='-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "'+(Join-Path $release 'start-runner.ps1')+'" -ConfigPath "'+$target+'"'

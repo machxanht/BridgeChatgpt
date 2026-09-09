@@ -1,5 +1,19 @@
 # BridgeChatgpt Handoff
 
+## Multiple projects and sequential agents — 2026-09-10
+
+User scope: add multiple projects under Apps, select Astra/Sol/other native models to work sequentially on the same project, switch projects and preserve separate histories/handoff. The user explicitly requested no repeat test suites or model probes. This change uses typecheck/build/syntax compilation only; no native generation or regression/E2E suite was run. Do not mislabel implementation as a tested multi-project release.
+
+The user's prior Administrator upgrade succeeded. Existing protected Codex/Astra service receipts record 14980 ms / 9919 ms, fresh-login reload and cleanup, and the live installed runner is 8b32a70961a3f2b6aa42c2d22c47fd408e9b4de0. Do not rerun login or the old two-model verification script. The older pending-install section below is historical.
+
+Implemented: Add project form in the active ConversationChat UI (GitHub repo or existing/new Apps folder), separate project history/queue/handoff, automatic handoff of up to three bounded completed project reports, persisted claim-time execution prompt and workspace binding, and the existing global one-writer queue. Model sessions remain separate; current code plus project reports bridge model switches. New-project claims wait for a runner advertising managed_projects, so an old runner does not fail their turns.
+
+Managed runner setup validates a direct Apps path, immutable workspace/project/repository association, refuses reparse trees, clones only HTTPS GitHub repos into protected staging before publishing, adopts existing folders without pull/reset/branch switching, creates only missing project documents, and provisions the exact native cwd capability without a model call. Active workspace package grants move between projects. Setup descendants are held in a Windows owned job; heartbeats and cancellation cover preparation; unproven setup cleanup retains the writer fence on recovery. Cached model profiles remain the existing native profiles; this is not a new per-project credential isolation design.
+
+Pending local activation: user-run Administrator `Apps/BridgeChatgpt/pc-executor/install-multi-project.ps1`. It preserves five-model credentials/qualification, installs the new immutable runner, sets managedProjects=true, and restores old task/config on failure. It performs no test suite or model request. Do not self-elevate or use a scheduled-task trampoline to circumvent the previous blocked elevated installer. Server deployment and exact source/archive IDs are recorded in the next checkpoint when available.
+
+Pre-existing browser-wake/runtime-v2.js and browserRuntimeV2 test edits belong to earlier work and are not part of this change; preserve them. All nine-phase fault/soak/browser-extension gates remain outside this narrowed request and are not declared complete.
+
 ## Codex/Astra service preparation — 2026-09-09 (installation pending)
 
 The requested service upgrade is **not live-complete**. Current installed runner remains c7ded398 and advertises only Gemini/Sonnet/Opus; confirmed with authenticated /api/chat/agents after restoring the three-model qualification file. No Railway change is needed for this runner-only update.
