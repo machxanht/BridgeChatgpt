@@ -2,6 +2,8 @@
 
 ## Multiple projects and sequential agents — 2026-09-10
 
+Server rollout completed: deployment `97ae60bd-f1e5-401b-bfd7-1072c257935a` is SUCCESS and /ready=true. It was uploaded from tracked Git archive `6e431c518ffeb1d58d96bfcd99c500adddd80bbf`, SHA256 `b2ab78c295128de038a90acf1ad7c3f878b47ac9369b9cdaf9a4f4fa99260349`; CLI deployment metadata does not expose commitHash. Logs confirm the existing SQLite volume loaded. The old installed runner reconnected and is waiting. Proof: runtime/runner-control/multi-project-deployment-proof.json. A subsequent native-only adjustment initializes an independent Git repository for a newly created blank project; it does not require another server deployment. Local managed-project installation remains pending. This is deployment readiness, not a new E2E test.
+
 User scope: add multiple projects under Apps, select Astra/Sol/other native models to work sequentially on the same project, switch projects and preserve separate histories/handoff. The user explicitly requested no repeat test suites or model probes. This change uses typecheck/build/syntax compilation only; no native generation or regression/E2E suite was run. Do not mislabel implementation as a tested multi-project release.
 
 The user's prior Administrator upgrade succeeded. Existing protected Codex/Astra service receipts record 14980 ms / 9919 ms, fresh-login reload and cleanup, and the live installed runner is 8b32a70961a3f2b6aa42c2d22c47fd408e9b4de0. Do not rerun login or the old two-model verification script. The older pending-install section below is historical.

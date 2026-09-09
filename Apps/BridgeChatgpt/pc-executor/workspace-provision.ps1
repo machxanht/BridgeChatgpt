@@ -41,7 +41,11 @@ try{
    PlainTree $staging
    if([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($staging)) -ne $config.controlRoot -or [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($cwd)) -ne 'E:\AI\Bridge\Apps' -or (Test-Path -LiteralPath $cwd)){throw 'Clone destination changed; refusing move'}
    Move-Item -LiteralPath $staging -Destination $cwd
-  }else{[IO.Directory]::CreateDirectory($cwd)|Out-Null}
+  }else{
+   [IO.Directory]::CreateDirectory($cwd)|Out-Null
+   & 'C:\Program Files\Git\cmd\git.exe' -c core.hooksPath=NUL init --initial-branch $request.branch -- $cwd *> ($RequestPath+'.git.log')
+   if($LASTEXITCODE -ne 0){throw 'Could not initialize the new project repository; inspect the protected setup log'}
+  }
  }
  PlainTree $cwd
  # Existing folders are adopted in place. Never pull/reset/switch their branch.

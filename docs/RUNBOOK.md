@@ -2,6 +2,8 @@
 
 ## Multiple projects / Astra–Sol handoff — 2026-09-10
 
+The new server/UI is live at https://bridgechatgpt-production.up.railway.app (deployment 97ae60bd-f1e5-401b-bfd7-1072c257935a). Refresh the page. The PC still needs the following runner update; new-project turns wait for a managed-project runner instead of being sent to the old default-workspace runner.
+
 Install the prepared runner update once from Administrator PowerShell:
 
 ```powershell
