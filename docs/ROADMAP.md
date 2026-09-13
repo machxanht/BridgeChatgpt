@@ -2,6 +2,14 @@
 
 ## Current requested scope — 2026-09-10
 
+Live API E2E check attempted 2026-09-09 17:41 UTC. Prerequisites PASS, but the first Astra request failed during managed workspace preparation because the pinned Git executable path was invoked incorrectly by PowerShell (`C:\Program Files\Git\cmd\git.exe` not recognized). No native generation occurred; the dependent Sol and second-project queue checks were intentionally not sent. Keep the multi-project workflow UNPROVEN/FAIL until this setup error is fixed in a separate authorized change and a fresh bounded check is run.
+
+Source fix applied after that check: Git resolution now selects the installed executable (`E:\Git\cmd\git.exe`) and falls back only when present. Parser, Git version, and runner build checks pass. Live runner activation and bounded E2E remain pending until the Administrator installer updates the immutable runner release.
+
+Fresh bounded E2E after activation reached `git init` but failed during ACL activation because the new folder's ACL was not canonical (`AddAccessRule` exception). Native generation did not start, so the sequential multi-project flow remains unproven. Evidence is recorded in HANDOFF; do not spend additional model requests until ACL canonicalization is fixed.
+
+ACL source fix is now implemented with `icacls.exe` raw-SID grant/revoke and validated on a local fixture; unrelated and deny ACEs are retained and post-write canonical status is checked. A complete provisioning run remains elevation-gated (`runner-access.ps1 VerifyPolicy` requires WFP inspection), so no new native E2E has been sent.
+
 Implemented for rollout: add/select multiple projects; one native writer on the PC at a time; Astra/Sol/model switching with persisted per-project handoff; managed project clone/adoption and scoped activation; preparation cancellation/cleanup ownership. Existing Codex/Astra service success is recorded in HANDOFF. Pending: new runner installation by the user and use of the new flow. Per user instruction, no regression rerun, new model probe or live multi-project E2E was performed. Compile/build checks are distinct from runtime proof. Extension/parallel coding/full fault-and-soak work is not required to describe this narrower sequential workflow as implemented.
 
 ## Codex/Astra service upgrade — prepared, not installed (2026-09-09)

@@ -14,9 +14,18 @@ function ProjectPath([string]$value){
  return $full
 }
 function Grant([string]$folder,[string]$sid){
+ $arg='*{0}:(OI)(CI)M' -f $sid
+ & "$env:SystemRoot\System32\icacls.exe" $folder /grant:r $arg *> $null
+ if($LASTEXITCODE -ne 0){throw "Cannot grant workspace access for SID $sid"}
  $acl=Get-Acl -LiteralPath $folder
- $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),[Security.AccessControl.FileSystemRights]::Modify,[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit',[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow))
- Set-Acl -LiteralPath $folder -AclObject $acl
+ if(!$acl.AreAccessRulesCanonical){throw 'Workspace ACL is still not canonical after granting access'}
+}
+function RevokeGrant([string]$folder,[string]$sid){
+ $arg='*{0}' -f $sid
+ & "$env:SystemRoot\System32\icacls.exe" $folder /remove:g $arg *> $null
+ if($LASTEXITCODE -ne 0){throw "Cannot revoke workspace access for SID $sid"}
+ $acl=Get-Acl -LiteralPath $folder
+ if(!$acl.AreAccessRulesCanonical){throw 'Workspace ACL is not canonical after revoking access'}
 }
 function Resolve-GitExecutable(){
  $candidates=@(
@@ -66,10 +75,8 @@ try{
  }
  if($state.active -and $state.active -ne $cwd){
   $previous=ProjectPath $state.active
-  if(Test-Path -LiteralPath $previous){
-   $acl=Get-Acl -LiteralPath $previous
-   foreach($rule in @($acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier]))){if($rule.IdentityReference.Value -eq $package -and $rule.AccessControlType -eq 'Allow'){$acl.RemoveAccessRuleSpecific($rule)}}
-   Set-Acl -LiteralPath $previous -AclObject $acl
+ if(Test-Path -LiteralPath $previous){
+   RevokeGrant $previous $package
   }
  }
  # Publish before access changes so a restarted coordinator can revoke a partial activation.
