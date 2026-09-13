@@ -10,7 +10,8 @@ $config=Get-Content -LiteralPath $configPath -Raw|ConvertFrom-Json
 if($config.sourceSha -eq $head -and $config.managedProjects){Write-Output 'Managed-project runner is already installed; no reinstall needed.';exit}
 $status=Get-Content (Join-Path $control 'runner-status.json') -Raw|ConvertFrom-Json
 $journal=Get-Content (Join-Path $control 'runner-journal.json') -Raw|ConvertFrom-Json
-if($journal.turn -or $status.state -ne 'waiting' -or ([DateTime]::UtcNow-[DateTime]::Parse($status.time).ToUniversalTime()).TotalSeconds -gt 30){throw 'Wait for the current runner job to finish before installing'}
+$stopped=(Get-ScheduledTask -TaskName 'Bridge Native Runner v2').State -eq 'Ready' -and !(Get-NetTCPConnection -LocalPort 43892,43893 -State Listen -ErrorAction SilentlyContinue)
+if($journal.turn -or (!$stopped -and ($status.state -ne 'waiting' -or ([DateTime]::UtcNow-[DateTime]::Parse($status.time).ToUniversalTime()).TotalSeconds -gt 30))){throw 'Wait for the current runner job to finish before installing'}
 $old=[IO.File]::ReadAllBytes($configPath);$taskName='Bridge Native Runner v2';$xml=Export-ScheduledTask -TaskName $taskName
 $backup=Join-Path $control ('multi-project-upgrade-'+[guid]::NewGuid().ToString('N'))
 [IO.File]::WriteAllBytes($backup+'.config.json',$old);[IO.File]::WriteAllText($backup+'.task.xml',$xml)

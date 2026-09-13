@@ -1,5 +1,9 @@
 # BridgeChatgpt Handoff
 
+## Path-query recovery — 2026-09-14
+
+Administrator ACL report shows Bridge package Modify on .codex and traversal on profile ancestors. Read-only object-manager inspection instead found the previously installed package ACE absent from all five WindowsPathQueryAccess targets (GLOBAL??, C:, E:, MountPointManager link/device). This is a concrete missing prerequisite, consistent with canonicalization failure; actual confined success remains unproven. The existing scoped helper is now tracked and manifest-pinned in the release; startup restores its query rights so recreated kernel objects do not require a separate manual reinstall. Profile permissions are unchanged. Installer accepts a stopped Ready task only when no journal turn and no runner listening ports exist, enabling recovery from offline-test failure. Parser/helper compilation passed. Run verify-managed-projects.ps1 as Administrator to install and prove recovery/offline A/B/A. No model request sent.
+
 ## Offline recovery follow-up — 2026-09-14
 
 Installed c8a15ff offline check failed before generation: confined Codex could not canonicalize C:\Users\BridgeAgent\.codex (Access denied). Restoration independently failed resolving a synthetic capability SID through icacls. Source now uses SecurityIdentifier directly for canonical DACL grants; a fresh fixture grant with the exact failing synthetic SID passed. Verification reports now preserve primary and restoration errors separately. Full profile access remains unresolved: current non-elevated shell cannot inspect its ACL. User-run inspect-native-profile.ps1 reads security descriptors only into protected native-profile-acl-inspection.json; no credential contents or model calls. Do not retry E2E or claim recovery before profile diagnosis and offline proof. Runner was left stopped by the failed verifier; its waiting status file is stale.

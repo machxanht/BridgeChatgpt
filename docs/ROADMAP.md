@@ -1,5 +1,7 @@
 # Bridge Roadmap and Completion Matrix
 
+Current recovery gate: missing package-specific Windows path-query permissions detected by direct inspection; startup repair is implemented using the existing pinned helper. Profile DACL already grants package access. Installer recovery from stopped idle task is implemented. Await Administrator offline verification before E2E; no new runtime PASS claimed.
+
 ## Current gate — 2026-09-14
 
 Grant/revoke postconditions and interrupted git-init recovery are implemented. Fresh fixture repeated ACL mutations pass. Full no-model provisioning A/B/A is pending Administrator execution of pc-executor/verify-managed-projects.ps1 (installs committed source and writes a report). Do not submit native E2E until that report passes and the new runner is waiting. UI, handoff, queue and end-to-end model behavior remain unproven for this release.
