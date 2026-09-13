@@ -23,7 +23,7 @@ function Owned([string]$script,[string]$arguments){
  try{
   if(!$p.WaitForExit(190000)){$p.StandardInput.WriteLine('stop');if(!$p.WaitForExit(20000)){throw 'Owned cleanup unproven; runner must remain stopped'}}
   $receipt=$out.GetAwaiter().GetResult().Trim()|ConvertFrom-Json
-  if(!$receipt.cleanup_confirmed -or !$receipt.finished -or $p.ExitCode -ne 0){throw 'Owned process failed or cleanup unproven'}
+  if(!$receipt.cleanup_confirmed -or !$receipt.finished -or $p.ExitCode -ne 0){throw ('Owned launcher failed: exit='+$p.ExitCode+'; finished='+$receipt.finished+'; cleanup='+$receipt.cleanup_confirmed+'; stderr='+$err.GetAwaiter().GetResult())}
   if($receipt.PSObject.Properties['exit_code'] -and $receipt.exit_code -ne 0){throw 'Workspace preparation failed; inspect protected result files'}
  }finally{$p.Dispose()}
 }
@@ -80,6 +80,7 @@ function Marker($active,$inactive){
  $batch=@('@echo off','node bridge-toolchain-probe.cjs','if errorlevel 1 exit /b 30','call npm.cmd --version','if errorlevel 1 exit /b 31','git status --porcelain','if errorlevel 1 exit /b 32','echo BRIDGE_NESTED_TOOLS_OK','exit /b 0') -join "`r`n"
  [IO.File]::WriteAllText((Join-Path $active.cwd 'bridge-toolchain-probe.cmd'),$batch+"`r`n")
  $spec.executable=$config.executables.codex.path
+ $spec.attemptId='ATT-'+[guid]::NewGuid().ToString()
  $spec.args=@('-c','windows.sandbox="unelevated"','-c','windows.sandbox_private_desktop=false','sandbox','-P',':workspace','-C',$active.cwd,"$env:SystemRoot\System32\cmd.exe",'/d','/c','bridge-toolchain-probe.cmd')
  $spec.stdin='';$spec.deadline=[DateTime]::UtcNow.AddSeconds(60).ToString('o')
  $spec.stdout=Join-Path $dir 'nested-stdout.txt';$spec.stderr=Join-Path $dir 'nested-stderr.txt';$spec.result=Join-Path $dir 'nested-result.json'
