@@ -48,7 +48,7 @@ function Marker($active,$inactive){
  if($inactiveName -notmatch '^Offline[AB]-[A-Za-z0-9-]+$'){throw 'Unexpected offline fixture path'}
  # These generated sibling names contain no shell metacharacters or spaces.
  # Avoid embedded quotes: cmd.exe does not interpret CRT backslash-quote escapes.
- $command='echo BRIDGE_OFFLINE_OK>offline-marker.txt & findstr /x BRIDGE_OFFLINE_OK offline-marker.txt >nul && (echo CROSS_WRITE>..\'+$inactiveName+'\offline-cross.txt)'
+ $command='(echo BRIDGE_OFFLINE_OK)>offline-marker.txt & findstr /x BRIDGE_OFFLINE_OK offline-marker.txt >nul && (echo CROSS_WRITE)>..\'+$inactiveName+'\offline-cross.txt'
  $spec=@{attemptId=('ATT-'+[guid]::NewGuid());deadline=[DateTime]::UtcNow.AddSeconds(30).ToString('o');executable="$env:SystemRoot\System32\cmd.exe";args=@('/d','/c',$command);cwd=$active.cwd;stdin='';containerName='BridgeNative.boundary-v1';stdout=(Join-Path $dir 'stdout.txt');stderr=(Join-Path $dir 'stderr.txt');result=(Join-Path $dir 'result.json')}
  $spec|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $request -Encoding UTF8
  Owned (Join-Path $config.releaseRoot 'native-owned-launch.ps1') ('-RequestPath "'+$request+'" -ControlRoot "'+$control+'" -ReleaseRoot "'+$config.releaseRoot+'"')
