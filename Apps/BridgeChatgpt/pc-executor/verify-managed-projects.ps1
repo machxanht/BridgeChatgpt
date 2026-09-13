@@ -13,7 +13,7 @@ if($journal.turn -or $status.state -ne 'waiting'){throw 'Runner is busy; offline
 $state=Get-Content -Raw (Join-Path $control 'managed-workspaces.json')|ConvertFrom-Json
 $original=@($state.bindings|Where-Object {$_.cwd -eq $state.active})
 if($original.Count -ne 1){throw 'Original active binding is required for restoration'}
-$taskName='Bridge Native Runner v2';$lock=$null;$restored=$false;$steps=@();$failure=$null
+$taskName='Bridge Native Runner v2';$lock=$null;$restored=$false;$steps=@();$failure=$null;$restoreFailure=$null
 $stamp=[DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')+'-'+[guid]::NewGuid().ToString('N').Substring(0,6)
 $report=Join-Path $control ('offline-projects-'+$stamp+'.json')
 function Owned([string]$script,[string]$arguments){
@@ -31,7 +31,10 @@ function Prepare($binding){
  $request=Join-Path $control ('offline-workspace-'+[guid]::NewGuid().ToString('N')+'.json')
  $body=@{attemptId=('ATT-'+[guid]::NewGuid());workspaceId=$binding.workspaceId;projectId=$binding.projectId;cwd=$binding.cwd;local_path=('Apps/'+[IO.Path]::GetFileName($binding.cwd));repository_url=$binding.repository_url;branch='main'}
  $body|ConvertTo-Json|Set-Content -LiteralPath $request -Encoding UTF8
- Owned (Join-Path $config.releaseRoot 'workspace-owned-launch.ps1') ('-RequestPath "'+$request+'" -ConfigPath "'+$configPath+'"')
+ try{Owned (Join-Path $config.releaseRoot 'workspace-owned-launch.ps1') ('-RequestPath "'+$request+'" -ConfigPath "'+$configPath+'"')}catch{
+  if(Test-Path -LiteralPath ($request+'.result.json')){$detail=Get-Content -Raw ($request+'.result.json')|ConvertFrom-Json;throw ($_.Exception.Message+'; '+$detail.error+'; result: '+$request+'.result.json')}
+  throw
+ }
  $result=Get-Content -Raw ($request+'.result.json')|ConvertFrom-Json
  if(!$result.prepared){throw 'Workspace not prepared'}
  return $request
@@ -67,9 +70,9 @@ try{
  }
 }catch{$failure=$_.Exception.Message}
 finally{
- if($lock){try{$null=Prepare $original[0];$restored=$true}catch{$failure='Restoration failed: '+$_.Exception.Message};$lock.Stop()}
- [ordered]@{sourceSha=$config.sourceSha;passed=(!$failure -and $restored);failure=$failure;restored=$restored;steps=$steps;nativeRequests=0}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $report -Encoding UTF8
+ if($lock){try{$null=Prepare $original[0];$restored=$true}catch{$restoreFailure=$_.Exception.Message};$lock.Stop()}
+ [ordered]@{sourceSha=$config.sourceSha;passed=(!$failure -and $restored);failure=$failure;restoreFailure=$restoreFailure;restored=$restored;steps=$steps;nativeRequests=0}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $report -Encoding UTF8
  if($restored){Start-ScheduledTask -TaskName $taskName}
 }
-if($failure){throw ($failure+'. Report: '+$report)}
+if($failure -or $restoreFailure){throw ($failure+'; restoration: '+$restoreFailure+'. Report: '+$report)}
 Write-Output ('OFFLINE PASS. No model request. Report: '+$report)

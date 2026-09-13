@@ -14,9 +14,17 @@ function ProjectPath([string]$value){
  return $full
 }
 function Grant([string]$folder,[string]$sid){
+ $acl=Get-Acl -LiteralPath $folder
+ # Synthetic Codex capability SIDs have no account-name mapping. Use the SID
+ # object directly once the earlier native/package grants canonicalized the ACL.
+ if($acl.AreAccessRulesCanonical){
+  $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),[Security.AccessControl.FileSystemRights]::Modify,[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit',[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow))
+  Set-Acl -LiteralPath $folder -AclObject $acl
+ }else{
  $arg='*{0}:(OI)(CI)M' -f $sid
  & "$env:SystemRoot\System32\icacls.exe" $folder /grant $arg *> $null
  if($LASTEXITCODE -ne 0){throw "Cannot grant workspace access for SID $sid"}
+ }
  $acl=Get-Acl -LiteralPath $folder
  if(!$acl.AreAccessRulesCanonical){throw 'Workspace ACL is still not canonical after granting access'}
  $found=@($acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier])|Where-Object {$_.IdentityReference.Value -eq $sid -and $_.AccessControlType -eq 'Allow' -and ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Modify) -eq [Security.AccessControl.FileSystemRights]::Modify -and ($_.InheritanceFlags -band [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit') -eq [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'})

@@ -1,5 +1,9 @@
 # BridgeChatgpt Handoff
 
+## Offline recovery follow-up — 2026-09-14
+
+Installed c8a15ff offline check failed before generation: confined Codex could not canonicalize C:\Users\BridgeAgent\.codex (Access denied). Restoration independently failed resolving a synthetic capability SID through icacls. Source now uses SecurityIdentifier directly for canonical DACL grants; a fresh fixture grant with the exact failing synthetic SID passed. Verification reports now preserve primary and restoration errors separately. Full profile access remains unresolved: current non-elevated shell cannot inspect its ACL. User-run inspect-native-profile.ps1 reads security descriptors only into protected native-profile-acl-inspection.json; no credential contents or model calls. Do not retry E2E or claim recovery before profile diagnosis and offline proof. Runner was left stopped by the failed verifier; its waiting status file is stale.
+
 ## Provisioning follow-up — 2026-09-14
 
 Source now checks persisted explicit Modify grants and removal, uses additive icacls grants, and retains a protected initialization marker so a failed new local repository creation can resume. Repeated grant/revoke on a fresh fixture passed using the actual source functions. Full restricted A/B/A verification has NOT run: current shell is not Administrator. New user-run `Apps/BridgeChatgpt/pc-executor/verify-managed-projects.ps1` installs committed source, stops the idle runner, acquires its singleton port, prepares A/B/A with owned jobs, checks confined markers and inactive-project writes, restores the original binding and records a protected report. It sends no model requests. Failure/restoration must be inspected before E2E; no full runtime or isolation PASS is claimed. Fixture folders are preserved.
