@@ -10,6 +10,8 @@ Fresh bounded E2E after activation reached `git init` but failed during ACL acti
 
 ACL source fix is now implemented with `icacls.exe` raw-SID grant/revoke and validated on a local fixture; unrelated and deny ACEs are retained and post-write canonical status is checked. A complete provisioning run remains elevation-gated (`runner-access.ps1 VerifyPolicy` requires WFP inspection), so no new native E2E has been sent.
 
+New-project binding retention was also fixed in commit `2e77fa1`; it keeps the newly persisted binding available for capability setup. The current installed runner remains at `0a43f886`, so the new commit must be installed before the next E2E.
+
 Implemented for rollout: add/select multiple projects; one native writer on the PC at a time; Astra/Sol/model switching with persisted per-project handoff; managed project clone/adoption and scoped activation; preparation cancellation/cleanup ownership. Existing Codex/Astra service success is recorded in HANDOFF. Pending: new runner installation by the user and use of the new flow. Per user instruction, no regression rerun, new model probe or live multi-project E2E was performed. Compile/build checks are distinct from runtime proof. Extension/parallel coding/full fault-and-soak work is not required to describe this narrower sequential workflow as implemented.
 
 ## Codex/Astra service upgrade — prepared, not installed (2026-09-09)
