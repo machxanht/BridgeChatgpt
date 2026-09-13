@@ -29,7 +29,7 @@ try{
  }finally{Pop-Location}
  Start-ScheduledTask -TaskName $taskName
  $ready=$false
- for($i=0;$i -lt 25;$i++){
+ for($i=0;$i -lt 180;$i++){
   Start-Sleep -Seconds 1;$current=Get-Content (Join-Path $control 'runner-status.json') -Raw|ConvertFrom-Json
   if($current.sourceSha -eq $head -and $current.state -eq 'waiting'){$ready=$true;break}
  }

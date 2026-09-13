@@ -1,6 +1,6 @@
 param(
  [Parameter(Mandatory=$true)][string]$ConfigPath,
- [Parameter(Mandatory=$true)][ValidateSet('Verify','VerifyPolicy','PrepareTask','Credential')][string]$Mode,
+ [Parameter(Mandatory=$true)][ValidateSet('Verify','VerifyPolicy','VerifyTools','PrepareTask','Credential')][string]$Mode,
  [string]$Task
 )
 $ErrorActionPreference='Stop'
@@ -57,6 +57,16 @@ if($Mode -eq 'PrepareTask'){
  Write-Output 'prepared';exit
 }
 $principal=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+if($Mode -eq 'VerifyTools' -and $config.files.'toolchain-manifest.json'){
+ $manifest=Get-Content -Raw (Join-Path $config.releaseRoot 'toolchain-manifest.json')|ConvertFrom-Json
+ foreach($entry in $manifest.PSObject.Properties){
+  $path=[IO.Path]::GetFullPath((Join-Path $config.releaseRoot $entry.Name))
+  if(!$path.StartsWith((Join-Path $config.releaseRoot 'tools')+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Tool path escaped release'}
+  Protected $path $false
+  if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $entry.Value){throw 'Installed developer tool changed'}
+ }
+}
+if($Mode -eq 'VerifyTools'){Write-Output 'tools verified';exit}
 if(!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Installed coordinator needs permission to inspect WFP'}
 Add-Type -Path (Join-Path $config.releaseRoot 'WindowsNetworkPolicyIpc.cs')
 if(![Bridge.Native.NetworkPolicyIpc]::Verify($packageSid,43892,'C:\Program Files\nodejs\node.exe')){throw 'Installed WFP policy mismatch'}

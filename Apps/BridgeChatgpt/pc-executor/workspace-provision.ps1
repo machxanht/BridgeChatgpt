@@ -83,6 +83,12 @@ try{
    & $git -c core.hooksPath=NUL init --initial-branch $request.branch -- $cwd *> ($RequestPath+'.git.log')
    if($LASTEXITCODE -ne 0){throw 'Could not initialize the new project repository; inspect the protected setup log'}
    if(!(Test-Path -LiteralPath (Join-Path $cwd '.git') -PathType Container)){throw 'New repository metadata is missing'}
+   # A new empty project must not inherit Bridge's parent ESM package scope.
+   # Existing folders and cloned repositories retain their own configuration.
+   $projectPackage=Join-Path $cwd 'package.json'
+   if(!(Test-Path -LiteralPath $projectPackage)){
+    [IO.File]::WriteAllText($projectPackage,"{`"private`":true,`"type`":`"commonjs`"}`r`n",[Text.UTF8Encoding]::new($false))
+   }
    Remove-Item -LiteralPath $initMarker
   }
  }

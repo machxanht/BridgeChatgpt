@@ -19,3 +19,7 @@ foreach($name in @('XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_HOME','XDG_STATE
 }
 $env:PSModulePath="$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules"
 $env:NO_COLOR='1'
+$toolRoot=Join-Path $PSScriptRoot 'tools'
+if(Test-Path -LiteralPath (Join-Path $toolRoot 'node\node.exe')){
+ $env:PATH=(Join-Path $toolRoot 'node')+';'+(Join-Path $toolRoot 'git\cmd')+';'+(Join-Path $toolRoot 'git\mingw64\bin')+';'+"$env:SystemRoot\System32;$env:SystemRoot"
+}

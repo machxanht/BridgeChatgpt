@@ -7,6 +7,9 @@ $OutputEncoding=[Text.UTF8Encoding]::new($false)
 # This file and RequestPath are installed in runner-releases with read/execute
 # rights only for BridgeAgent. No controller credential is in this request.
 $request=Get-Content -LiteralPath $RequestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$env:GIT_CONFIG_COUNT='1'
+$env:GIT_CONFIG_KEY_0='safe.directory'
+$env:GIT_CONFIG_VALUE_0=[string]$request.cwd
 $env:OPENAI_API_KEY=$null
 $env:CODEX_API_KEY=$null
 $env:AGY_API_KEY=$null

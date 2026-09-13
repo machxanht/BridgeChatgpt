@@ -33,6 +33,23 @@ $files=@('native-owned-launch.ps1','native-child.ps1','native-environment.ps1','
 $files+=@('WindowsPathQueryAccess.cs')
 foreach($name in $files){Copy-Item -LiteralPath (Join-Path $SourceRoot ('Apps\BridgeChatgpt\pc-executor\'+$name)) -Destination (Join-Path $release $name)}
 Copy-Item -LiteralPath (Join-Path $SourceRoot 'dist\runner-entry.mjs') -Destination (Join-Path $release 'runner-entry.mjs')
+# Bundle local developer tools into the protected release. Never grant the
+# sandbox access to the writable system Git installation.
+$toolRoot=Join-Path $release 'tools'
+[IO.Directory]::CreateDirectory($toolRoot)|Out-Null
+function Copy-ToolTree([string]$source,[string]$destination){
+ if(!(Test-Path -LiteralPath $source -PathType Container)){throw ('Tool source missing: '+$source)}
+ $items=@(Get-Item -LiteralPath $source -Force)+@(Get-ChildItem -LiteralPath $source -Recurse -Force)
+ if($items|Where-Object {$_.Attributes -band [IO.FileAttributes]::ReparsePoint}){throw ('Tool source contains links: '+$source)}
+ Copy-Item -LiteralPath $source -Destination $destination -Recurse
+}
+Copy-ToolTree 'C:\Program Files\nodejs' (Join-Path $toolRoot 'node')
+$gitRoot=Join-Path $toolRoot 'git';[IO.Directory]::CreateDirectory($gitRoot)|Out-Null
+foreach($part in @('cmd','mingw64','usr','etc')){Copy-ToolTree (Join-Path 'E:\Git' $part) (Join-Path $gitRoot $part)}
+Copy-Item -LiteralPath 'E:\Git\LICENSE.txt' -Destination (Join-Path $gitRoot 'LICENSE.txt')
+$toolHashes=[ordered]@{}
+foreach($file in Get-ChildItem -LiteralPath $toolRoot -Recurse -File){$relative=$file.FullName.Substring($release.Length+1);$toolHashes[$relative]=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
+$toolHashes|ConvertTo-Json -Depth 3|Set-Content -LiteralPath (Join-Path $release 'toolchain-manifest.json') -Encoding UTF8
 $hashes=[ordered]@{};foreach($file in Get-ChildItem -LiteralPath $release -File){$hashes[$file.Name]=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
 Add-Type -Path (Join-Path $release 'WindowsDirectoryMetadata.cs')
 [Bridge.Native.DirectoryMetadata]::Grant($apps,$packageSid)
