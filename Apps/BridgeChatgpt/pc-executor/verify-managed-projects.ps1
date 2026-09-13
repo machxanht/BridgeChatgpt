@@ -46,12 +46,24 @@ function Marker($active,$inactive){
  $request=Join-Path $config.releaseRoot ('offline-marker-'+[guid]::NewGuid().ToString('N')+'.json')
  $inactiveName=[IO.Path]::GetFileName($inactive.cwd)
  if($inactiveName -notmatch '^Offline[AB]-[A-Za-z0-9-]+$'){throw 'Unexpected offline fixture path'}
- # These generated sibling names contain no shell metacharacters or spaces.
- # Avoid embedded quotes: cmd.exe does not interpret CRT backslash-quote escapes.
- $command='(echo BRIDGE_OFFLINE_OK)>offline-marker.txt & findstr /x BRIDGE_OFFLINE_OK offline-marker.txt >nul && (echo CROSS_WRITE)>..\'+$inactiveName+'\offline-cross.txt'
- $spec=@{attemptId=('ATT-'+[guid]::NewGuid());deadline=[DateTime]::UtcNow.AddSeconds(30).ToString('o');executable="$env:SystemRoot\System32\cmd.exe";args=@('/d','/c',$command);cwd=$active.cwd;stdin='';containerName='BridgeNative.boundary-v1';stdout=(Join-Path $dir 'stdout.txt');stderr=(Join-Path $dir 'stderr.txt');result=(Join-Path $dir 'result.json')}
+ # The native launcher quotes every argv entry using CRT rules. cmd /c does
+ # not parse that form reliably. Feed commands through its existing stdin file.
+ $command=@(
+  '(echo BRIDGE_OFFLINE_OK)>offline-marker.txt'
+  'if errorlevel 1 exit 10'
+  'findstr /x BRIDGE_OFFLINE_OK offline-marker.txt >nul'
+  'if errorlevel 1 exit 11'
+  ('(echo CROSS_WRITE)>..\'+$inactiveName+'\offline-cross.txt')
+  'echo BRIDGE_OFFLINE_PROBE_OK'
+  'exit 0'
+ ) -join "`r`n"
+ $spec=@{attemptId=('ATT-'+[guid]::NewGuid());deadline=[DateTime]::UtcNow.AddSeconds(30).ToString('o');executable="$env:SystemRoot\System32\cmd.exe";args=@('/d','/q');cwd=$active.cwd;stdin=($command+"`r`n");containerName='BridgeNative.boundary-v1';stdout=(Join-Path $dir 'stdout.txt');stderr=(Join-Path $dir 'stderr.txt');result=(Join-Path $dir 'result.json')}
  $spec|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $request -Encoding UTF8
  Owned (Join-Path $config.releaseRoot 'native-owned-launch.ps1') ('-RequestPath "'+$request+'" -ControlRoot "'+$control+'" -ReleaseRoot "'+$config.releaseRoot+'"')
+ $nativeResult=Get-Content -Raw $spec.result|ConvertFrom-Json
+ if($nativeResult.exit_code -ne 0 -or (Get-Content -Raw $spec.stdout) -notmatch 'BRIDGE_OFFLINE_PROBE_OK'){
+  throw ('Confined marker probe failed, exit '+$nativeResult.exit_code+'; stderr: '+$spec.stderr+'; result: '+$spec.result)
+ }
  if((Get-Content -Raw (Join-Path $active.cwd 'offline-marker.txt')).Trim() -ne 'BRIDGE_OFFLINE_OK'){throw 'Active confined write failed'}
  if(Test-Path -LiteralPath (Join-Path $inactive.cwd 'offline-cross.txt')){throw 'Inactive project was writable'}
  return $request
