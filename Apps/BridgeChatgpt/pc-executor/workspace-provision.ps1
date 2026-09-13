@@ -15,10 +15,12 @@ function ProjectPath([string]$value){
 }
 function Grant([string]$folder,[string]$sid){
  $arg='*{0}:(OI)(CI)M' -f $sid
- & "$env:SystemRoot\System32\icacls.exe" $folder /grant:r $arg *> $null
+ & "$env:SystemRoot\System32\icacls.exe" $folder /grant $arg *> $null
  if($LASTEXITCODE -ne 0){throw "Cannot grant workspace access for SID $sid"}
  $acl=Get-Acl -LiteralPath $folder
  if(!$acl.AreAccessRulesCanonical){throw 'Workspace ACL is still not canonical after granting access'}
+ $found=@($acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier])|Where-Object {$_.IdentityReference.Value -eq $sid -and $_.AccessControlType -eq 'Allow' -and ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Modify) -eq [Security.AccessControl.FileSystemRights]::Modify -and ($_.InheritanceFlags -band [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit') -eq [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'})
+ if(!$found.Count){throw 'Workspace Modify grant was not persisted'}
 }
 function RevokeGrant([string]$folder,[string]$sid){
  $arg='*{0}' -f $sid
@@ -26,6 +28,7 @@ function RevokeGrant([string]$folder,[string]$sid){
  if($LASTEXITCODE -ne 0){throw "Cannot revoke workspace access for SID $sid"}
  $acl=Get-Acl -LiteralPath $folder
  if(!$acl.AreAccessRulesCanonical){throw 'Workspace ACL is not canonical after revoking access'}
+ if(@($acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier])|Where-Object {$_.IdentityReference.Value -eq $sid -and $_.AccessControlType -eq 'Allow'}).Count){throw 'Workspace explicit grant remains after revocation'}
 }
 function Resolve-GitExecutable(){
  $candidates=@(
@@ -49,7 +52,13 @@ try{
  $binding=@($state.bindings)|Where-Object {$_.workspaceId -eq $request.workspaceId}
  if($binding -and ($binding.projectId -ne $request.projectId -or $binding.cwd -ne $cwd -or $binding.repository_url -ne $request.repository_url)){throw 'Installed project binding cannot be redirected'}
  if(@($state.bindings)|Where-Object {$_.cwd -eq $cwd -and $_.workspaceId -ne $request.workspaceId}){throw 'Folder already belongs to another project'}
- if(!(Test-Path -LiteralPath $cwd)){
+ $initMarker=Join-Path $config.controlRoot ('project-init-'+$request.workspaceId+'.json')
+ if($request.workspaceId -notmatch '^[A-Za-z0-9-]+$'){throw 'Invalid workspace identity'}
+ if(Test-Path -LiteralPath $initMarker){
+  $pending=Get-Content -LiteralPath $initMarker -Raw|ConvertFrom-Json
+  if($pending.cwd -ne $cwd -or $pending.projectId -ne $request.projectId -or $request.repository_url){throw 'Pending initialization binding mismatch'}
+ }
+ if(!(Test-Path -LiteralPath $cwd) -or (Test-Path -LiteralPath $initMarker)){
   if($request.repository_url){
    if($request.repository_url -notmatch '^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'){throw 'Use an HTTPS GitHub repository URL'}
    if($request.branch -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]{0,150}$' -or $request.branch.Contains('..')){throw 'Invalid clone branch'}
@@ -61,9 +70,12 @@ try{
    if([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($staging)) -ne $config.controlRoot -or [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($cwd)) -ne 'E:\AI\Bridge\Apps' -or (Test-Path -LiteralPath $cwd)){throw 'Clone destination changed; refusing move'}
    Move-Item -LiteralPath $staging -Destination $cwd
   }else{
+   if(!(Test-Path -LiteralPath $initMarker)){[ordered]@{cwd=$cwd;projectId=$request.projectId}|ConvertTo-Json|Set-Content -LiteralPath $initMarker -Encoding UTF8}
    [IO.Directory]::CreateDirectory($cwd)|Out-Null
    & $git -c core.hooksPath=NUL init --initial-branch $request.branch -- $cwd *> ($RequestPath+'.git.log')
    if($LASTEXITCODE -ne 0){throw 'Could not initialize the new project repository; inspect the protected setup log'}
+   if(!(Test-Path -LiteralPath (Join-Path $cwd '.git') -PathType Container)){throw 'New repository metadata is missing'}
+   Remove-Item -LiteralPath $initMarker
   }
  }
  PlainTree $cwd

@@ -1,5 +1,11 @@
 # BridgeChatgpt Handoff
 
+## Provisioning follow-up — 2026-09-14
+
+Source now checks persisted explicit Modify grants and removal, uses additive icacls grants, and retains a protected initialization marker so a failed new local repository creation can resume. Repeated grant/revoke on a fresh fixture passed using the actual source functions. Full restricted A/B/A verification has NOT run: current shell is not Administrator. New user-run `Apps/BridgeChatgpt/pc-executor/verify-managed-projects.ps1` installs committed source, stops the idle runner, acquires its singleton port, prepares A/B/A with owned jobs, checks confined markers and inactive-project writes, restores the original binding and records a protected report. It sends no model requests. Failure/restoration must be inspected before E2E; no full runtime or isolation PASS is claimed. Fixture folders are preserved.
+
+Correction: the earlier claim that commit 2e77fa1 fixed a certain null-binding runtime failure was unsupported. The preceding source already reloaded the binding immediately before capability initialization. That assignment was redundant, not a demonstrated blocker.
+
 ## Multiple projects and sequential agents — 2026-09-10
 
 Live API E2E check (2026-09-09 17:41 UTC): prerequisites PASS (`/ready`, managedProjects heartbeat, Codex Sol and Astra advertised). Two timestamped blank projects were created through the authenticated Bridge API: `BridgeSequentialA-20260909-174059` and `BridgeSequentialB-20260909-174059`. The first Astra turn was submitted but failed during managed workspace preparation before native generation: `The term 'C:\Program Files\Git\cmd\git.exe' is not recognized as the name of a cmdlet...`. Evidence is persisted in the conversation turn `TURN-cf89907c-4d67-4a59-a893-b375452aedcc`, workspace result `runtime/runner-control/workspace-42d947da-6dde-49e9-a288-b57692e687ae.json.result.json`, and cleanup receipt `runtime/runner-control/ATT-d42cf0b0-2036-4a4c-a315-a2509a82a5bf.workspace-cleanup.json`. Runner returned to waiting. Total native requests sent: 1 (no native model generation observed); Codex follow-up, project-B request, queue proof, and file-result checks were stopped per test protocol. This is a FAIL for the live flow and does not authorize a retry in this check.

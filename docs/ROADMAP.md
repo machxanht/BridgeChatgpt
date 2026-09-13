@@ -1,5 +1,9 @@
 # Bridge Roadmap and Completion Matrix
 
+## Current gate — 2026-09-14
+
+Grant/revoke postconditions and interrupted git-init recovery are implemented. Fresh fixture repeated ACL mutations pass. Full no-model provisioning A/B/A is pending Administrator execution of pc-executor/verify-managed-projects.ps1 (installs committed source and writes a report). Do not submit native E2E until that report passes and the new runner is waiting. UI, handoff, queue and end-to-end model behavior remain unproven for this release.
+
 ## Current requested scope — 2026-09-10
 
 Live API E2E check attempted 2026-09-09 17:41 UTC. Prerequisites PASS, but the first Astra request failed during managed workspace preparation because the pinned Git executable path was invoked incorrectly by PowerShell (`C:\Program Files\Git\cmd\git.exe` not recognized). No native generation occurred; the dependent Sol and second-project queue checks were intentionally not sent. Keep the multi-project workflow UNPROVEN/FAIL until this setup error is fixed in a separate authorized change and a fresh bounded check is run.
