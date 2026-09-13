@@ -69,7 +69,8 @@ try{
  PlainTree $cwd
  # Existing folders are adopted in place. Never pull/reset/switch their branch.
  if(!$binding){
-  $state.bindings=@($state.bindings)+@([pscustomobject]@{workspaceId=$request.workspaceId;projectId=$request.projectId;cwd=$cwd;repository_url=$request.repository_url;capability=$null})
+  $binding=[pscustomobject]@{workspaceId=$request.workspaceId;projectId=$request.projectId;cwd=$cwd;repository_url=$request.repository_url;capability=$null}
+  $state.bindings=@($state.bindings)+@($binding)
   [IO.File]::WriteAllText($RequestPath+'.acl-before.txt',(Get-Acl -LiteralPath $cwd).Sddl)
   $state|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $store -Encoding UTF8
  }
