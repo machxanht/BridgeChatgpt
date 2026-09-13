@@ -53,6 +53,10 @@ $toolHashes|ConvertTo-Json -Depth 3|Set-Content -LiteralPath (Join-Path $release
 $hashes=[ordered]@{};foreach($file in Get-ChildItem -LiteralPath $release -File){$hashes[$file.Name]=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
 Add-Type -Path (Join-Path $release 'WindowsDirectoryMetadata.cs')
 [Bridge.Native.DirectoryMetadata]::Grant($apps,$packageSid)
+# Node realpath checks each parent of npm's entrypoint. Grant metadata only,
+# without listing, file reads or inheritance, on the two toolchain ancestors.
+[Bridge.Native.DirectoryMetadata]::Grant((Join-Path $SourceRoot 'runtime'),$packageSid)
+[Bridge.Native.DirectoryMetadata]::Grant((Join-Path $SourceRoot 'runtime\runner-releases'),$packageSid)
 if(!$config.managedProjects){
 $acl=Get-Acl -LiteralPath $workspace
 foreach($sid in @($nativeSid,$packageSid)){$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),[Security.AccessControl.FileSystemRights]::Modify,[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit',[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow))}
