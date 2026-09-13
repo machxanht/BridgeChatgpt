@@ -22,6 +22,13 @@ if(process.platform!=='win32'){
   const observed=JSON.parse(fs.readFileSync(request.stdout,'utf8').replace(/^\uFEFF/,''));
   assert.equal(observed.first,first);assert.equal(observed.second,second);assert.equal(observed.stdin,input);
   assert.equal(JSON.parse(fs.readFileSync(request.result,'utf8').replace(/^\uFEFF/,'')).exit_code,0);
+  for(const invalid of [
+    {...request,confinement:'bridge-appcontainer-v1',containerName:'wrong-package'},
+    {...request,args:['sandbox_mode="danger-full-access"']},
+  ]){
+    fs.writeFileSync(requestFile,JSON.stringify(invalid));
+    assert.throws(()=>execFileSync(shell,['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.resolve('Apps/BridgeChatgpt/pc-executor/native-child.ps1'),'-RequestPath',requestFile],{env,timeout:30000,windowsHide:true,stdio:'pipe'}),error=>String(error.stderr).includes('unconfined fallback is forbidden'));
+  }
   const metadataProbe=path.join(folder,'metadata.ps1');
   fs.writeFileSync(metadataProbe,`param([string]$Source,[string]$Root)
 $ErrorActionPreference='Stop'

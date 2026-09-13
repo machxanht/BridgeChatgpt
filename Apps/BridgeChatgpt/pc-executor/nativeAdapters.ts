@@ -4,8 +4,10 @@ import { getAgentRoute, type BridgeAgentId } from '../server/agentRegistry.js';
 export interface NativeRequest {
   agentId: BridgeAgentId; cwd: string; content: string; sessionId?: string | null;
   outputFile: string; executable: string;
+  /** Only the installed Windows launcher may opt in after OS policy validation. */
+  confinement?: 'bridge-appcontainer-v1';
 }
-export interface LaunchSpec { executable: string; args: string[]; cwd: string; stdin: string; outputFile?: string }
+export interface LaunchSpec { executable: string; args: string[]; cwd: string; stdin: string; outputFile?: string; confinement?: 'bridge-appcontainer-v1' }
 export class NativeFailure extends Error {
   constructor(public code: string, message: string) { super(message); }
 }
@@ -20,25 +22,29 @@ export function buildNativeLaunch(input: NativeRequest): LaunchSpec {
   if (!path.isAbsolute(input.cwd) || !path.isAbsolute(input.executable) || !path.isAbsolute(input.outputFile)) return fail('invalid_path', 'Native launch paths must be absolute');
   if (!input.content.trim() || input.content.length > 100000) return fail('invalid_prompt', 'Prompt is empty or too long');
   const nativeSession = input.sessionId ? session(input.sessionId) : null;
+  const external = input.confinement === 'bridge-appcontainer-v1';
+  if(input.confinement && (!external || process.platform !== 'win32' || route.runner !== 'codex'))return fail('invalid_confinement','External execution requires the installed Windows Codex AppContainer launcher');
   if (route.runner === 'agy') return {
     executable: input.executable, cwd: input.cwd,
     args: ['--sandbox', '--model', route.native_model, '--add-dir', input.cwd, '--input-format', 'stream-json', '--output-format', 'stream-json', ...(nativeSession ? ['--conversation', nativeSession] : [])],
     stdin: JSON.stringify({ event: 'user', message: { content: input.content } }) + '\n',
   };
   // Config overrides also reach `exec resume`; its parser does not accept
-  // exec's sandbox/cwd flags. The nested Windows backend must be explicit:
-  // the default can otherwise expose only a read-only tool environment.
-  const windows = process.platform === 'win32' ? [
+  // exec's sandbox/cwd flags. Generic consumers retain the native sandbox.
+  // Only the verified Windows runner can use its mandatory external boundary.
+  const windows = process.platform === 'win32' && !external ? [
     '-c', 'windows.sandbox="unelevated"',
     '-c', 'windows.sandbox_private_desktop=false',
     '-c', `developer_instructions=${JSON.stringify('Use cmd.exe explicitly for shell commands and use cmd syntax. Use the native apply_patch tool for file edits. PowerShell cannot initialize inside this runner\'s nested Windows sandbox.')}`,
-  ] : [];
+  ] : external ? ['-c', `developer_instructions=${JSON.stringify("This process is confined by Bridge's Windows AppContainer and per-project policy. Work only in the assigned project. Use cmd.exe for shell commands and native apply_patch for edits. Run build/test commands directly. In Node helper scripts prefer inherited stdio for subprocesses; captured named-pipe subprocess IO can block in this AppContainer.")}`] : [];
   return {
     executable: input.executable, cwd: input.cwd, outputFile: input.outputFile,
+    ...(external ? {confinement: input.confinement} : {}),
     // The installed policy validates the exact workspace before launch. Its parent
     // .git is deliberately outside native read scope; Git discovery is not the
-    // security boundary. Keep workspace-write and the OS confinement unchanged.
-    args: ['-c', 'sandbox_mode="workspace-write"', '-c', 'approval_policy="never"', ...windows, '-C', input.cwd, 'exec', ...(nativeSession ? ['resume', nativeSession] : []), '--skip-git-repo-check', '-m', route.native_model, '--json', '-o', input.outputFile, '-'],
+    // security boundary. External mode is coupled to a protected request marker
+    // that native-child rejects unless the exact AppContainer will be applied.
+    args: ['-c', external ? 'sandbox_mode="danger-full-access"' : 'sandbox_mode="workspace-write"', '-c', 'approval_policy="never"', ...windows, '-C', input.cwd, 'exec', ...(nativeSession ? ['resume', nativeSession] : []), '--skip-git-repo-check', '-m', route.native_model, '--json', '-o', input.outputFile, '-'],
     stdin: input.content + '\n',
   };
 }

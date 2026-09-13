@@ -74,20 +74,19 @@ function Marker($active,$inactive){
  }
  if((Get-Content -Raw (Join-Path $active.cwd 'offline-marker.txt')).Trim() -ne 'BRIDGE_OFFLINE_OK'){throw 'Active confined write failed'}
  if(Test-Path -LiteralPath (Join-Path $inactive.cwd 'offline-cross.txt')){throw 'Inactive project was writable'}
- # Exercise the nested sandbox used by Codex/Astra without model generation.
+ # Codex/Astra tools use the mandatory outer AppContainer; exercise it directly.
  [IO.File]::WriteAllText((Join-Path $active.cwd 'bridge-toolchain-probe.js'),'module.exports = 42;')
- [IO.File]::WriteAllText((Join-Path $active.cwd 'bridge-toolchain-probe.cjs'),"if(require('./bridge-toolchain-probe.js')!==42)process.exit(1);")
- $batch=@('@echo off','node bridge-toolchain-probe.cjs','if errorlevel 1 exit /b 30','call npm.cmd --version','if errorlevel 1 exit /b 31','git status --porcelain','if errorlevel 1 exit /b 32','echo BRIDGE_NESTED_TOOLS_OK','exit /b 0') -join "`r`n"
- [IO.File]::WriteAllText((Join-Path $active.cwd 'bridge-toolchain-probe.cmd'),$batch+"`r`n")
- $spec.executable=$config.executables.codex.path
+ $probe=Join-Path $active.cwd 'bridge-toolchain-probe.cjs'
+ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'verify-native-tools.cjs') -Destination $probe
+ $spec.executable=Join-Path $config.releaseRoot 'tools\node\node.exe'
  $spec.attemptId='ATT-'+[guid]::NewGuid().ToString()
- $spec.args=@('-c','windows.sandbox="unelevated"','-c','windows.sandbox_private_desktop=false','sandbox','-P',':workspace','-C',$active.cwd,"$env:SystemRoot\System32\cmd.exe",'/d','/c','bridge-toolchain-probe.cmd')
+ $spec.args=@($probe,$inactive.cwd,$control,$config.releaseRoot)
  $spec.stdin='';$spec.deadline=[DateTime]::UtcNow.AddSeconds(60).ToString('o')
  $spec.stdout=Join-Path $dir 'nested-stdout.txt';$spec.stderr=Join-Path $dir 'nested-stderr.txt';$spec.result=Join-Path $dir 'nested-result.json'
  $nestedRequest=$request+'.nested.json';$spec|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $nestedRequest -Encoding UTF8
  Owned (Join-Path $config.releaseRoot 'native-owned-launch.ps1') ('-RequestPath "'+$nestedRequest+'" -ControlRoot "'+$control+'" -ReleaseRoot "'+$config.releaseRoot+'"')
  $nested=Get-Content -Raw $spec.result|ConvertFrom-Json
- if($nested.exit_code -ne 0 -or (Get-Content -Raw $spec.stdout) -notmatch 'BRIDGE_NESTED_TOOLS_OK'){throw ('Nested developer tools failed; inspect '+$spec.stderr)}
+ if($nested.exit_code -ne 0 -or (Get-Content -Raw $spec.stdout) -notmatch 'BRIDGE_NATIVE_TOOLS_OK'){throw ('Native tools or isolation failed; inspect '+$spec.stderr)}
  return $request
 }
 Stop-ScheduledTask -TaskName $taskName

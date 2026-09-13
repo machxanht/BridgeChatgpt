@@ -4,6 +4,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { buildNativeLaunch, NativeTranscript } from '../pc-executor/nativeAdapters.js';
 import { ResultOutbox } from '../pc-executor/resultOutbox.js';
+import { launchWindowsNative } from '../pc-executor/windowsNative.js';
 const cwd=process.cwd(),sessionId=randomUUID();
 fs.mkdirSync(path.join(cwd,'runtime'),{recursive:true});
 const malicious='hello & echo injected | powershell\n$(do-not-run)';
@@ -23,6 +24,21 @@ for(const agentId of ['codex','astra'] as const)for(const resume of [undefined,s
   assert(!launch.args.includes('--dangerously-bypass-approvals-and-sandbox'));
 }
 if(process.platform==='win32')assert(codex.args.includes('windows.sandbox="unelevated"'));
+if(process.platform==='win32'){
+ for(const agentId of ['codex','astra'] as const)for(const resume of [undefined,sessionId]){
+  const launch=buildNativeLaunch({agentId,cwd,content:malicious,sessionId:resume,outputFile:path.join(cwd,'final.txt'),executable:path.join(cwd,'codex.exe'),confinement:'bridge-appcontainer-v1'});
+  assert.equal(launch.confinement,'bridge-appcontainer-v1');
+  assert(launch.args.indexOf('sandbox_mode="danger-full-access"')<launch.args.indexOf('exec'));
+  assert(!launch.args.some(arg=>arg.startsWith('windows.sandbox=')));
+  assert(launch.args.includes('approval_policy="never"'));assert.equal(launch.stdin,malicious+'\n');
+ }
+ assert.throws(()=>buildNativeLaunch({agentId:'gemini',cwd,content:'x',outputFile:path.join(cwd,'final.txt'),executable:path.join(cwd,'agy.exe'),confinement:'bridge-appcontainer-v1'}),/installed Windows Codex/);
+ let prepared=false;
+ const policy={releaseRoot:cwd,controlRoot:cwd,taskRoot:cwd,containerName:'wrong-package',containerSid:'wrong-sid',prepareTask:async()=>{prepared=true;},authorize:async()=>({cwd,executable:path.join(cwd,'codex.exe')})};
+ await assert.rejects(launchWindowsNative({} as any,policy),/Unrecognized installed Windows confinement/);
+ await assert.rejects(launchWindowsNative({} as any,{...policy,authorize:async()=>{throw Error('OS policy rejected');}}),/OS policy rejected/);
+ assert.equal(prepared,false,'Rejected OS/container policy must not even prepare an execution task');
+}
 const failedTools=[
   {type:'thread.started',thread_id:sessionId},
   {type:'item.completed',item:{type:'file_change',status:'failed'}},

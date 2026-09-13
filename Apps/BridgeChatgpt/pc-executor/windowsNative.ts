@@ -33,7 +33,8 @@ export async function launchWindowsNative(turn: ClaimedTurn, policy: WindowsLaun
   await policy.prepareTask(task);
   const finalFile = path.join(task, 'final.txt');
   const launch = buildNativeLaunch({agentId: turn.agent_id, content: turn.content, cwd: approved.cwd,
-    executable: approved.executable, outputFile: finalFile, sessionId: turn.native_session_id});
+    executable: approved.executable, outputFile: finalFile, sessionId: turn.native_session_id,
+    ...(['codex','astra'].includes(turn.agent_id) ? {confinement:'bridge-appcontainer-v1' as const} : {})});
   if(!/^ATT-[a-f0-9-]{36}$/.test(turn.attempt_id))throw new Error('Invalid native attempt identity');
   const requestFile = path.join(policy.releaseRoot, `${turn.attempt_id}.request.json`);
   // releaseRoot inherits only RX for BridgeAgent: the model cannot substitute
