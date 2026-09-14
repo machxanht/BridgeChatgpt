@@ -39,7 +39,7 @@ export async function launchWindowsNative(turn: ClaimedTurn, policy: WindowsLaun
   const requestFile = path.join(policy.releaseRoot, `${turn.attempt_id}.request.json`);
   // releaseRoot inherits only RX for BridgeAgent: the model cannot substitute
   // an executable/argument between validation and the trusted child reading it.
-  const request = {...launch, attemptId: turn.attempt_id, containerName: policy.containerName, stdout: path.join(task,'stdout.ndjson'), stderr: path.join(task,'stderr.txt'),
+  const request = {...launch, agent_id: turn.agent_id, attemptId: turn.attempt_id, containerName: policy.containerName, stdout: path.join(task,'stdout.ndjson'), stderr: path.join(task,'stderr.txt'),
     result: path.join(task,'result.json'), deadline: turn.deadline_at};
   const fd = fs.openSync(requestFile,'wx');
   try {fs.writeFileSync(fd,JSON.stringify(request));fs.fsyncSync(fd);} finally {fs.closeSync(fd);}

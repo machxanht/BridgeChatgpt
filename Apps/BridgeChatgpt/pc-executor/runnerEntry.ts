@@ -35,7 +35,7 @@ export function loadInstalledConfig(file:string):InstalledRunnerConfig {
   for(const folder of [config.releaseRoot,config.controlRoot,config.taskRoot,config.workspace.cwd])real(folder);
   if(path.dirname(file).toLowerCase()!==config.controlRoot.toLowerCase())throw new Error('Config must be inside protected control root');
   for(const executable of Object.values(config.executables))if(!/^[a-f0-9]{64}$/i.test(executable.sha256)||digest(real(executable.path))!==executable.sha256.toLowerCase())throw new Error('Native executable changed');
-  for(const required of ['native-owned-launch.ps1','native-child.ps1','native-environment.ps1','WindowsJob.cs','WindowsAppContainer.cs','runner-access.ps1','WindowsNetworkPolicyIpc.cs'])if(!config.files[required])throw new Error('Incomplete installed release manifest');
+  for(const required of ['native-owned-launch.ps1','native-child.ps1','native-environment.ps1','ensure-agy-permissions.ps1','WindowsJob.cs','WindowsAppContainer.cs','runner-access.ps1','WindowsNetworkPolicyIpc.cs'])if(!config.files[required])throw new Error('Incomplete installed release manifest');
   if(config.managedProjects)for(const required of ['workspace-owned-launch.ps1','workspace-provision.ps1'])if(!config.files[required])throw new Error('Managed workspace helpers must be pinned in the installed release');
   for(const [name,hash] of Object.entries(config.files)){
     if(name!==path.basename(name)||! /^[a-f0-9]{64}$/.test(hash)||digest(real(path.join(config.releaseRoot,name)))!==hash)throw new Error('Installed release integrity failure');

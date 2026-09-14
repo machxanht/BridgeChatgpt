@@ -5,6 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import type {ClaimedTurn} from '../server/chatRuntime.js';
 import type {BridgeAgentId} from '../server/agentRegistry.js';
+import {getAgentRoute} from '../server/agentRegistry.js';
 import {NativeRunner} from './runnerCore.js';
 import {ResultOutbox} from './resultOutbox.js';
 import {launchWindowsNative,recoverWindowsNative,type WindowsLaunchPolicy} from './windowsNative.js';
@@ -36,6 +37,7 @@ export async function runNativeService(options:RunnerServiceOptions,signal:Abort
   const outbox=new ResultOutbox(path.join(options.policy.controlRoot,'outbox'));
   const save=()=>durable(journalFile,journal);
   let runtimeToken='',renewAt=0;
+  const blockedAgents=new Map<BridgeAgentId,{reason:string;updated_at:string}>();
   const request=async<T>(route:string,token:string,body:unknown):Promise<T>=>{
     const response=await fetch(`${origin.origin}/api/runtime${route}`,{method:'POST',redirect:'error',
       headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify(body),signal:AbortSignal.timeout(25000)});
@@ -75,16 +77,30 @@ export async function runNativeService(options:RunnerServiceOptions,signal:Abort
           }
           continue;
         }
-        const agents=await options.readyAgents();
-        await request('/runner/heartbeat',runtimeToken,{agents,version:'2.0.0',source_sha:options.sourceSha,managed_projects:options.managedProjects===true});
-        if(!agents.length){options.report({state:'sign_in_required',message:'No native model is authenticated and qualified'});await delay(15000,undefined,{signal});continue;}
+        const qualified=await options.readyAgents();
+        const agents=qualified.filter(agent=>!blockedAgents.has(agent));
+        const now=new Date().toISOString();
+        const agent_status=Object.fromEntries(qualified.map(agent=>blockedAgents.has(agent)?[agent,{state:'blocked',...blockedAgents.get(agent)}]:[agent,{state:'ready',updated_at:now}]));
+        await request('/runner/heartbeat',runtimeToken,{agents,agent_status,version:'2.0.0',source_sha:options.sourceSha,managed_projects:options.managedProjects===true});
+        if(!agents.length){
+          const message=blockedAgents.size?`Native agent blocked: ${[...blockedAgents.entries()].map(([id,value])=>`${getAgentRoute(id).label} — ${value.reason}`).join('; ')}`:'No native model is authenticated and qualified';
+          options.report({state:blockedAgents.size?'unavailable':'sign_in_required',message});
+          await delay(15000,undefined,{signal});continue;
+        }
         journal.claimRequest ||= randomUUID();save();
         options.report({state:'waiting'});
         const claimed=await runner.claim(agents,journal.claimRequest);
         if(!claimed)continue;
         journal={turn:claimed.turn,claimRequest:null,releaseRoot:options.policy.releaseRoot};save();
         options.report({state:'working'});
-        await runner.execute(claimed.turn,signal);
+        try{
+          await runner.execute(claimed.turn,signal);
+          blockedAgents.delete(claimed.turn.agent_id);
+        }catch(error){
+          const reason=error instanceof Error?error.message:'Native runner error';
+          blockedAgents.set(claimed.turn.agent_id,{reason:reason.slice(0,400),updated_at:new Date().toISOString()});
+          options.report({state:'unavailable',message:`${getAgentRoute(claimed.turn.agent_id).label}: ${reason}`});
+        }
       }catch(error:any){
         if(signal.aborted)break;
         if(error?.status===401)renewAt=0;

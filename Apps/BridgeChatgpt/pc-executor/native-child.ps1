@@ -7,6 +7,10 @@ $OutputEncoding=[Text.UTF8Encoding]::new($false)
 # This file and RequestPath are installed in runner-releases with read/execute
 # rights only for BridgeAgent. No controller credential is in this request.
 $request=Get-Content -LiteralPath $RequestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$agentId=[string]$request.agent_id
+if($agentId -in @('gemini','sonnet','opus')){
+  & (Join-Path $PSScriptRoot 'ensure-agy-permissions.ps1')
+}
 if($request.confinement -or (@($request.args) -contains 'sandbox_mode="danger-full-access"')){
  if($request.confinement -ne 'bridge-appcontainer-v1' -or $request.containerName -ne 'BridgeNative.boundary-v1'){
   throw 'Externally confined execution requires the exact Bridge AppContainer; unconfined fallback is forbidden'

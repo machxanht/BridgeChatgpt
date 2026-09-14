@@ -9,7 +9,7 @@ const hash=(s:string)=>createHash('sha256').update(s).digest('hex');
 for(const name of ['control','release','tasks','workspace'])fs.mkdirSync(path.join(root,name));
 const release=path.join(root,'release'),configFile=path.join(root,'control/config.json');
 const files:Record<string,string>={};
-for(const name of ['native-owned-launch.ps1','native-child.ps1','native-environment.ps1','WindowsJob.cs','WindowsAppContainer.cs','runner-access.ps1','WindowsNetworkPolicyIpc.cs']){fs.writeFileSync(path.join(release,name),'fixture');files[name]=hash('fixture');}
+for(const name of ['native-owned-launch.ps1','native-child.ps1','native-environment.ps1','ensure-agy-permissions.ps1','WindowsJob.cs','WindowsAppContainer.cs','runner-access.ps1','WindowsNetworkPolicyIpc.cs']){fs.writeFileSync(path.join(release,name),'fixture');files[name]=hash('fixture');}
 const binary=path.join(release,'native.exe');fs.writeFileSync(binary,'pinned');
 const config:InstalledRunnerConfig={version:1,origin:'https://bridge.example',subject:'pc-test',sourceSha:'a'.repeat(40),releaseRoot:release,controlRoot:path.dirname(configFile),taskRoot:path.join(root,'tasks'),workspace:{workspaceId:'workspace-1',projectId:'project-1',cwd:path.join(root,'workspace')},executables:{agy:{path:binary,sha256:hash('pinned')},codex:{path:binary,sha256:hash('pinned')}},files,qualificationFile:path.join(root,'control/qualification.json')};
 const save=()=>fs.writeFileSync(configFile,JSON.stringify(config));save();

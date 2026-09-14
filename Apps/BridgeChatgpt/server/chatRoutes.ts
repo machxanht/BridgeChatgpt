@@ -4,7 +4,7 @@ import { createTurn, getConversation, listConversations, cancelTurn, claimNextTu
 import { issueRuntimeToken, revokeRuntimeToken, runtimeAuth, runtimeBearer, verifyRuntimeToken } from './runtimeAuth.js';
 import { verifyBrowserSession } from './browserSession.js';
 import { verifyToken } from './auth.js';
-import { recordRuntimeHeartbeat, runtimeAgentAvailable, runtimeSnapshot } from './runtimeStatus.js';
+import { recordRuntimeHeartbeat, runtimeAgentAvailable, runtimeAgentStatus, runtimeSnapshot } from './runtimeStatus.js';
 import { runtimeIsDraining } from './runtimeLifecycle.js';
 import { recoverOwnedAttempt } from './chatRuntime.js';
 import {projectActivity} from './chatRuntime.js';
@@ -20,7 +20,7 @@ const status=(err:any)=>Number(err?.statusCode)||400;
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 
 chatRouter.get('/agents',(_req,res)=>{
-  res.json({agents:BRIDGE_AGENT_ROUTES.map(route=>({...route,available:runtimeAgentAvailable(route.id)})),runtimes:runtimeSnapshot()});
+  res.json({agents:BRIDGE_AGENT_ROUTES.map(route=>{const state=runtimeAgentStatus(route.id);return {...route,available:runtimeAgentAvailable(route.id),runtime_state:state.state,runtime_reason:'reason' in state?state.reason:undefined}}),runtimes:runtimeSnapshot()});
 });
 chatRouter.get('/accounts',async(_req,res)=>{ try { res.json({accounts:await listNativeAccounts(),message:'Bridge chỉ lưu nhãn tài khoản. Đăng nhập chính thức vẫn diễn ra trên PC và credential không được tải lên server.'}); } catch(err:any){ res.status(500).json({error:err.message}); } });
 chatRouter.post('/accounts',async(req,res)=>{ try { res.status(201).json({account:await registerNativeAccount(req.body||{})}); } catch(err:any){ res.status(status(err)).json({error:err.message}); } });
@@ -101,7 +101,8 @@ runtimeRouter.post('/revoke',(req,res)=>{
 runtimeRouter.post('/runner/heartbeat',runtimeAuth('runner'),(req,res)=>{
   const claims=(req as any).runtimeAuth;
   const agents=(Array.isArray(req.body?.agents)?req.body.agents:[]).filter((id:string)=>BRIDGE_AGENT_ROUTES.some(a=>a.id===id&&a.transport==='cli')) as BridgeAgentId[];
-  res.json(recordRuntimeHeartbeat({transport:'cli',subject:claims.sub,agents,version:req.body?.version,source_sha:req.body?.source_sha,managed_projects:req.body?.managed_projects===true}));
+  const agentStatus=typeof req.body?.agent_status==='object'&&req.body.agent_status!==null?req.body.agent_status:undefined;
+  res.json(recordRuntimeHeartbeat({transport:'cli',subject:claims.sub,agents,agent_status:agentStatus,version:req.body?.version,source_sha:req.body?.source_sha,managed_projects:req.body?.managed_projects===true}));
 });
 runtimeRouter.post('/browser/heartbeat',runtimeAuth('browser'),(req,res)=>{
   const claims=(req as any).runtimeAuth;

@@ -4,6 +4,9 @@ type RuntimeHeartbeat = {
   transport: 'cli' | 'browser';
   subject: string;
   agents: BridgeAgentId[];
+  /** Per-agent state from the local runner. A blocked agent is not claimable
+   * even when it remains in the static qualification set. */
+  agent_status?: Partial<Record<BridgeAgentId, { state: 'ready' | 'blocked'; reason?: string; updated_at: string }>>;
   version?: string;
   source_sha?: string;
   managed_projects?: boolean;
@@ -22,7 +25,21 @@ export function recordRuntimeHeartbeat(input: Omit<RuntimeHeartbeat,'last_seen_a
 
 export function runtimeAgentAvailable(agent: BridgeAgentId): boolean {
   const now=Date.now();
-  return [...heartbeats.values()].some(item => item.expires_at>now && item.agents.includes(agent));
+  return [...heartbeats.values()].some(item => item.expires_at>now && item.agents.includes(agent) && item.agent_status?.[agent]?.state !== 'blocked');
+}
+
+export function runtimeAgentStatus(agent: BridgeAgentId) {
+  const now=Date.now();
+  let blocked: { state:'blocked'; reason?:string; updated_at:string; online:true } | null = null;
+  for (const item of heartbeats.values()) {
+    if (item.expires_at<=now) continue;
+    const state=item.agent_status?.[agent];
+    if (state?.state==='blocked') { blocked={ state:'blocked', reason:state.reason, updated_at:state.updated_at, online:true }; continue; }
+    if (!item.agents.includes(agent)) continue;
+    return { state:'ready' as const, updated_at:state?.updated_at||item.last_seen_at, online:true };
+  }
+  if (blocked) return blocked;
+  return { state:'offline' as const, online:false };
 }
 
 /** A validated active attempt proves liveness, but cannot add model capabilities. */

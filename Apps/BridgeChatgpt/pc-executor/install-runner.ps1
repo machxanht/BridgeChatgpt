@@ -29,7 +29,7 @@ $backup=Join-Path $control ('runner-install-'+$head.Substring(0,12)+'-acl-before
 New-Item -ItemType Directory -Path $release|Out-Null
 & icacls.exe $release /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' ('*'+$operator+':(OI)(CI)F') ('*'+$nativeSid+':(OI)(CI)RX') ('*'+$packageSid+':(OI)(CI)RX') | Out-Null
 if($LASTEXITCODE -ne 0){throw 'Release protection failed'}
-$files=@('native-owned-launch.ps1','native-child.ps1','native-environment.ps1','WindowsJob.cs','WindowsAppContainer.cs','WindowsNetworkPolicyIpc.cs','WindowsDirectoryMetadata.cs','runner-access.ps1','start-runner.ps1','workspace-owned-launch.ps1','workspace-provision.ps1')
+$files=@('native-owned-launch.ps1','native-child.ps1','native-environment.ps1','ensure-agy-permissions.ps1','WindowsJob.cs','WindowsAppContainer.cs','WindowsNetworkPolicyIpc.cs','WindowsDirectoryMetadata.cs','runner-access.ps1','start-runner.ps1','workspace-owned-launch.ps1','workspace-provision.ps1')
 $files+=@('WindowsPathQueryAccess.cs')
 foreach($name in $files){Copy-Item -LiteralPath (Join-Path $SourceRoot ('Apps\BridgeChatgpt\pc-executor\'+$name)) -Destination (Join-Path $release $name)}
 Copy-Item -LiteralPath (Join-Path $SourceRoot 'dist\runner-entry.mjs') -Destination (Join-Path $release 'runner-entry.mjs')

@@ -294,3 +294,8 @@ Production deployment is now live from commit `1168b10` on Railway deployment `2
 - ⬜ Upload this candidate to Railway and verify the new deployment plus `/ready`/`/api/health`; do not spend provider quota for deployment validation.
 
 Deployment verification — 2026-09-14: commit `88d44ed` is live on Railway deployment `8f7ac6af-e0ab-41ae-b680-50d6617761a2` (`SUCCESS`). `/ready` and `/api/health` returned 200 and the root served the new bundle. No native model request was sent. The separately installed PC runner remains on its previously verified source SHA until a Windows runner release is intentionally installed.
+# Readiness correction — 2026-09-14
+
+- 🟢 AGY headless command permissions: source helper and blocked-agent heartbeat/UI handling are implemented; run `install-multi-project.ps1` as Administrator to put the helper in the installed release. No native request was used to validate this change.
+- 🔴 Native login/profile switching: not a browser feature. AGY Gemini/Claude routes share the BridgeAgent Google profile; Codex/Astra use the BridgeAgent Codex profile. Account labels are metadata only and do not yet select independent credential directories.
+- 🔴 Current Flash coding E2E: latest failures are command permission denials (`run-8WwNP0`, `run-iTcXad`); the saved-session, no-tool reply is proven (`run-fQ9xZg`). Re-run one bounded Flash coding request only after installing the helper and confirming the runner heartbeat reports `ready`.
