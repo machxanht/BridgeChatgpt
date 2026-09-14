@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Bridge Wake",
-  "version": "2.0.0",
-  "description": "Bridge v2: authenticated Sol 5.6 conversations with durable send receipts.",
+  "version": "2.1.0",
+  "description": "ChatGPT Standard through your signed-in browser, with durable send receipts.",
   "permissions": [
     "alarms",
     "tabs",

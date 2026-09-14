@@ -52,3 +52,28 @@ await vm.runInContext('tick()',context);
 assert.equal(clicks,1);assert.equal(local.activeV2,null);assert.equal(finalPosts,2);
 assert(!calls.includes('/cleanup'),'successful final replay never clears an unrelated fence');
 console.log('browserRuntimeV2.test.mjs: send disconnect, receipt disconnect, completion disconnect, exact one click, capability isolation PASS');
+
+// Execute the actual injected credential function: login alone is insufficient
+// unless the session CSRF is carried into the runtime capability request.
+delete session.capability;
+context.sessionFetch = async (url, options) => {
+  if (url === '/api/auth/session') return {ok:true,json:async()=>({csrf:'fixture-csrf'})};
+  assert.equal(url,'/api/runtime/browser/session');
+  assert.equal(options.headers['x-bridge-csrf'],'fixture-csrf');
+  assert.equal(options.credentials,'same-origin');
+  return {ok:true,json:async()=>({token:'new-fixture-capability',expires_in_ms:3600000})};
+};
+chrome.scripting.executeScript = async ({func,args}) => [{result:await vm.runInNewContext(`(${func.toString()})(subject)`,{fetch:context.sessionFetch,subject:args[0]})}];
+assert.equal(await vm.runInContext('credential()',context),'new-fixture-capability');
+
+let selected='ChatGPT';
+chrome.scripting.executeScript = async ({func,args}) => [{result:await vm.runInNewContext(`(${func.toString()})(operation, '')`,{
+  operation:args[0],location:{origin:'https://chatgpt.com',pathname:'/c/fixture-session'},
+  document:{querySelector:selector=>selector.includes('model-switcher')?{textContent:selected}:null,querySelectorAll:()=>[]},
+})}];
+assert.equal((await vm.runInContext("page(1,'inspect')",context)).exactModel,true);
+selected='Thinking';
+assert.equal((await vm.runInContext("page(1,'inspect')",context)).exactModel,false);
+selected='';
+assert.equal((await vm.runInContext("page(1,'inspect')",context)).exactModel,false);
+console.log('ChatGPT Standard: authenticated CSRF grant; default selected; Thinking and unknown rejected PASS');

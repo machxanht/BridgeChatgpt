@@ -10,7 +10,7 @@ export interface BridgeAgentRoute {
 }
 
 export const BRIDGE_AGENT_ROUTES: readonly BridgeAgentRoute[] = [
-  { id:'chatgpt', label:'Sol 5.6', transport:'browser', runner:'chatgpt-web', native_model:'Sol 5.6', provider:'openai' },
+  { id:'chatgpt', label:'ChatGPT Standard', transport:'browser', runner:'chatgpt-web', native_model:'chatgpt-standard', provider:'openai' },
   { id:'gemini', label:'Gemini 3.8 Flash', transport:'cli', runner:'agy', native_model:'gemini-3.8-flash-high', provider:'google' },
   // Antigravity serves the Claude model slugs through the same Google account
   // and AGY profile as Gemini. There is no separate Claude web login in this

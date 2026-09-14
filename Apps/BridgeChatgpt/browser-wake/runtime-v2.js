@@ -1,7 +1,7 @@
 // MV3 owns the capability and durable send journal. Provider pages receive only
 // prompt/DOM commands; they never receive a Bridge credential.
 const ORIGIN = 'https://bridgechatgpt-production.up.railway.app';
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 let running = false;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const hash = async value => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), byte => byte.toString(16).padStart(2, '0')).join('');
@@ -22,8 +22,12 @@ async function credential() {
   const subject = identity.runtimeSubjectV2 || `bridge-extension-v2-${crypto.randomUUID()}`;
   await chrome.storage.local.set({runtimeSubjectV2: subject});
   const result = await chrome.scripting.executeScript({target: {tabId: tabs[0].id}, world: 'MAIN', func: async runtimeSubject => {
+    const sessionResponse = await fetch('/api/auth/session', {credentials: 'same-origin'});
+    if (!sessionResponse.ok) return null;
+    const session = await sessionResponse.json();
+    if (!session.csrf) return null;
     const response = await fetch('/api/runtime/browser/session', {method: 'POST', credentials: 'same-origin',
-      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({subject: runtimeSubject})});
+      headers: {'Content-Type': 'application/json', 'x-bridge-csrf': session.csrf}, body: JSON.stringify({subject: runtimeSubject})});
     if (!response.ok) return null;
     return response.json();
   }, args: [subject]});
@@ -36,21 +40,25 @@ async function page(tabId, action, content) {
   let results;
   try { results = await chrome.scripting.executeScript({target: {tabId}, func: (operation, prompt) => {
     if (location.origin !== 'https://chatgpt.com') throw new Error('Unexpected provider origin');
-    const model = document.querySelector('[data-testid="model-switcher-dropdown-button"]')?.textContent?.trim() || '';
-    const exactModel = /\bSol\s*5\.6\b|\b5\.6\s*Sol\b/i.test(model);
-    const stopping = document.querySelector('[data-testid="stop-button"]');
+    const visibleModel = document.querySelector('[data-testid="model-switcher-dropdown-button"], button[aria-label="Trình chọn mô hình"], button[aria-label="Model selector"]')?.textContent?.trim() || '';
     const messages = [...document.querySelectorAll('[data-message-id][data-message-author-role]')].map(element => ({
       id: element.getAttribute('data-message-id'), role: element.getAttribute('data-message-author-role'),
+      modelSlug: element.getAttribute('data-message-model-slug') || '',
       text: (element.querySelector('.markdown') || element).innerText?.trim() || '',
       complete: !!element.closest('article')?.querySelector('[data-testid="copy-turn-action-button"]'),
     }));
-    const session = location.pathname.match(/^\/c\/([a-zA-Z0-9-]+)$/)?.[1] || null;
+    // Standard means the default ChatGPT web selection, not an inferred model
+    // from an old answer or a cached model catalogue. Never select paid modes.
+    const model = visibleModel;
+    const exactModel = /^ChatGPT(?:\s+Standard)?$/i.test(model);
+    const stopping = document.querySelector('[data-testid="stop-button"]');
+    const session = location.pathname.match(/(?:^|\/)c\/([a-zA-Z0-9-]+)\/?$/)?.[1] || null;
     if (operation === 'stop') { stopping?.click(); return {stopping: !!stopping}; }
     if (operation === 'send') {
-      if (!exactModel) throw new Error(`Chọn đúng Sol 5.6 trước khi gửi (hiện tại: ${model || 'không xác định'}).`);
+      if (!exactModel) throw new Error(`Chọn ChatGPT mặc định trước khi gửi (hiện tại: ${model || 'không xác định'}).`);
       if (stopping) throw new Error('ChatGPT is already generating');
       const composer = document.querySelector('#prompt-textarea');
-      if (!composer || composer.innerText.trim()) throw new Error('Composer missing or contains an unsent draft');
+      if (!composer || (composer instanceof HTMLTextAreaElement ? composer.value : composer.innerText).trim()) throw new Error('Composer missing or contains an unsent draft');
       composer.focus();
       if (composer instanceof HTMLTextAreaElement) {
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(composer, prompt);
@@ -105,7 +113,7 @@ async function processTurn(active, token) {
     if (turn.native_session_id && state.session !== turn.native_session_id) throw new Error('Native conversation mismatch');
     if (!active.stage) await receipt(active, 'claimed');
     if (active.stage === 'claimed') {
-      if (!state.exactModel) throw new Error('ChatGPT chưa chọn đúng Sol 5.6; không gửi sang model khác.');
+      if (!state.exactModel) throw Object.assign(new Error('Chọn ChatGPT mặc định trên tab ChatGPT; lượt này chưa được gửi.'), {fatal: true});
       if (state.generating) throw new Error('Native conversation is busy');
       active.before = state.messages.map(message => message.id);
       await receipt(active, 'preparing');
@@ -173,7 +181,7 @@ async function tick() {
         const observed = await page(tab.id, 'inspect');
         if (observed.exactModel && !observed.generating) { ready = true; break; }
       }
-      if (!ready) throw new Error('Mở ChatGPT, đăng nhập và chọn Sol 5.6 để nhận lượt chat.');
+      if (!ready) throw new Error('Mở ChatGPT, đăng nhập và chọn ChatGPT mặc định để nhận lượt chat.');
       await api('/browser/heartbeat', token, {version: VERSION});
       const requestId = state.claimRequestV2 || crypto.randomUUID();
       await chrome.storage.local.set({claimRequestV2: requestId});
@@ -206,7 +214,8 @@ async function tick() {
 }
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.alarms.create('bridge-v2', {periodInMinutes: 0.5});
-  await chrome.storage.local.set({enabledV2: false});
+  const state = await chrome.storage.local.get(['enabledV2']);
+  if (state.enabledV2 === undefined) await chrome.storage.local.set({enabledV2: false});
 });
 chrome.runtime.onStartup.addListener(() => chrome.alarms.create('bridge-v2', {periodInMinutes: 0.5}));
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'bridge-v2') void tick(); });

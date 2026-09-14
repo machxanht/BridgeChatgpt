@@ -106,6 +106,7 @@ runtimeRouter.post('/runner/heartbeat',runtimeAuth('runner'),(req,res)=>{
 });
 runtimeRouter.post('/browser/heartbeat',runtimeAuth('browser'),(req,res)=>{
   const claims=(req as any).runtimeAuth;
+  if(req.body?.version!=='2.1.0'){res.status(409).json({error:'Update Bridge Wake to 2.1.0 for ChatGPT Standard.'});return;}
   res.json(recordRuntimeHeartbeat({transport:'browser',subject:claims.sub,agents:['chatgpt'],version:req.body?.version,source_sha:req.body?.source_sha}));
 });
 
@@ -114,6 +115,9 @@ runtimeRouter.post('/claim',async(req,res)=>{
   const token=runtimeBearer(req),runner=verifyRuntimeToken(token,'runner'),browser=verifyRuntimeToken(token,'browser');
   const claims=runner||browser;
   if(!claims){res.status(401).json({error:'Runner or browser runtime credential required'});return;}
+  if(browser&&!runtimeSnapshot().some(item=>item.transport==='browser'&&item.subject===browser.sub&&item.version==='2.1.0')){
+    res.status(409).json({error:'Bridge Wake 2.1.0 must confirm ChatGPT Standard is ready before claiming.'});return;
+  }
   const requested=(Array.isArray(req.body?.agent_ids)?req.body.agent_ids:BRIDGE_AGENT_ROUTES.map(a=>a.id)).filter((x:any)=>typeof x==='string') as BridgeAgentId[];
   const waitMs=Math.max(0,Math.min(20_000,Number(req.body?.wait_ms??20_000)));
   const deadline=Date.now()+waitMs;
