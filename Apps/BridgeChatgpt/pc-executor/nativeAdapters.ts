@@ -116,7 +116,7 @@ export class NativeTranscript {
         this.terminal = event.result;
         if (event.result?.status !== 'SUCCESS' || event.result?.error || event.result?.denied_actions?.length) {
           this.blocked = true;
-          this.blockedReason = String(event.result?.error || (event.result?.denied_actions?.length ? 'A native action was denied' : `Native result status ${event.result?.status || 'unknown'}`)).slice(0, 400);
+          this.blockedReason ||= String(event.result?.error || (event.result?.denied_actions?.length ? 'A native action was denied' : `Native result status ${event.result?.status || 'unknown'}`)).slice(0, 400);
         }
       }
     } else {
@@ -132,7 +132,7 @@ export class NativeTranscript {
   finish(exitCode: number | null, finalFile?: string): NativeFinal {
     if (this.buffer.trim()) { this.event(this.buffer); this.buffer = ''; }
     if (exitCode !== 0) return fail('process_exit', `Native process exited with ${exitCode ?? 'signal'}`);
-    if (this.blocked) return fail('native_failure', this.blockedReason ? `Native execution failed: ${this.blockedReason}` : 'Native execution reported an error or denied permission');
+    if (this.blocked) return fail(this.terminal?.denied_actions?.length ? 'native_action_denied' : 'native_failure', this.blockedReason ? `Native execution failed: ${this.blockedReason}` : 'Native execution reported an error or denied permission');
     if (this.completedTools > 0 && this.successfulTools === 0) return fail('native_tool_failure', 'Every native file/command tool failed; a final answer is not proof of task completion');
     if (!this.terminal || !this.sessionId) return fail('incomplete_output', 'Native execution has no terminal result/session receipt');
     if (this.expectedSession && this.sessionId !== this.expectedSession) return fail('session_mismatch', 'Native runtime resumed a different conversation');

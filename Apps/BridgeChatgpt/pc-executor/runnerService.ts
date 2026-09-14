@@ -98,7 +98,9 @@ export async function runNativeService(options:RunnerServiceOptions,signal:Abort
           blockedAgents.delete(claimed.turn.agent_id);
         }catch(error){
           const reason=error instanceof Error?error.message:'Native runner error';
-          blockedAgents.set(claimed.turn.agent_id,{reason:reason.slice(0,400),updated_at:new Date().toISOString()});
+          // A denied command belongs to this turn; it does not invalidate the
+          // provider login. The failed turn is never automatically retried.
+          if((error as any)?.code!=='native_action_denied')blockedAgents.set(claimed.turn.agent_id,{reason:reason.slice(0,400),updated_at:new Date().toISOString()});
           options.report({state:'unavailable',message:`${getAgentRoute(claimed.turn.agent_id).label}: ${reason}`});
         }
       }catch(error:any){

@@ -50,6 +50,7 @@ assert.equal(codexTranscript([...failedTools,{type:'item.completed',item:{type:'
 const lines=[{event:'init',conversation_id:sessionId,init:{model:'gemini-3.8-flash-high',cwd,permission_mode:'request-review'}},{event:'result',result:{status:'SUCCESS',conversation_id:sessionId,response:'real fixture final'}}];
 const parse=(events:any[])=>{const p=new NativeTranscript('gemini',cwd);p.push(events.map(x=>JSON.stringify(x)).join('\n')+'\n');return p;};
 const final=parse(lines).finish(0);assert.equal(final.answer,'real fixture final');
+assert.throws(()=>parse([lines[0],{event:'step_update',step_update:{tool_info:{error:{message:'permission check failed for whoami'}}}},{event:'result',result:{status:'SUCCESS',conversation_id:sessionId,response:'',denied_actions:[{action:'command'}]}}]).finish(0),(error:any)=>error.code==='native_action_denied' && error.message.includes('whoami'),'denial preserves the actual command and has a turn-scoped error code');
 assert.equal(extractAntigravityAnswer({status:'SUCCESS',message:{content:[{text:'nested fixture answer'}]}}),'nested fixture answer');
 assert.equal(extractAntigravityAnswer({status:'SUCCESS',metadata:{text:'ignored'}}),'','unrelated metadata is never promoted to an answer');
 assert.throws(()=>parse(lines).finish(1),/exited/);
