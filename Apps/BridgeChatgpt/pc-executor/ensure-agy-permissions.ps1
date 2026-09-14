@@ -23,7 +23,7 @@ foreach($rule in @($settings.permissions.allow)){if($null -ne $rule -and -not [s
 # project toolchain/inspection commands. The AppContainer remains the OS
 # boundary; no wildcard, network, PowerShell or unsandboxed rule is granted.
 $required=@(
-  'command(regex:^cmd\.exe /c "?(node|npm|npx|git|where|type|dir|findstr|mkdir|copy|move|del|echo)(\s|$).*)'
+  'command(regex:^cmd\.exe /c "?((node|where|type|dir|findstr|mkdir|copy|move|del|echo)(\s|$)|npm (test|run (build|lint|test|build:runner))(\s|$)|npx (tsc|vite|esbuild)(\s|$)|git (status|diff|log|show|branch|rev-parse|init|add|commit)(\s|$)).*)'
 )
 foreach($rule in $required){if(!$allow.Contains($rule)){$allow.Add($rule)}}
 $settings.permissions.allow=@($allow)
