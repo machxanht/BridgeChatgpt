@@ -276,3 +276,5 @@ For a candidate release run `npm run lint`, `npm test`, `npm run build`, then de
 Login is performed once on the Windows PC under the paired `BridgeAgent` account; the Railway web app cannot read the PC browser cookies or CLI credential stores. Start `agy` interactively and complete Google login for Gemini/Claude routes. Start `codex login` and complete the OpenAI device login for Codex Sol/Astra. Claude Sonnet and Opus in Bridge are Antigravity model slugs, so they use the same AGY Google profile and do not have a separate Claude browser login here.
 
 The account panel records a label/profile name only. It does not copy secrets or switch credential directories yet. After installing a new runner release, restart the scheduled task and check `/api/chat/agents`: native entries must be `available:true`, `runtime_state:"ready"`; a `blocked` entry includes the exact native permission/auth failure and sending is disabled until the runner is updated/restarted.
+
+The server/UI correction is live from commit `38c3ed4` on Railway deployment `9d9ef86c-beeb-4e81-8148-d7c79922ad28` (`SUCCESS`). This deployment does not update the separately installed Windows runner.
