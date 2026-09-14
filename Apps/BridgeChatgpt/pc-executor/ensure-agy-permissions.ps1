@@ -26,7 +26,7 @@ $required=@(
   'command(regex:^cmd\.exe /c "?((node|where|type|dir|findstr|mkdir|copy|move|del|echo)(\s|$)|npm (test|run (build|lint|test|build:runner))(\s|$)|npx (tsc|vite|esbuild)(\s|$)|git (status|diff|log|show|branch|rev-parse|init|add|commit)(\s|$)).*)'
 )
 foreach($rule in $required){if(!$allow.Contains($rule)){$allow.Add($rule)}}
-$settings.permissions.allow=@($allow)
+$settings.permissions | Add-Member -NotePropertyName allow -NotePropertyValue @($allow.ToArray()) -Force
 $json=$settings|ConvertTo-Json -Depth 16
 $temp="$settingsPath.$PID.$([guid]::NewGuid().ToString('N')).tmp"
 [IO.File]::WriteAllText($temp,$json+"`r`n",[Text.UTF8Encoding]::new($false))
