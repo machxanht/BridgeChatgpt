@@ -292,3 +292,5 @@ Production deployment is now live from commit `1168b10` on Railway deployment `2
 - ✅ ChatGPT-style UI menus, account panel and Ctrl/Cmd+K new-chat shortcut.
 - ✅ Lint, full tests and production build pass with zero native model requests.
 - ⬜ Upload this candidate to Railway and verify the new deployment plus `/ready`/`/api/health`; do not spend provider quota for deployment validation.
+
+Deployment verification — 2026-09-14: commit `88d44ed` is live on Railway deployment `8f7ac6af-e0ab-41ae-b680-50d6617761a2` (`SUCCESS`). `/ready` and `/api/health` returned 200 and the root served the new bundle. No native model request was sent. The separately installed PC runner remains on its previously verified source SHA until a Windows runner release is intentionally installed.
