@@ -17,6 +17,8 @@ export interface WorkspaceRecord {
   setup_required: boolean;
   created_at: string;
   updated_at: string;
+  archived?: boolean;
+  deleted_at?: string | null;
 }
 
 export interface AgentInstanceRecord {
@@ -131,6 +133,8 @@ function defaultWorkspace(project: ProjectConfig): WorkspaceRecord {
     setup_required: false,
     created_at: now,
     updated_at: now,
+    archived: false,
+    deleted_at: null,
   };
 }
 
@@ -151,6 +155,8 @@ export async function getWorkspaceRegistry(project: ProjectConfig): Promise<Work
       local_path: workspace.local_path || projectLocalPath(workspace.project_name, workspace.project_id),
       execution_target: normalizeExecutionTarget(workspace.execution_target),
       setup_required: Boolean(workspace.setup_required),
+      archived: Boolean(workspace.archived),
+      deleted_at: workspace.deleted_at || null,
       chatgpt_instances: store.instances.filter(instance => instance.workspace_id === workspace.workspace_id && instance.provider === 'chatgpt'),
       studio_instances: store.instances.filter(instance => instance.workspace_id === workspace.workspace_id && instance.provider === 'google-ai-studio'),
     }));
@@ -176,19 +182,48 @@ export async function upsertWorkspace(project: ProjectConfig, input: Partial<Wor
       workspace_id: workspaceId,
       project_id: projectId,
       project_name: projectName,
-      repository_url: cleanLabel(input.repository_url, existing?.repository_url || project.repository_url),
+      repository_url: input.repository_url == null ? (existing?.repository_url || project.repository_url) : String(input.repository_url).trim().slice(0,1024),
       branch: cleanLabel(input.branch, existing?.branch || project.default_branch || 'main'),
       local_path: cleanLabel(input.local_path, existing?.local_path || projectLocalPath(projectName, projectId)),
       execution_target: normalizeExecutionTarget(input.execution_target, normalizeExecutionTarget(existing?.execution_target)),
       setup_required: input.setup_required == null ? Boolean(existing?.setup_required) : Boolean(input.setup_required),
       created_at: existing?.created_at || now,
       updated_at: now,
+      archived: input.archived == null ? Boolean(existing?.archived) : Boolean(input.archived),
+      deleted_at: input.deleted_at === undefined ? (existing?.deleted_at || null) : (input.deleted_at || null),
     };
     if (!next.local_path.startsWith('Apps/')) throw new Error('local_path must stay under Apps/');
+    if(store.workspaces.some(w=>w.workspace_id!==workspaceId&&w.local_path.toLowerCase()===next.local_path.toLowerCase()))throw new Error('This project folder is already registered');
+    if(existing&&(existing.project_id!==next.project_id||existing.local_path!==next.local_path))throw new Error('An existing project cannot be redirected to another folder or identity');
     if (existing) Object.assign(existing, next);
     else store.workspaces.push(next);
     writeStore(store);
     return next;
+  });
+}
+
+export async function updateWorkspace(project: ProjectConfig, workspaceId: string, input: { project_name?: string; branch?: string; repository_url?: string }): Promise<WorkspaceRecord> {
+  return withRegistryLock(async () => {
+    const store = readStore(); ensureDefault(store, project);
+    const workspace = store.workspaces.find(item => item.workspace_id === requireId('workspace_id', workspaceId));
+    if (!workspace || workspace.deleted_at) throw Object.assign(new Error('Project not found'), { statusCode: 404 });
+    if (input.project_name !== undefined) workspace.project_name = cleanLabel(input.project_name, workspace.project_name);
+    if (input.branch !== undefined) workspace.branch = cleanLabel(input.branch, workspace.branch);
+    if (input.repository_url !== undefined) workspace.repository_url = String(input.repository_url).trim().slice(0, 1024);
+    workspace.updated_at = new Date().toISOString(); writeStore(store); return { ...workspace };
+  });
+}
+
+export async function setWorkspaceLifecycle(project: ProjectConfig, workspaceId: string, action: 'archive' | 'restore' | 'delete'): Promise<WorkspaceRecord> {
+  return withRegistryLock(async () => {
+    const store = readStore(); ensureDefault(store, project);
+    const workspace = store.workspaces.find(item => item.workspace_id === requireId('workspace_id', workspaceId));
+    if (!workspace || (workspace.deleted_at && action !== 'restore')) throw Object.assign(new Error('Project not found'), { statusCode: 404 });
+    const now = new Date().toISOString();
+    if (action === 'archive') workspace.archived = true;
+    else if (action === 'restore') { workspace.archived = false; workspace.deleted_at = null; }
+    else { workspace.deleted_at = now; workspace.archived = true; }
+    workspace.updated_at = now; writeStore(store); return { ...workspace };
   });
 }
 

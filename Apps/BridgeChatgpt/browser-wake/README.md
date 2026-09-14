@@ -1,52 +1,26 @@
-# Bridge Wake Chrome Extension
+# ChatGPT Standard — Bridge Wake 2.1.0
 
-Bridge Wake turns Bridge's URL routing registry into a browser-side wake layer:
+This extension connects Bridge to the default ChatGPT web selection in your existing browser profile. It does not use an API key or Codex. The ChatGPT account's limits still apply; Bridge cannot promise a particular underlying model or quota cost.
 
-`Bridge task/review -> wake queue -> exact ChatGPT conversation or AI Studio app URL -> inject wake prompt -> agent continues work`
+## Install or update on the PC (no administrator PowerShell)
 
-## Install in desktop Chrome
+1. Open Chrome: chrome://extensions (Edge: edge://extensions).
+2. Enable Developer mode.
+3. Choose Load unpacked, then select E:\AI\Bridge\Apps\BridgeChatgpt\browser-wake.
+4. If Bridge Wake already points at this folder, click its Reload button instead. Verify version 2.1.0.
+5. In the SAME browser profile, open https://bridgechatgpt-production.up.railway.app/ and https://chatgpt.com/ and sign in to both.
+6. On ChatGPT choose the default ChatGPT option. Named Thinking/Pro choices are not used by this route.
+7. Open the Bridge Wake extension popup. Enable receiving Bridge chats and click Check now.
+8. In Bridge select ChatGPT Standard. Wait for it to be online, then send one short request.
 
-1. Open `chrome://extensions`.
-2. Enable **Developer mode**.
-3. Choose **Load unpacked**.
-4. Select the `chrome-extension/bridge-wake` folder.
-5. Pin **Bridge Wake** to the toolbar.
-6. Keep the normal ChatGPT and AI Studio accounts logged in in that Chrome profile.
+The PC and browser must remain awake. You can then operate Bridge from the tablet. The Codex in-app browser cannot host this Chrome extension.
 
-The extension defaults to `https://bridge-ai-mission-control.ai.studio/` and checks once per minute. It can create a background Bridge tab automatically if one is not already open.
+## Account and model boundaries
 
-## How it decides whom to wake
+Change ChatGPT accounts on chatgpt.com in this browser profile while no request is running. Bridge account labels do not switch browser cookies. A chat uses its bound native conversation; use a new Bridge conversation after changing accounts.
 
-Bridge's Resource Registry maps:
+Readiness requires a visible default ChatGPT selection. A stale answer's model slug or a cached model catalogue cannot prove the next selected model. Unknown selection stays offline with an actionable popup error.
 
-- Git repository -> project/workspace
-- AI Studio URL -> Studio `app_id`
-- ChatGPT URL -> ChatGPT `conversation_id`
+## Reliability
 
-The authenticated same-origin endpoint `/api/resource-registry/wake-queue` returns only actionable wake events:
-
-- a pending/assigned task bound to a specific URL target;
-- a Studio result waiting for ChatGPT review;
-- a Studio blocker that needs ChatGPT attention.
-
-The extension keeps delivered `event_id` values in `chrome.storage.local`, so the same unchanged event is not sent repeatedly. A configurable redelivery delay retries stale work later.
-
-## Safety / reliability behavior
-
-- It does not bypass login, subscription quotas, or platform permissions.
-- It never wakes a target just because a timer fired; Bridge must report actionable work.
-- It refuses to overwrite a non-empty ChatGPT/Studio draft.
-- It skips a page that appears to be generating a response already.
-- It does not Publish from AI Studio; the wake prompt explicitly forbids Publish unless the user asks.
-- UI automation depends on ChatGPT/AI Studio DOM controls. If either product changes its composer/send controls, the selector logic may need an update.
-- `chrome.alarms` does not wake a sleeping computer. The browser and machine must be awake.
-
-## Multiple Chrome profiles
-
-An extension instance can only control tabs inside the Chrome profile where it is installed. If ChatGPT and AI Studio are deliberately split across separate Chrome profiles, install Bridge Wake in each profile or keep the targets you want automated in one profile.
-
----
-
-## Mandatory free-first rule
-
-This browser path is intentionally preferred over metered ChatGPT/Gemini API integrations. Follow `docs/FREE_FIRST_POLICY.md`: no paid or quota-consuming API/AI Agent without explicit prior user approval. Reuse the existing extension/browser session first; if selectors or behavior break, search this repository and trusted public repos/docs/internet for a compatible maintained solution before rebuilding the wake layer from scratch.
+Bridge session CSRF is fetched on the Bridge origin and passed with the capability request. Provider pages never receive Bridge credentials. The extension preserves its enabled setting across updates. Each prompt has a durable send journal; a disconnect after a click observes the original send rather than sending twice. Final answers require matching native message receipts. Successful fixture checks do not constitute live E2E evidence.

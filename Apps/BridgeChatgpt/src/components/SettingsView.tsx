@@ -26,10 +26,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onUpdateProject,
   onSeedSampleScenario,
 }) => {
-  const { project, tasks, findings, messages, recent_activity } = state;
+  const { project, tasks, findings, recent_messages: messages, recent_activity } = state;
   const [projectName, setProjectName] = useState(project?.project_name || 'Bridge');
   const [projectRoot, setProjectRoot] = useState(project?.project_root || '.');
-  const [repoUrl, setRepoUrl] = useState(project?.repo_url || 'https://github.com/machxanht/Bridge');
+  const [repoUrl, setRepoUrl] = useState(project?.repository_url || 'https://github.com/machxanht/BridgeChatgpt');
   const [defaultBranch, setDefaultBranch] = useState(project?.default_branch || 'main');
   const [testCommand, setTestCommand] = useState(project?.test_command || 'npm test');
   const [isSaving, setIsSaving] = useState(false);
@@ -77,7 +77,7 @@ Capabilities & Protocols:
       await onUpdateProject({
         project_name: projectName.trim(),
         project_root: projectRoot.trim(),
-        repo_url: repoUrl.trim(),
+        repository_url: repoUrl.trim(),
         default_branch: defaultBranch.trim(),
         test_command: testCommand.trim(),
       });

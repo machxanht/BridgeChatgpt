@@ -37,16 +37,17 @@ function ensureDataDir() {
   }
 }
 
-function persistToDisk() {
-  if (!db) return;
-  try {
-    ensureDataDir();
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(DB_PATH, buffer);
-  } catch (err) {
-    console.error('[DB] Failed to persist database to disk:', err);
-  }
+export function persistToDisk() {
+  if (!db) throw new Error('Database is not initialized');
+  ensureDataDir();
+  const data = Buffer.from(db.export());
+  const tmp = `${DB_PATH}.tmp-${process.pid}-${Date.now()}`;
+  const backup = `${DB_PATH}.bak`;
+  fs.writeFileSync(tmp, data, { flag: 'wx' });
+  const handle = fs.openSync(tmp, 'r+');
+  try { fs.fsyncSync(handle); } finally { fs.closeSync(handle); }
+  if (fs.existsSync(DB_PATH)) fs.copyFileSync(DB_PATH, backup);
+  fs.renameSync(tmp, DB_PATH);
 }
 
 export async function initDatabase(): Promise<Database> {
@@ -61,8 +62,7 @@ export async function initDatabase(): Promise<Database> {
       db = new sql.Database(fileBuffer);
       console.log('[DB] Loaded existing SQLite database from', DB_PATH);
     } catch (err) {
-      console.warn('[DB] Could not load existing DB, creating fresh DB:', err);
-      db = new sql.Database();
+      throw new Error(`[DB] Existing database is unreadable; refusing empty reset: ${String(err)}`);
     }
   } else {
     db = new sql.Database();
@@ -213,7 +213,7 @@ export async function initDatabase(): Promise<Database> {
 }
 
 // Ensure database is initialized before any query
-async function getDb(): Promise<Database> {
+export async function getDb(): Promise<Database> {
   if (!db) {
     await initDatabase();
   }
@@ -255,6 +255,34 @@ class AsyncMutex {
 }
 
 export const dbMutex = new AsyncMutex();
+
+export async function runDurableTransaction<T>(fn: (database: Database) => T): Promise<T> {
+  return dbMutex.runExclusive(async () => {
+    const database = await getDb();
+    const snapshot = database.export();
+    database.run('BEGIN IMMEDIATE');
+    try {
+      // No yield between mutation and persist: legacy readers must never see an
+      // uncommitted chat transaction or keep writing through a restored handle.
+      const result = fn(database);
+      if (result && typeof (result as any).then === 'function') throw new Error('Durable transactions must be synchronous');
+      database.run('COMMIT');
+      try { persistToDisk(); }
+      catch (persistError) {
+        // SQL is initialized before getDb resolves. Restore without yielding to
+        // readers between the failed export and the restored in-memory state.
+        const sql = SQL!;
+        try { database.close(); } catch {}
+        db = new sql.Database(snapshot);
+        throw persistError;
+      }
+      return result;
+    } catch (error) {
+      try { database.run('ROLLBACK'); } catch {}
+      throw error;
+    }
+  });
+}
 
 async function getNextId(counterName: string, prefix: string, tableName: string): Promise<string> {
   const d = await getDb();
@@ -550,6 +578,10 @@ export async function updateTask(
     throw new Error(`Task ${id} not found`);
   }
 
+  if (String(current.description).includes('<!-- BRIDGE_CHAT_V2 -->')) {
+    throw new Error('Managed chat turns require an attempt capability');
+  }
+
   const d = await getDb();
   const now = new Date().toISOString();
 
@@ -661,7 +693,7 @@ export async function claimNextTask(agent: AgentType = 'gemini', requestedTaskId
 }> {
   return await dbMutex.runExclusive(async () => {
     const d = await getDb();
-    const allTasks = await getTasks({ assignee: agent });
+    const allTasks = (await getTasks({ assignee: agent })).filter(task => !String(task.description || '').includes('<!-- BRIDGE_CHAT_V2 -->'));
     const claimable = filterClaimableSingleFlight(allTasks, agent);
 
     let selected: Task | null = null;

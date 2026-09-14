@@ -20,6 +20,11 @@ import { androidWakeRouter } from './server/androidWake.js';
 import { executorRouter } from './server/executorRoutes.js';
 import { handleExecutorMcpRequest } from './server/executorMcp.js';
 import { attachmentRouter } from './server/attachments.js';
+import { browserSessionRouter } from './server/browserSession.js';
+import { chatRouter, runtimeRouter } from './server/chatRoutes.js';
+import { recoverExpiredTurns } from './server/chatRuntime.js';
+import { beginRuntimeDrain, runtimeIsDraining } from './server/runtimeLifecycle.js';
+import { runtimeSnapshot } from './server/runtimeStatus.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,6 +35,8 @@ async function startServer() {
   const PORT = Number(process.env.PORT || 3000);
 
   await initDatabase();
+  await recoverExpiredTurns();
+  setInterval(() => { void recoverExpiredTurns().catch(() => console.error('[Bridge] Chat recovery sweep failed')); }, 5000).unref();
   startGitHubCommandBus();
   startBatchOrchestrator();
 
@@ -41,12 +48,19 @@ async function startServer() {
   }
 
   app.use(cors({
-    origin: '*',
+    origin: (origin, callback) => {
+      const allowed = [process.env.BRIDGE_PUBLIC_ORIGIN, ...(process.env.BRIDGE_EXTENSION_ORIGINS || '').split(',')]
+        .filter(Boolean);
+      callback(null, !origin || allowed.includes(origin));
+    },
+    credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-bridge-token', 'x-mcp-token', 'x-agent-name', 'x-bridge-executor-token', 'x-file-name', 'x-file-type'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-bridge-token', 'x-mcp-token', 'x-agent-name', 'x-bridge-executor-token', 'x-file-name', 'x-file-type', 'x-bridge-csrf'],
   }));
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
+  app.use('/api/auth', browserSessionRouter);
+  app.use('/api/runtime', runtimeRouter);
 
   app.all('/mcp', handleMcpRequest);
   app.all('/mcp-executor', handleExecutorMcpRequest);
@@ -62,7 +76,8 @@ async function startServer() {
         project: project.project_name,
         mcp: 'ready (Streamable HTTP)',
         executor_mcp: 'ready (Streamable HTTP)',
-        local_executor: 'ready',
+        runtime_presence: runtimeSnapshot(),
+        local_executor: 'not_verified_by_health',
         studio_relay: 'ready',
         review_packets: 'ready',
         batch_orchestrator: 'ready',
@@ -95,12 +110,20 @@ async function startServer() {
 
   app.get('/health', healthHandler);
   app.get('/api/health', healthHandler);
+  app.get('/ready', (_req, res) => {
+    const configured = String(process.env.BRIDGE_MCP_TOKEN || '').length >= 24
+      && String(process.env.BRIDGE_BROWSER_PASSWORD || '').length >= 32
+      && /^https:\/\//.test(String(process.env.BRIDGE_PUBLIC_ORIGIN || ''));
+    const ready = configured && !runtimeIsDraining();
+    res.status(ready ? 200 : 503).json({ ready, control_plane: ready ? 'ready' : 'configuration_or_restart', native_execution: 'requires_runtime_evidence' });
+  });
 
   app.use('/api/attachments', attachmentRouter);
   app.use('/api/android-wake', androidWakeRouter);
   app.use('/api/executors', executorRouter);
   app.use('/api/studio-relay', requireStudioAuth, studioSessionPairingGuard, studioRelayRouter);
   app.use('/api/resource-registry', requireAuth, resourceRegistryRouter);
+  app.use('/api/chat', requireAuth, chatRouter);
   app.use('/api/project-brain', requireAuth, projectBrainRouter);
   app.use('/api/batches', requireAuth, batchRouter);
   app.use('/api', requireAuth, reviewPacketsRouter);
@@ -124,7 +147,7 @@ async function startServer() {
     console.log('[Server] Serving production build from', distPath);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const httpServer = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Bridge Server] Running on http://0.0.0.0:${PORT}`);
     console.log(`[Bridge MCP] Streamable HTTP endpoint: http://0.0.0.0:${PORT}/mcp`);
     console.log(`[Bridge Executor MCP] Streamable HTTP endpoint: http://0.0.0.0:${PORT}/mcp-executor`);
@@ -137,6 +160,16 @@ async function startServer() {
     console.log('[Bridge Batch] REST endpoint: /api/batches');
     console.log('[Bridge GitHub Bus] Inbox: runtime/bridge-bus/inbox');
   });
+  const shutdown = () => {
+    if(runtimeIsDraining())return;
+    beginRuntimeDrain();
+    httpServer.close(() => process.exit(0));
+    // SSE and keep-alive clients must reconnect; persisted attempts retain their
+    // fences across the replacement process. Never replay work on shutdown.
+    setTimeout(() => { httpServer.closeAllConnections(); process.exit(0); }, 5000).unref();
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }
 
 startServer().catch((err) => {

@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { Request, Response, NextFunction } from 'express';
+import { verifyBrowserSession } from './browserSession.js';
 
 export interface AuthContext {
   authenticated: boolean;
@@ -21,8 +22,7 @@ function presentedToken(req: Request): string {
   const headerToken = cleanHeader(req.headers['x-bridge-token'] || req.headers['x-mcp-token']);
   if (headerToken) return headerToken;
 
-  const queryToken = Array.isArray(req.query.token) ? req.query.token[0] : req.query.token;
-  return typeof queryToken === 'string' ? queryToken.trim() : '';
+  return ''; // Credentials in URLs leak through history, logs and referrers.
 }
 
 function tokenEquals(presented: string, configured: string | undefined): boolean {
@@ -35,7 +35,7 @@ function tokenEquals(presented: string, configured: string | undefined): boolean
 /** Master Bridge token accepted across privileged REST/MCP APIs. */
 export function verifyToken(req: Request): boolean {
   const configuredToken = process.env.BRIDGE_MCP_TOKEN;
-  if (!configuredToken) return true; // open/dev mode only
+  if (!configuredToken) return false;
   return tokenEquals(presentedToken(req), configuredToken);
 }
 
@@ -47,25 +47,14 @@ export function verifyToken(req: Request): boolean {
 export function verifyStudioToken(req: Request): boolean {
   const masterToken = process.env.BRIDGE_MCP_TOKEN;
   const studioToken = process.env.BRIDGE_STUDIO_TOKEN;
-  if (!masterToken && !studioToken) return true; // open/dev mode only
+  if (!masterToken && !studioToken) return false;
   const token = presentedToken(req);
   return tokenEquals(token, studioToken) || tokenEquals(token, masterToken);
 }
 
-/**
- * Browser convenience path for the same-origin Bridge dashboard.
- * This is not used by Studio Relay. Only browser-generated Fetch Metadata is
- * accepted; Origin/Referer/custom-header fallbacks were removed because an
- * arbitrary HTTP client can trivially forge those headers.
- */
+/** Compatibility export: request metadata is never an identity credential. */
 export function isSameOriginBrowserRequest(req: Request): boolean {
-  const secFetchSite = cleanHeader(req.headers['sec-fetch-site']);
-  const secFetchMode = cleanHeader(req.headers['sec-fetch-mode']);
-  const userAgent = cleanHeader(req.headers['user-agent']);
-  const isBrowser = /Mozilla|Chrome|Safari|Firefox/i.test(userAgent);
-  return isBrowser
-    && secFetchSite === 'same-origin'
-    && (secFetchMode === 'cors' || secFetchMode === 'same-origin');
+  return verifyBrowserSession(req);
 }
 
 function unauthorized(res: Response, scope: 'bridge' | 'studio'): void {
@@ -76,7 +65,7 @@ function unauthorized(res: Response, scope: 'bridge' | 'studio'): void {
       : 'Unauthorized: Invalid or missing BRIDGE_MCP_TOKEN.',
     message: studio
       ? 'Provide Authorization: Bearer <BRIDGE_STUDIO_TOKEN> (preferred) or the master BRIDGE_MCP_TOKEN.'
-      : 'Provide header "Authorization: Bearer <BRIDGE_MCP_TOKEN>", "x-bridge-token", or query "?token=<token>".',
+      : 'Provide header "Authorization: Bearer <BRIDGE_MCP_TOKEN>", "x-bridge-token", or an authenticated browser session with CSRF protection.',
     documentation: 'https://github.com/machxanht/BridgeChatgpt#authentication',
   });
 }

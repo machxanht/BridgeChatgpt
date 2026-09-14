@@ -65,6 +65,7 @@ export async function claimNextBoundTask(input: {
     const projectContext = await buildProjectBootstrap(input.workspace_id, input.project_id);
     const tasks = await getTasks({ assignee: input.agent, limit: 200 });
     const matchesLane = (task: Task) => {
+      if (task.description.includes('BRIDGE_CHAT_V2')) return false;
       const binding = extractTaskBinding(task.description).binding;
       if (!binding) return Boolean(input.allow_legacy);
       if (binding.workspace_id !== input.workspace_id || binding.project_id !== input.project_id) return false;

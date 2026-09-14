@@ -1,10 +1,11 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
-import App from './App.tsx';
+import { ConversationChat } from './components/ConversationChat';
 import './index.css';
+import { BrowserSignIn } from './components/BrowserSignIn';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <BrowserSignIn><ConversationChat /></BrowserSignIn>
   </StrictMode>,
 );

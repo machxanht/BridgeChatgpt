@@ -425,7 +425,7 @@ export default function App() {
         )}
 
         {activeTab === 'messages' && (
-          <MessagesView messages={workspaceState.messages} onSendMessage={handleSendMessage} />
+          <MessagesView messages={workspaceState.recent_messages} onSendMessage={handleSendMessage} />
         )}
 
         {activeTab === 'git' && <GitCodeView />}

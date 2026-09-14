@@ -1,0 +1,146 @@
+import path from 'node:path';
+import { getAgentRoute, type BridgeAgentId } from '../server/agentRegistry.js';
+
+export interface NativeRequest {
+  agentId: BridgeAgentId; cwd: string; content: string; sessionId?: string | null;
+  outputFile: string; executable: string;
+  /** Only the installed Windows launcher may opt in after OS policy validation. */
+  confinement?: 'bridge-appcontainer-v1';
+}
+export interface LaunchSpec { executable: string; args: string[]; cwd: string; stdin: string; outputFile?: string; confinement?: 'bridge-appcontainer-v1' }
+export class NativeFailure extends Error {
+  constructor(public code: string, message: string) { super(message); }
+}
+const fail = (code: string, message: string): never => { throw new NativeFailure(code, message); };
+/** Antigravity has returned both response and message/content envelopes across
+ * CLI versions. Extract only fields from the terminal result object; arbitrary
+ * stdout is never promoted to an answer. */
+export function extractAntigravityAnswer(result: unknown): string {
+  const seen = new Set<unknown>();
+  const visit = (value: unknown, depth: number): string => {
+    if (depth > 5 || value == null || typeof value === 'number' || typeof value === 'boolean' || seen.has(value)) return '';
+    if (typeof value === 'string') return value.trim();
+    if (typeof value !== 'object') return '';
+    seen.add(value);
+    const object = value as Record<string, unknown>;
+    for (const key of ['response', 'output_text', 'text', 'content', 'message']) {
+      const candidate = object[key];
+      if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+      if (candidate && typeof candidate === 'object') {
+        const nested = visit(candidate, depth + 1); if (nested) return nested;
+      }
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) { const nested = visit(item, depth + 1); if (nested) return nested; }
+    }
+    return '';
+  };
+  return visit(result, 0);
+}
+function session(value: unknown): string {
+  if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{8,160}$/.test(value)) return fail('invalid_session', 'Native session identity is missing or invalid');
+  return value;
+}
+export function buildNativeLaunch(input: NativeRequest): LaunchSpec {
+  const route = getAgentRoute(input.agentId);
+  if (route.transport !== 'cli') return fail('wrong_transport', 'Sol 5.6 requires the browser transport');
+  if (!path.isAbsolute(input.cwd) || !path.isAbsolute(input.executable) || !path.isAbsolute(input.outputFile)) return fail('invalid_path', 'Native launch paths must be absolute');
+  if (!input.content.trim() || input.content.length > 100000) return fail('invalid_prompt', 'Prompt is empty or too long');
+  const nativeSession = input.sessionId ? session(input.sessionId) : null;
+  const external = input.confinement === 'bridge-appcontainer-v1';
+  if(input.confinement && (!external || process.platform !== 'win32' || route.runner !== 'codex'))return fail('invalid_confinement','External execution requires the installed Windows Codex AppContainer launcher');
+  if (route.runner === 'agy') return {
+    executable: input.executable, cwd: input.cwd,
+    args: ['--sandbox', '--model', route.native_model, '--add-dir', input.cwd, '--input-format', 'stream-json', '--output-format', 'stream-json', ...(nativeSession ? ['--conversation', nativeSession] : [])],
+    stdin: JSON.stringify({ event: 'user', message: { content: input.content } }) + '\n',
+  };
+  // Config overrides also reach `exec resume`; its parser does not accept
+  // exec's sandbox/cwd flags. Generic consumers retain the native sandbox.
+  // Only the verified Windows runner can use its mandatory external boundary.
+  const windows = process.platform === 'win32' && !external ? [
+    '-c', 'windows.sandbox="unelevated"',
+    '-c', 'windows.sandbox_private_desktop=false',
+    '-c', `developer_instructions=${JSON.stringify('Use cmd.exe explicitly for shell commands and use cmd syntax. Use the native apply_patch tool for file edits. PowerShell cannot initialize inside this runner\'s nested Windows sandbox.')}`,
+  ] : external ? ['-c', `developer_instructions=${JSON.stringify("This process is confined by Bridge's Windows AppContainer and per-project policy. Work only in the assigned project. Use cmd.exe for shell commands and native apply_patch for edits. Run build/test commands directly. In Node helper scripts prefer inherited stdio for subprocesses; captured named-pipe subprocess IO can block in this AppContainer.")}`] : [];
+  return {
+    executable: input.executable, cwd: input.cwd, outputFile: input.outputFile,
+    ...(external ? {confinement: input.confinement} : {}),
+    // The installed policy validates the exact workspace before launch. Its parent
+    // .git is deliberately outside native read scope; Git discovery is not the
+    // security boundary. External mode is coupled to a protected request marker
+    // that native-child rejects unless the exact AppContainer will be applied.
+    args: ['-c', external ? 'sandbox_mode="danger-full-access"' : 'sandbox_mode="workspace-write"', '-c', 'approval_policy="never"', ...windows, '-C', input.cwd, 'exec', ...(nativeSession ? ['resume', nativeSession] : []), '--skip-git-repo-check', '-m', route.native_model, '--json', '-o', input.outputFile, '-'],
+    stdin: input.content + '\n',
+  };
+}
+
+export interface NativeFinal { answer: string; sessionId: string; model: string; usage: unknown }
+export class NativeTranscript {
+  private buffer = '';
+  private bytes = 0;
+  private terminal: any = null;
+  private init: any = null;
+  private sessionId: string | null = null;
+  private blocked = false;
+  private blockedReason = '';
+  private completedTools = 0;
+  private successfulTools = 0;
+  constructor(private agentId: BridgeAgentId, private cwd: string, private expectedSession?: string | null) {}
+  push(chunk: string) {
+    this.bytes += Buffer.byteLength(chunk);
+    if (this.bytes > 8 * 1024 * 1024) fail('output_limit', 'Native output exceeds the capture limit');
+    this.buffer += chunk;
+    while (this.buffer.includes('\n')) {
+      const index = this.buffer.indexOf('\n'); const line = this.buffer.slice(0, index); this.buffer = this.buffer.slice(index + 1);
+      if (line.trim()) this.event(line);
+    }
+  }
+  private event(line: string) {
+    let event: any;
+    try { event = JSON.parse(line); } catch { return fail('malformed_output', 'Native stream is not valid NDJSON'); }
+    const route = getAgentRoute(this.agentId);
+    if (route.runner === 'agy') {
+      if (event.event === 'init') {
+        if (this.init) fail('duplicate_init', 'Native stream opened more than once');
+        this.init = event.init; this.sessionId = session(event.conversation_id);
+        if (event.init?.model !== route.native_model) fail('model_mismatch', 'Native runtime did not confirm the selected model');
+        if (path.resolve(event.init?.cwd || '') !== path.resolve(this.cwd)) fail('cwd_mismatch', 'Native runtime opened a different workspace');
+        if (event.init?.permission_mode === 'always-proceed') fail('permission_policy', 'Unrestricted permission mode is not allowed');
+      }
+      if (event.event === 'step_update' && event.step_update?.tool_info?.error) {
+        this.blocked = true;
+        this.blockedReason = String(event.step_update.tool_info.error.message || event.step_update.tool_info.error.type || 'Native tool failed').slice(0, 400);
+      }
+      if (event.event === 'result') {
+        if (this.terminal) fail('duplicate_final', 'Native stream returned more than one result');
+        this.terminal = event.result;
+        if (event.result?.status !== 'SUCCESS' || event.result?.error || event.result?.denied_actions?.length) {
+          this.blocked = true;
+          this.blockedReason ||= String(event.result?.error || (event.result?.denied_actions?.length ? 'A native action was denied' : `Native result status ${event.result?.status || 'unknown'}`)).slice(0, 400);
+        }
+      }
+    } else {
+      if (event.type === 'thread.started') { if (this.sessionId) fail('duplicate_init', 'Native stream opened more than once'); this.sessionId = session(event.thread_id); }
+      if (event.type === 'error' || event.type === 'turn.failed') this.blocked = true;
+      if (event.type === 'item.completed' && ['file_change', 'command_execution'].includes(event.item?.type)) {
+        this.completedTools++;
+        if (event.item.status === 'completed' && (event.item.type !== 'command_execution' || event.item.exit_code === 0)) this.successfulTools++;
+      }
+      if (event.type === 'turn.completed') { if (this.terminal) fail('duplicate_final', 'Native stream returned more than one result'); this.terminal = event; }
+    }
+  }
+  finish(exitCode: number | null, finalFile?: string): NativeFinal {
+    if (this.buffer.trim()) { this.event(this.buffer); this.buffer = ''; }
+    if (exitCode !== 0) return fail('process_exit', `Native process exited with ${exitCode ?? 'signal'}`);
+    if (this.blocked) return fail(this.terminal?.denied_actions?.length ? 'native_action_denied' : 'native_failure', this.blockedReason ? `Native execution failed: ${this.blockedReason}` : 'Native execution reported an error or denied permission');
+    if (this.completedTools > 0 && this.successfulTools === 0) return fail('native_tool_failure', 'Every native file/command tool failed; a final answer is not proof of task completion');
+    if (!this.terminal || !this.sessionId) return fail('incomplete_output', 'Native execution has no terminal result/session receipt');
+    if (this.expectedSession && this.sessionId !== this.expectedSession) return fail('session_mismatch', 'Native runtime resumed a different conversation');
+    const route = getAgentRoute(this.agentId);
+    if (route.runner === 'agy' && (!this.init || this.terminal.status !== 'SUCCESS' || this.terminal.conversation_id !== this.sessionId)) return fail('native_failure', 'Native result did not confirm successful completion');
+    const answer = route.runner === 'agy' ? extractAntigravityAnswer(this.terminal) : String(finalFile || '').trim();
+    if (!answer) return fail('empty_output', 'Native final answer is empty');
+    if (Buffer.byteLength(answer) > 2 * 1024 * 1024) return fail('output_limit', 'Native final answer exceeds the limit');
+    return { answer, sessionId: this.sessionId, model: route.native_model, usage: this.terminal.usage || null };
+  }
+}

@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { isSameOriginBrowserRequest, requireStudioAuth, verifyStudioToken, verifyToken } from '../server/auth.js';
+import { isSameOriginBrowserRequest, requireAuth, requireStudioAuth, verifyStudioToken, verifyToken } from '../server/auth.js';
 
 function req(headers: Record<string, string> = {}, query: Record<string, string> = {}) {
   return { headers, query } as any;
@@ -30,7 +30,7 @@ try {
     'sec-fetch-site': 'same-origin',
     'sec-fetch-mode': 'cors',
     'user-agent': 'Mozilla/5.0 Chrome/140 Safari/537.36',
-  })), true, 'real same-origin browser fetch metadata should preserve dashboard access');
+  })), false, 'forged browser fetch metadata must not authenticate');
 
   assert.strictEqual(verifyToken(req({ authorization: 'Bearer studio-test-token' })), false,
     'Studio token must not open general privileged APIs');
@@ -58,6 +58,19 @@ try {
     assert.strictEqual(called, true, 'Studio Relay should accept scoped Studio token');
   }
 
+  {
+    const forged = req({ 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'cors', 'user-agent': 'Mozilla/5.0 Chrome' });
+    const { res, state } = responseRecorder();
+    let called = false;
+    requireAuth(forged, res, (() => { called = true; }) as any);
+    assert.strictEqual(called, false);
+    assert.strictEqual(state.statusCode, 401);
+    assert.strictEqual(verifyToken(req({}, { token: 'master-test-token' })), false);
+    delete process.env.BRIDGE_MCP_TOKEN;
+    delete process.env.BRIDGE_STUDIO_TOKEN;
+    assert.strictEqual(verifyToken(req()), false, 'missing configuration must fail closed');
+    assert.strictEqual(verifyStudioToken(req()), false, 'missing relay configuration must fail closed');
+  }
   console.log('Auth security tests passed');
 } finally {
   if (previousMaster === undefined) delete process.env.BRIDGE_MCP_TOKEN;
