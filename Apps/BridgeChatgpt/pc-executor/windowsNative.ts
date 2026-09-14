@@ -67,12 +67,18 @@ export async function launchWindowsNative(turn: ClaimedTurn, policy: WindowsLaun
     });
   });
   const result=ended.then(()=>{
-    const terminal=JSON.parse(readBounded(request.result,4096));
-    if(!/\\BridgeAgent$/i.test(terminal.identity||''))throw new Error('Native process used an unexpected identity');
-    if(terminal.container_sid!==policy.containerSid)throw new Error('Native process confinement receipt mismatch');
-    const transcript=new NativeTranscript(turn.agent_id,approved.cwd,turn.native_session_id);
-    transcript.push(readBounded(request.stdout,8*1024*1024));
-    return transcript.finish(terminal.exit_code,launch.outputFile ? readBounded(finalFile,2*1024*1024) : undefined);
+    try {
+      const terminal=JSON.parse(readBounded(request.result,4096));
+      if(!/\\BridgeAgent$/i.test(terminal.identity||''))throw new Error('Native process used an unexpected identity');
+      if(terminal.container_sid!==policy.containerSid)throw new Error('Native process confinement receipt mismatch');
+      const transcript=new NativeTranscript(turn.agent_id,approved.cwd,turn.native_session_id);
+      transcript.push(readBounded(request.stdout,8*1024*1024));
+      return transcript.finish(terminal.exit_code,launch.outputFile ? readBounded(finalFile,2*1024*1024) : undefined);
+    } catch (error) {
+      const diagnostic = { attempt_id: turn.attempt_id, agent_id: turn.agent_id, code: (error as any)?.code || 'native_result_invalid', message: error instanceof Error ? error.message : String(error), stderr_tail: fs.existsSync(request.stderr) ? readBounded(request.stderr, 8 * 1024 * 1024).slice(-8000) : '', stdout_tail: fs.existsSync(request.stdout) ? readBounded(request.stdout, 8 * 1024 * 1024).slice(-8000) : '', time: new Date().toISOString() };
+      fs.writeFileSync(path.join(policy.controlRoot, `${turn.attempt_id}.native-result-error.json`), JSON.stringify(diagnostic, null, 2), 'utf8');
+      throw error;
+    }
   });
   // Prevent a transient rejected completion from becoming unhandled before the
   // coordinator installs its race. The caller still receives the rejection.

@@ -342,3 +342,11 @@ Implemented in `Apps/BridgeChatgpt/src/components/ConversationChat.tsx`. The pri
 
 Verification: `npm run lint`, `npm run build`, `npm test` (21/21 core checks plus all follow-on suites) and `git diff --check` passed. Browser visual acceptance is still a separate live check because the computer-use surface has no browser available.
 Production deployment completed from commit `1168b10` to the existing Railway service: deployment `26aa9ad2-7d57-4b50-8542-1f48de8703b7` reached `SUCCESS`. `https://bridgechatgpt-production.up.railway.app/api/health` returned HTTP 200 with database/runtime/resource registry ready, and the root page returned HTTP 200 with the new frontend bundle. No native model request was sent for deployment.
+
+## Completion pass — 2026-09-14
+
+The completion pass adds soft-delete lifecycle controls for conversations and projects, conversation titles, active-turn guards before archive/delete, and account-id binding on new turns. The UI exposes per-chat rename/archive/restore/delete menus, project rename/archive/delete controls, a working Ctrl/Cmd+K new-chat shortcut, and a native-account metadata panel. Account records contain only provider, label and local CLI profile name; Bridge never stores passwords, cookies, authorization codes or tokens. Official provider login remains a PC-side operation.
+
+The Antigravity parser now handles the CLI's response/message/content envelopes and records protected `ATT-*.native-result-error.json` diagnostics. A prior empty-answer report was traced to a successful-looking result whose `step_update.tool_info.error` and `denied_actions` showed a denied command; it is now classified as `native_failure` with the denial reason instead of accepting or retrying an empty answer. No native model request was made in this pass.
+
+Verification: `npm run lint`, `npm test`, `npm run build` and `git diff --check` passed. The candidate is ready for deterministic Railway deployment; live model E2E was intentionally not repeated to preserve quota.

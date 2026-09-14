@@ -6,16 +6,17 @@ import { getAgentRoute, type BridgeAgentId, type BridgeTransport } from './agent
 import { issueRuntimeToken, type RuntimeClaims } from './runtimeAuth.js';
 import { touchRuntimeHeartbeat,runtimeSnapshot } from './runtimeStatus.js';
 import {validateProjectBinding,type ProjectBinding} from './projectBinding.js';
+import { listNativeAccounts } from './nativeAccounts.js';
 
 export type TurnStatus = 'pending'|'working'|'completed'|'failed'|'cancelled';
 export interface CreateTurnInput {
   workspace_id:string; project_id:string; agent_id:BridgeAgentId;
-  conversation_id?:string|null; client_message_id:string; content:string;
+  conversation_id?:string|null; client_message_id:string; content:string; account_id?:string|null;
 }
 export interface ClaimedTurn {
   attempt_id:string; attempt_token:string; turn_id:string; conversation_id:string;
   agent_id:BridgeAgentId; native_model:string; runner:string; transport:BridgeTransport;
-  workspace_id:string; project_id:string; content:string; native_session_id:string|null;
+  workspace_id:string; project_id:string; content:string; native_session_id:string|null; account_id?:string|null;
   lease_expires_at:string; deadline_at:string; epoch:number;
   workspace?:ProjectBinding;
 }
@@ -32,13 +33,15 @@ export async function ensureChatSchema(){
   await runDurableTransaction(d=>{
     d.run(`CREATE TABLE IF NOT EXISTS chat_conversations (
       id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, project_id TEXT NOT NULL,
-      agent_id TEXT NOT NULL, native_session_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      agent_id TEXT NOT NULL, native_session_id TEXT, title TEXT, archived INTEGER NOT NULL DEFAULT 0,
+      deleted_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );`);
     d.run(`CREATE TABLE IF NOT EXISTS chat_turns (
       id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, client_message_id TEXT NOT NULL UNIQUE,
       request_hash TEXT NOT NULL, agent_id TEXT NOT NULL, transport TEXT NOT NULL, native_model TEXT NOT NULL,
       workspace_id TEXT NOT NULL, project_id TEXT NOT NULL, task_id TEXT NOT NULL UNIQUE,
       status TEXT NOT NULL, user_content TEXT NOT NULL, access_mode TEXT NOT NULL DEFAULT 'write',
+      account_id TEXT,
       attempt_epoch INTEGER NOT NULL DEFAULT 0, current_attempt_id TEXT, error_code TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT
     );`);
@@ -49,6 +52,11 @@ export async function ensureChatSchema(){
     );`);
     const columns=rows(d,'PRAGMA table_info(chat_turns)').map(c=>c.name);
     for(const column of ['execution_content','workspace_binding'])if(!columns.includes(column))d.run(`ALTER TABLE chat_turns ADD COLUMN ${column} TEXT`);
+    if(!columns.includes('account_id'))d.run('ALTER TABLE chat_turns ADD COLUMN account_id TEXT');
+    const conversationColumns=rows(d,'PRAGMA table_info(chat_conversations)').map(c=>c.name);
+    if(!conversationColumns.includes('title'))d.run('ALTER TABLE chat_conversations ADD COLUMN title TEXT');
+    if(!conversationColumns.includes('archived'))d.run('ALTER TABLE chat_conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
+    if(!conversationColumns.includes('deleted_at'))d.run('ALTER TABLE chat_conversations ADD COLUMN deleted_at TEXT');
     d.run(`CREATE TABLE IF NOT EXISTS chat_messages (
       id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, turn_id TEXT NOT NULL,
       sequence INTEGER NOT NULL, role TEXT NOT NULL, agent_id TEXT NOT NULL,
@@ -90,14 +98,14 @@ function publicTurn(row:any){return {...row,attempt_epoch:Number(row.attempt_epo
 
 export async function listConversations(workspaceId:string,projectId:string){
   await ensureChatSchema(); const d=await getDb();
-  return rows(d,`SELECT * FROM chat_conversations WHERE workspace_id=? AND project_id=? ORDER BY updated_at DESC`,[workspaceId,projectId]);
+  return rows(d,`SELECT * FROM chat_conversations WHERE workspace_id=? AND project_id=? AND deleted_at IS NULL ORDER BY archived ASC,updated_at DESC`,[workspaceId,projectId]);
 }
 function handoffRows(d:Database,workspaceId:string,projectId:string){
   return rows(d,`SELECT t.id,t.agent_id,t.user_content,t.completed_at,m.content AS result FROM chat_turns t JOIN chat_messages m ON m.turn_id=t.id AND m.role='assistant' WHERE t.workspace_id=? AND t.project_id=? AND t.status='completed' ORDER BY t.completed_at DESC,t.id DESC LIMIT 6`,[workspaceId,projectId]);
 }
 export async function projectActivity(workspaceId:string,projectId:string){
   await ensureChatSchema();const d=await getDb();
-  return {handoffs:handoffRows(d,workspaceId,projectId).map(r=>({...r,user_content:String(r.user_content).slice(0,2000),result:String(r.result).slice(0,4000)})),queue:rows(d,`SELECT id,agent_id,status,created_at FROM chat_turns WHERE workspace_id=? AND project_id=? AND status IN ('pending','working') ORDER BY created_at,id`,[workspaceId,projectId]),writer:one(d,`SELECT t.workspace_id,t.project_id,t.agent_id FROM workspace_locks l JOIN chat_attempts a ON a.id=l.owner_attempt_id JOIN chat_turns t ON t.id=a.turn_id LIMIT 1`)};
+  return {handoffs:handoffRows(d,workspaceId,projectId).map(r=>({...r,user_content:String(r.user_content).slice(0,2000),result:String(r.result).slice(0,4000)})),queue:rows(d,`SELECT id,agent_id,status,created_at FROM chat_turns WHERE workspace_id=? AND project_id=? AND status IN ('pending','working') ORDER BY created_at,id`,[workspaceId,projectId]),writer:one(d,`SELECT t.workspace_id,t.project_id,t.agent_id FROM workspace_locks l JOIN chat_attempts a ON a.id=l.owner_attempt_id JOIN chat_turns t ON t.id=a.turn_id WHERE t.workspace_id=? AND t.project_id=? LIMIT 1`,[workspaceId,projectId])};
 }
 function executionContent(d:Database,turn:any){
   if(String(turn.user_content).length>88000)return turn.user_content; // Preserve a long user request without exceeding native input limits.
@@ -115,11 +123,21 @@ export async function createTurn(input:CreateTurnInput){
   if(content.length>100_000)throw new Error('Message is too long');
   const registry=await getWorkspaceRegistry(await getProject());
   const workspace=registry.workspaces.find(w=>w.workspace_id===input.workspace_id && w.project_id===input.project_id);
-  if(!workspace)throw Object.assign(new Error('Unknown workspace/project'),{statusCode:404});
+  if(!workspace || workspace.deleted_at)throw Object.assign(new Error('Unknown workspace/project'),{statusCode:404});
+  if(workspace.archived)throw Object.assign(new Error('Project is archived; restore it before starting a new turn'),{statusCode:409});
   const binding=validateProjectBinding(workspace);
   if(!/^[a-zA-Z0-9._:-]{8,160}$/.test(input.client_message_id))throw new Error('client_message_id is invalid');
   const route=getAgentRoute(input.agent_id);
-  const requestHash=hash(JSON.stringify({workspace_id:input.workspace_id,project_id:input.project_id,agent_id:route.id,conversation_id:input.conversation_id||null,content}));
+  let accountId = input.account_id ? String(input.account_id).trim() : null;
+  if (accountId) {
+    const accounts = await listNativeAccounts();
+    const account = accounts.find(item => item.account_id === accountId);
+    if (!account) throw Object.assign(new Error('Native account not found'),{statusCode:404});
+    const expected = route.provider === 'google' ? 'google' : route.provider === 'openai' ? 'openai' : 'anthropic';
+    if (account.provider !== expected) throw Object.assign(new Error(`Account provider does not match ${route.label}`),{statusCode:409});
+    if (account.status === 'disabled') throw Object.assign(new Error('Native account is disabled'),{statusCode:409});
+  }
+  const requestHash=hash(JSON.stringify({workspace_id:input.workspace_id,project_id:input.project_id,agent_id:route.id,conversation_id:input.conversation_id||null,account_id:accountId,content}));
   return runDurableTransaction(d=>{
     const duplicate=one(d,`SELECT * FROM chat_turns WHERE client_message_id=?`,[input.client_message_id]);
     if(duplicate){
@@ -135,34 +153,55 @@ export async function createTurn(input:CreateTurnInput){
       if(conversation.workspace_id!==input.workspace_id||conversation.project_id!==input.project_id||conversation.agent_id!==route.id)
         throw Object.assign(new Error('Conversation route mismatch'),{statusCode:409});
     } else {
-      conversation={id:id('CONV'),workspace_id:input.workspace_id,project_id:input.project_id,agent_id:route.id,native_session_id:null,created_at:now,updated_at:now};
-      d.run(`INSERT INTO chat_conversations (id,workspace_id,project_id,agent_id,native_session_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`,Object.values(conversation));
+      conversation={id:id('CONV'),workspace_id:input.workspace_id,project_id:input.project_id,agent_id:route.id,native_session_id:null,title:content.slice(0,80),archived:0,deleted_at:null,created_at:now,updated_at:now};
+      d.run(`INSERT INTO chat_conversations (id,workspace_id,project_id,agent_id,native_session_id,title,archived,deleted_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,Object.values(conversation));
     }
+    if (conversation.deleted_at || Number(conversation.archived) === 1) throw Object.assign(new Error('Conversation is archived or deleted'),{statusCode:409});
     const turnId=id('TURN'),taskId=`TASK-CHAT-${randomUUID()}`,messageId=id('MSG');
     const assignee=route.transport==='browser'?'chatgpt':'gemini';
     d.run(`INSERT INTO tasks (id,title,description,priority,status,assignee,created_by,created_at,updated_at,related_files,related_finding,result)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,[taskId,content.slice(0,100),`${content}\n\n<!-- BRIDGE_CHAT_V2 -->`,'high','pending',assignee,'human',now,now,'[]',null,null]);
-    d.run(`INSERT INTO chat_turns (id,conversation_id,client_message_id,request_hash,agent_id,transport,native_model,workspace_id,project_id,task_id,status,user_content,access_mode,attempt_epoch,current_attempt_id,error_code,created_at,updated_at,completed_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[turnId,conversation.id,input.client_message_id,requestHash,route.id,route.transport,route.native_model,input.workspace_id,input.project_id,taskId,'pending',content,'write',0,null,null,now,now,null]);
+    d.run(`INSERT INTO chat_turns (id,conversation_id,client_message_id,request_hash,agent_id,transport,native_model,workspace_id,project_id,task_id,status,user_content,access_mode,account_id,attempt_epoch,current_attempt_id,error_code,created_at,updated_at,completed_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[turnId,conversation.id,input.client_message_id,requestHash,route.id,route.transport,route.native_model,input.workspace_id,input.project_id,taskId,'pending',content,'write',accountId,0,null,null,now,now,null]);
     const seq=nextSequence(d,conversation.id);
     d.run(`INSERT INTO chat_messages (id,conversation_id,turn_id,sequence,role,agent_id,content,created_at) VALUES (?,?,?,?,?,?,?,?)`,
       [messageId,conversation.id,turnId,seq,'human','human',content,now]);
-    d.run(`UPDATE chat_conversations SET updated_at=? WHERE id=?`,[now,conversation.id]);
+    d.run(`UPDATE chat_conversations SET updated_at=?,title=COALESCE(NULLIF(title,''),?) WHERE id=?`,[now,content.slice(0,80),conversation.id]);
     addEvent(d,conversation.id,turnId,'turn.accepted',{status:'pending',agent_id:route.id,message_id:messageId,sequence:seq});
     d.run('UPDATE chat_turns SET workspace_binding=? WHERE id=?',[JSON.stringify(binding),turnId]);
-    return {conversation:{...conversation,updated_at:now},turn:{id:turnId,conversation_id:conversation.id,client_message_id:input.client_message_id,agent_id:route.id,transport:route.transport,native_model:route.native_model,workspace_id:input.workspace_id,project_id:input.project_id,task_id:taskId,status:'pending',user_content:content,attempt_epoch:0,created_at:now,updated_at:now},duplicate:false};
+    return {conversation:{...conversation,updated_at:now},turn:{id:turnId,conversation_id:conversation.id,client_message_id:input.client_message_id,agent_id:route.id,transport:route.transport,native_model:route.native_model,workspace_id:input.workspace_id,project_id:input.project_id,task_id:taskId,status:'pending',user_content:content,account_id:accountId,attempt_epoch:0,created_at:now,updated_at:now},duplicate:false};
   });
 }
 
 export async function getConversation(conversationId:string,before?:number,limit=100){
   await ensureChatSchema(); const d=await getDb();
   const conversation=one(d,`SELECT * FROM chat_conversations WHERE id=?`,[conversationId]);
-  if(!conversation)return null;
+  if(!conversation || conversation.deleted_at)return null;
   const cap=Math.max(1,Math.min(100,Number(limit)||100));
   const messages=before?rows(d,`SELECT * FROM chat_messages WHERE conversation_id=? AND sequence<? ORDER BY sequence DESC LIMIT ?`,[conversationId,before,cap]):rows(d,`SELECT * FROM chat_messages WHERE conversation_id=? ORDER BY sequence DESC LIMIT ?`,[conversationId,cap]);
   const turns=rows(d,`SELECT id,status,agent_id,error_code,created_at,updated_at,completed_at,CASE WHEN status='failed' THEN (SELECT result FROM tasks WHERE tasks.id=chat_turns.task_id) ELSE NULL END AS error_message FROM chat_turns WHERE conversation_id=? ORDER BY created_at`,[conversationId]);
   return {conversation,messages:messages.reverse(),turns,has_more:messages.length===cap&&messages[0]?.sequence>1};
 }
+
+function conversationMutation(d:Database,conversationId:string,action:'rename'|'archive'|'restore'|'delete',title?:string){
+  const conversation=one(d,'SELECT * FROM chat_conversations WHERE id=?',[conversationId]);
+  if(!conversation || conversation.deleted_at)throw Object.assign(new Error('Conversation not found'),{statusCode:404});
+  if(action!=='rename' && one(d,`SELECT 1 FROM chat_turns WHERE conversation_id=? AND status IN ('pending','working') LIMIT 1`,[conversationId]))
+    throw Object.assign(new Error('Conversation has an active turn; wait for it to finish before changing it'),{statusCode:409});
+  const now=nowIso();
+  if(action==='rename'){
+    const clean=String(title||'').trim().slice(0,120); if(!clean)throw new Error('Conversation title is required');
+    d.run('UPDATE chat_conversations SET title=?,updated_at=? WHERE id=?',[clean,now,conversationId]);
+  } else if(action==='archive') d.run('UPDATE chat_conversations SET archived=1,updated_at=? WHERE id=?',[now,conversationId]);
+  else if(action==='restore') d.run('UPDATE chat_conversations SET archived=0,updated_at=? WHERE id=?',[now,conversationId]);
+  else d.run('UPDATE chat_conversations SET deleted_at=?,updated_at=? WHERE id=?',[now,now,conversationId]);
+  addEvent(d,conversationId,null,`conversation.${action}`,{title:title||null});
+  return one(d,'SELECT * FROM chat_conversations WHERE id=?',[conversationId]) || {...conversation,deleted_at:now};
+}
+export async function renameConversation(conversationId:string,title:string){ await ensureChatSchema(); return runDurableTransaction(d=>conversationMutation(d,conversationId,'rename',title)); }
+export async function archiveConversation(conversationId:string){ await ensureChatSchema(); return runDurableTransaction(d=>conversationMutation(d,conversationId,'archive')); }
+export async function restoreConversation(conversationId:string){ await ensureChatSchema(); return runDurableTransaction(d=>conversationMutation(d,conversationId,'restore')); }
+export async function deleteConversation(conversationId:string){ await ensureChatSchema(); return runDurableTransaction(d=>conversationMutation(d,conversationId,'delete')); }
 function reapExpired(d:Database){
   const now=nowIso();
   const expired=rows(d,`SELECT a.*,t.conversation_id,t.task_id FROM chat_attempts a JOIN chat_turns t ON t.id=a.turn_id WHERE a.status='working' AND (a.lease_expires_at<? OR a.deadline_at<?)`,[now,now]);
@@ -188,7 +227,7 @@ export async function claimNextTurn(runtime:RuntimeClaims,agentIds:BridgeAgentId
     if(previous){
       if(previous.status!=='working'||Date.parse(previous.lease_expires_at)<=Date.now()||!allowed.has(previous.agent_id))throw Object.assign(new Error('Previous claim is no longer active'),{statusCode:409});
       const route=getAgentRoute(previous.agent_id);
-      return signClaim(runtime,{attempt_id:previous.id,turn_id:previous.turn_id,conversation_id:previous.conversation_id,agent_id:route.id,native_model:route.native_model,runner:route.runner,transport:route.transport,workspace_id:previous.workspace_id,project_id:previous.project_id,content:previous.execution_content||previous.user_content,workspace:previous.workspace_binding?JSON.parse(previous.workspace_binding):undefined,native_session_id:previous.native_session_id,lease_expires_at:previous.lease_expires_at,deadline_at:previous.deadline_at,epoch:previous.epoch});
+      return signClaim(runtime,{attempt_id:previous.id,turn_id:previous.turn_id,conversation_id:previous.conversation_id,agent_id:route.id,native_model:route.native_model,runner:route.runner,transport:route.transport,workspace_id:previous.workspace_id,project_id:previous.project_id,content:previous.execution_content||previous.user_content,workspace:previous.workspace_binding?JSON.parse(previous.workspace_binding):undefined,native_session_id:previous.native_session_id,account_id:previous.account_id||null,lease_expires_at:previous.lease_expires_at,deadline_at:previous.deadline_at,epoch:previous.epoch});
     }
   }
   // Idle long polls must not export the whole sql.js database every 250 ms.
@@ -223,7 +262,7 @@ export async function claimNextTurn(runtime:RuntimeClaims,agentIds:BridgeAgentId
       const execution=turn.execution_content||executionContent(d,turn);
       const binding=projectBinding?validateProjectBinding(projectBinding):undefined;
       d.run('UPDATE chat_turns SET execution_content=?,workspace_binding=? WHERE id=?',[execution,binding?JSON.stringify(binding):null,turn.id]);
-      return {attempt_id:attemptId,turn_id:turn.id,conversation_id:turn.conversation_id,agent_id:route.id,native_model:route.native_model,runner:route.runner,transport:route.transport,workspace_id:turn.workspace_id,project_id:turn.project_id,content:execution,workspace:binding,native_session_id:conversation?.native_session_id||null,lease_expires_at:lease,deadline_at:deadline,epoch};
+      return {attempt_id:attemptId,turn_id:turn.id,conversation_id:turn.conversation_id,agent_id:route.id,native_model:route.native_model,runner:route.runner,transport:route.transport,workspace_id:turn.workspace_id,project_id:turn.project_id,content:execution,workspace:binding,native_session_id:conversation?.native_session_id||null,account_id:turn.account_id||null,lease_expires_at:lease,deadline_at:deadline,epoch};
     }
     return null;
   });
@@ -252,7 +291,7 @@ export async function recoverOwnedAttempt(runtime:RuntimeClaims,attemptId:string
   const route=getAgentRoute(row.agent_id);
   const turn:ClaimedTurn={attempt_id:row.id,turn_id:row.turn_id,conversation_id:row.conversation_id,
     agent_id:route.id,native_model:route.native_model,runner:route.runner,transport:route.transport,
-    workspace_id:row.workspace_id,project_id:row.project_id,content:row.execution_content||row.user_content,workspace:row.workspace_binding?JSON.parse(row.workspace_binding):undefined,native_session_id:row.native_session_id,
+    workspace_id:row.workspace_id,project_id:row.project_id,content:row.execution_content||row.user_content,workspace:row.workspace_binding?JSON.parse(row.workspace_binding):undefined,native_session_id:row.native_session_id,account_id:row.account_id||null,
     lease_expires_at:row.lease_expires_at,deadline_at:row.deadline_at,epoch:row.epoch,
     attempt_token:issueRuntimeToken('attempt',runtime.sub,Math.min(300000,runtime.exp-Date.now()),
       {attempt_id:row.id,turn_id:row.turn_id,epoch:row.epoch,transport,parent_jti:runtime.jti})};

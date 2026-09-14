@@ -37,6 +37,8 @@ export interface ResourceRegistrySnapshot {
     workspace_id: string;
     project_id: string;
     project_name: string;
+    archived?: boolean;
+    deleted_at?: string | null;
     repository_url: string;
     branch: string;
     local_path: string;
@@ -232,7 +234,7 @@ export async function getResourceRegistry(project: ProjectConfig): Promise<Resou
     setupViews.set(workspace.workspace_id, await ensureProjectSetup(workspace));
   }
 
-  const workspaces = workspaceRegistry.workspaces.map(workspace => {
+  const workspaces = workspaceRegistry.workspaces.filter(workspace => !workspace.deleted_at).map(workspace => {
     const agents = [...workspace.chatgpt_instances, ...workspace.studio_instances];
     const targets = store.targets
       .filter(target => target.workspace_id === workspace.workspace_id && target.project_id === workspace.project_id)
@@ -249,6 +251,8 @@ export async function getResourceRegistry(project: ProjectConfig): Promise<Resou
       workspace_id: workspace.workspace_id,
       project_id: workspace.project_id,
       project_name: workspace.project_name,
+      archived: Boolean(workspace.archived),
+      deleted_at: workspace.deleted_at || null,
       repository_url: workspace.repository_url,
       branch: workspace.branch,
       local_path: workspace.local_path,

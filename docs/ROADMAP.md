@@ -282,3 +282,13 @@ Final UI-only acceptance attempted with zero model requests, but was blocked bec
 
 ChatGPT-style control UI is implemented in `Apps/BridgeChatgpt/src/components/ConversationChat.tsx`: project/history sidebar, new chat, add project dialog, model picker, queue/handoff status, Markdown message feed, copy/cancel actions, responsive layout and persistent selection. Typecheck, production build and the full test command pass. Remaining acceptance item: visual browser check when a browser surface is available.
 Production deployment is now live from commit `1168b10` on Railway deployment `26aa9ad2-7d57-4b50-8542-1f48de8703b7`; `/api/health` and the root page returned HTTP 200. Visual click/reload acceptance remains unproven because no browser surface is available to the agent.
+
+## Completion pass — 2026-09-14
+
+- ✅ Conversation title, rename, archive/restore and soft-delete APIs with active-turn safety guard.
+- ✅ Project rename, archive/restore and soft-delete APIs; local project code is preserved.
+- ✅ Native account metadata registry and provider matching on queued turns. Credentials remain on the PC's official CLI profile.
+- ✅ Antigravity response envelope extraction and protected diagnostics for denied/empty results.
+- ✅ ChatGPT-style UI menus, account panel and Ctrl/Cmd+K new-chat shortcut.
+- ✅ Lint, full tests and production build pass with zero native model requests.
+- ⬜ Upload this candidate to Railway and verify the new deployment plus `/ready`/`/api/health`; do not spend provider quota for deployment validation.

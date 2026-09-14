@@ -64,6 +64,13 @@ assert.equal((await chat.completeAttempt(attempt(claim),'fixture final')).idempo
 await assert.rejects(chat.completeAttempt(attempt(claim),'other final'),/different result/);
 assert.equal((await chat.getConversation(a.conversation.id))!.messages.filter(m=>m.role==='assistant').length,1);
 assert(completed.hash);
+const renamed=await chat.renameConversation(a.conversation.id,'Fixture conversation');
+assert.equal(renamed.title,'Fixture conversation');
+await chat.archiveConversation(a.conversation.id);
+assert.equal((await chat.listConversations(workspace.workspace_id,workspace.project_id)).find((row:any)=>row.id===a.conversation.id)?.archived,1);
+await chat.restoreConversation(a.conversation.id);
+await chat.deleteConversation(a.conversation.id);
+assert.equal((await chat.getConversation(a.conversation.id)),null,'deleted conversations are hidden while their rows remain auditable');
 
 const next=await chat.claimNextTurn(other,['astra']);assert(next);
 await chat.cancelTurn(second.turn.id);

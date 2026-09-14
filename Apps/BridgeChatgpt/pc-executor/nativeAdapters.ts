@@ -12,6 +12,31 @@ export class NativeFailure extends Error {
   constructor(public code: string, message: string) { super(message); }
 }
 const fail = (code: string, message: string): never => { throw new NativeFailure(code, message); };
+/** Antigravity has returned both response and message/content envelopes across
+ * CLI versions. Extract only fields from the terminal result object; arbitrary
+ * stdout is never promoted to an answer. */
+export function extractAntigravityAnswer(result: unknown): string {
+  const seen = new Set<unknown>();
+  const visit = (value: unknown, depth: number): string => {
+    if (depth > 5 || value == null || typeof value === 'number' || typeof value === 'boolean' || seen.has(value)) return '';
+    if (typeof value === 'string') return value.trim();
+    if (typeof value !== 'object') return '';
+    seen.add(value);
+    const object = value as Record<string, unknown>;
+    for (const key of ['response', 'output_text', 'text', 'content', 'message']) {
+      const candidate = object[key];
+      if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+      if (candidate && typeof candidate === 'object') {
+        const nested = visit(candidate, depth + 1); if (nested) return nested;
+      }
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) { const nested = visit(item, depth + 1); if (nested) return nested; }
+    }
+    return '';
+  };
+  return visit(result, 0);
+}
 function session(value: unknown): string {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{8,160}$/.test(value)) return fail('invalid_session', 'Native session identity is missing or invalid');
   return value;
@@ -57,6 +82,7 @@ export class NativeTranscript {
   private init: any = null;
   private sessionId: string | null = null;
   private blocked = false;
+  private blockedReason = '';
   private completedTools = 0;
   private successfulTools = 0;
   constructor(private agentId: BridgeAgentId, private cwd: string, private expectedSession?: string | null) {}
@@ -81,10 +107,17 @@ export class NativeTranscript {
         if (path.resolve(event.init?.cwd || '') !== path.resolve(this.cwd)) fail('cwd_mismatch', 'Native runtime opened a different workspace');
         if (event.init?.permission_mode === 'always-proceed') fail('permission_policy', 'Unrestricted permission mode is not allowed');
       }
-      if (event.event === 'step_update' && /permission|denied|approval/i.test(String(event.step_update?.tool_info?.error?.type || ''))) this.blocked = true;
+      if (event.event === 'step_update' && event.step_update?.tool_info?.error) {
+        this.blocked = true;
+        this.blockedReason = String(event.step_update.tool_info.error.message || event.step_update.tool_info.error.type || 'Native tool failed').slice(0, 400);
+      }
       if (event.event === 'result') {
         if (this.terminal) fail('duplicate_final', 'Native stream returned more than one result');
         this.terminal = event.result;
+        if (event.result?.status !== 'SUCCESS' || event.result?.error || event.result?.denied_actions?.length) {
+          this.blocked = true;
+          this.blockedReason = String(event.result?.error || (event.result?.denied_actions?.length ? 'A native action was denied' : `Native result status ${event.result?.status || 'unknown'}`)).slice(0, 400);
+        }
       }
     } else {
       if (event.type === 'thread.started') { if (this.sessionId) fail('duplicate_init', 'Native stream opened more than once'); this.sessionId = session(event.thread_id); }
@@ -99,13 +132,13 @@ export class NativeTranscript {
   finish(exitCode: number | null, finalFile?: string): NativeFinal {
     if (this.buffer.trim()) { this.event(this.buffer); this.buffer = ''; }
     if (exitCode !== 0) return fail('process_exit', `Native process exited with ${exitCode ?? 'signal'}`);
-    if (this.blocked) return fail('native_failure', 'Native execution reported an error or denied permission');
+    if (this.blocked) return fail('native_failure', this.blockedReason ? `Native execution failed: ${this.blockedReason}` : 'Native execution reported an error or denied permission');
     if (this.completedTools > 0 && this.successfulTools === 0) return fail('native_tool_failure', 'Every native file/command tool failed; a final answer is not proof of task completion');
     if (!this.terminal || !this.sessionId) return fail('incomplete_output', 'Native execution has no terminal result/session receipt');
     if (this.expectedSession && this.sessionId !== this.expectedSession) return fail('session_mismatch', 'Native runtime resumed a different conversation');
     const route = getAgentRoute(this.agentId);
     if (route.runner === 'agy' && (!this.init || this.terminal.status !== 'SUCCESS' || this.terminal.conversation_id !== this.sessionId)) return fail('native_failure', 'Native result did not confirm successful completion');
-    const answer = String(route.runner === 'agy' ? this.terminal.response || '' : finalFile || '').trim();
+    const answer = route.runner === 'agy' ? extractAntigravityAnswer(this.terminal) : String(finalFile || '').trim();
     if (!answer) return fail('empty_output', 'Native final answer is empty');
     if (Buffer.byteLength(answer) > 2 * 1024 * 1024) return fail('output_limit', 'Native final answer exceeds the limit');
     return { answer, sessionId: this.sessionId, model: route.native_model, usage: this.terminal.usage || null };

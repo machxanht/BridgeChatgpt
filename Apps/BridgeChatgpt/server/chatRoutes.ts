@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { BRIDGE_AGENT_ROUTES, type BridgeAgentId } from './agentRegistry.js';
-import { createTurn, getConversation, listConversations, cancelTurn, claimNextTurn, heartbeatAttempt, completeAttempt, failAttempt, updateBrowserReceipt, getEventsSince, acknowledgeCleanup } from './chatRuntime.js';
+import { createTurn, getConversation, listConversations, cancelTurn, claimNextTurn, heartbeatAttempt, completeAttempt, failAttempt, updateBrowserReceipt, getEventsSince, acknowledgeCleanup, renameConversation, archiveConversation, restoreConversation, deleteConversation } from './chatRuntime.js';
 import { issueRuntimeToken, revokeRuntimeToken, runtimeAuth, runtimeBearer, verifyRuntimeToken } from './runtimeAuth.js';
 import { verifyBrowserSession } from './browserSession.js';
 import { verifyToken } from './auth.js';
@@ -9,9 +9,10 @@ import { runtimeIsDraining } from './runtimeLifecycle.js';
 import { recoverOwnedAttempt } from './chatRuntime.js';
 import {projectActivity} from './chatRuntime.js';
 import {getProject} from './db.js';
-import {upsertWorkspace,projectLocalPath,getWorkspaceRegistry} from './workspaceRegistry.js';
+import {upsertWorkspace,projectLocalPath,getWorkspaceRegistry,updateWorkspace,setWorkspaceLifecycle} from './workspaceRegistry.js';
 import {validateProjectBinding} from './projectBinding.js';
 import {randomUUID} from 'node:crypto';
+import {listNativeAccounts,registerNativeAccount,updateNativeAccount,removeNativeAccount} from './nativeAccounts.js';
 
 export const chatRouter=Router();
 export const runtimeRouter=Router();
@@ -21,6 +22,10 @@ const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 chatRouter.get('/agents',(_req,res)=>{
   res.json({agents:BRIDGE_AGENT_ROUTES.map(route=>({...route,available:runtimeAgentAvailable(route.id)})),runtimes:runtimeSnapshot()});
 });
+chatRouter.get('/accounts',async(_req,res)=>{ try { res.json({accounts:await listNativeAccounts(),message:'Bridge chỉ lưu nhãn tài khoản. Đăng nhập chính thức vẫn diễn ra trên PC và credential không được tải lên server.'}); } catch(err:any){ res.status(500).json({error:err.message}); } });
+chatRouter.post('/accounts',async(req,res)=>{ try { res.status(201).json({account:await registerNativeAccount(req.body||{})}); } catch(err:any){ res.status(status(err)).json({error:err.message}); } });
+chatRouter.patch('/accounts/:id',async(req,res)=>{ try { res.json({account:await updateNativeAccount(req.params.id,req.body||{})}); } catch(err:any){ res.status(status(err)).json({error:err.message}); } });
+chatRouter.delete('/accounts/:id',async(req,res)=>{ try { res.json(await removeNativeAccount(req.params.id)); } catch(err:any){ res.status(status(err)).json({error:err.message}); } });
 chatRouter.post('/projects',async(req,res)=>{
   try{
     const name=String(req.body?.project_name||'').trim();if(!name||name.length>100)throw new Error('Tên project cần từ 1 đến 100 ký tự');
@@ -46,6 +51,10 @@ chatRouter.get('/conversations/:id',async(req,res)=>{
   try{const data=await getConversation(req.params.id,req.query.before?Number(req.query.before):undefined,req.query.limit?Number(req.query.limit):100);if(!data){res.status(404).json({error:'Conversation not found'});return;}res.json(data);}
   catch(err:any){res.status(status(err)).json({error:err.message});}
 });
+chatRouter.patch('/conversations/:id',async(req,res)=>{ try { res.json({conversation:await renameConversation(req.params.id,String(req.body?.title||''))}); } catch(err:any){ res.status(status(err)).json({error:err.message}); } });
+chatRouter.post('/conversations/:id/archive',async(req,res)=>{ try { res.json({conversation:await archiveConversation(req.params.id)}); } catch(err:any){ res.status(status(err)).json({error:err.message}); } });
+chatRouter.post('/conversations/:id/restore',async(req,res)=>{ try { res.json({conversation:await restoreConversation(req.params.id)}); } catch(err:any){ res.status(status(err)).json({error:err.message}); } });
+chatRouter.delete('/conversations/:id',async(req,res)=>{ try { res.json({conversation:await deleteConversation(req.params.id)}); } catch(err:any){ res.status(status(err)).json({error:err.message}); } });
 chatRouter.post('/turns',async(req,res)=>{
   if(runtimeIsDraining()){res.status(503).json({error:'Bridge đang khởi động lại. Hãy gửi lại sau ít giây.'});return;}
   try{const result=await createTurn(req.body);res.status(result.duplicate?200:201).json(result);}
@@ -55,6 +64,10 @@ chatRouter.post('/turns/:id/cancel',async(req,res)=>{
   try{res.json(await cancelTurn(req.params.id));}
   catch(err:any){res.status(status(err)).json({error:err.message});}
 });
+chatRouter.patch('/projects/:workspace_id',async(req,res)=>{ try { res.json({workspace:await updateWorkspace(await getProject(),req.params.workspace_id,{project_name:req.body?.project_name,branch:req.body?.branch,repository_url:req.body?.repository_url})}); } catch(err:any){ res.status(status(err)).json({error:err.message}); } });
+chatRouter.post('/projects/:workspace_id/archive',async(req,res)=>{ try { const registry=await getWorkspaceRegistry(await getProject()); const workspace=registry.workspaces.find(item=>item.workspace_id===req.params.workspace_id); if(!workspace)throw Object.assign(new Error('Project not found'),{statusCode:404}); const activity=await projectActivity(workspace.workspace_id,workspace.project_id); if(activity.writer||activity.queue.length)throw Object.assign(new Error('Project has active turns; wait for cleanup before archiving'),{statusCode:409}); res.json({workspace:await setWorkspaceLifecycle(await getProject(),req.params.workspace_id,'archive')}); } catch(err:any){ res.status(status(err)).json({error:err.message}); } });
+chatRouter.post('/projects/:workspace_id/restore',async(req,res)=>{ try { res.json({workspace:await setWorkspaceLifecycle(await getProject(),req.params.workspace_id,'restore')}); } catch(err:any){ res.status(status(err)).json({error:err.message}); } });
+chatRouter.delete('/projects/:workspace_id',async(req,res)=>{ try { const registry=await getWorkspaceRegistry(await getProject()); const workspace=registry.workspaces.find(item=>item.workspace_id===req.params.workspace_id); if(!workspace)throw Object.assign(new Error('Project not found'),{statusCode:404}); const activity=await projectActivity(workspace.workspace_id,workspace.project_id); if(activity.writer||activity.queue.length)throw Object.assign(new Error('Project has active turns; wait for cleanup before deleting'),{statusCode:409}); res.json({workspace:await setWorkspaceLifecycle(await getProject(),req.params.workspace_id,'delete'),note:'Project metadata was soft-deleted; local code is preserved.'}); } catch(err:any){ res.status(status(err)).json({error:err.message}); } });
 chatRouter.get('/events',async(req:Request,res:Response)=>{
   const conversationId=String(req.query.conversation_id||'');
   if(!conversationId){res.status(400).json({error:'conversation_id required'});return;}
